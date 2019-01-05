@@ -1,0 +1,277 @@
+/* 
+ *
+ * mod_google_transcribe.c -- Freeswitch module for real-time transcription using google's gRPC interface
+ *
+ */
+#include "mod_google_transcribe.h"
+#include "google_glue.h"
+
+/* Prototypes */
+SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown);
+SWITCH_MODULE_RUNTIME_FUNCTION(mod_transcribe_runtime);
+SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load);
+
+/* SWITCH_MODULE_DEFINITION(name, load, shutdown, runtime) 
+ * Defines a switch_loadable_module_function_table_t and a static const char[] modname
+ */
+SWITCH_MODULE_DEFINITION(mod_google_transcribe, mod_transcribe_load, mod_transcribe_shutdown, NULL);
+
+static struct {
+	char *google_app_credentials_filepath;
+	int threadpool_size;
+} globals;
+
+static switch_xml_config_int_options_t config_opt_integer = { SWITCH_TRUE, 0, SWITCH_TRUE, 10 };
+
+static switch_xml_config_item_t instructions[] = {
+	/* parameter name        type                 reloadable   pointer                         default value     options structure */
+	SWITCH_CONFIG_ITEM("google-application-credentials-json-file", SWITCH_CONFIG_STRING, CONFIG_RELOADABLE, &globals.google_app_credentials_filepath, 
+					NULL, NULL, NULL, "Specifies the path to the .json file containing the google service account credentials."),
+	SWITCH_CONFIG_ITEM("threadpool-size", SWITCH_CONFIG_INT, CONFIG_RELOADABLE, &globals.threadpool_size, (void *) 1, &config_opt_integer, NULL, NULL),
+	SWITCH_CONFIG_ITEM_END()
+};
+
+static switch_status_t do_config(switch_bool_t reload)
+{
+	memset(&globals, 0, sizeof(globals));
+
+	if (switch_xml_config_parse_module_settings("google_transcribe.conf", reload, instructions) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Error finding or parsing configuration from google_transcribe.conf\n");
+		return SWITCH_STATUS_FALSE;
+	}
+
+	if (!globals.google_app_credentials_filepath || 
+		!strcmp("path-to-service-key.json", globals.google_app_credentials_filepath)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "You must set the 'google-application-credentials-json-file' attribute in google_transcribe.conf\n");
+		return SWITCH_STATUS_FALSE;
+	}
+
+	if (access(globals.google_app_credentials_filepath, F_OK) == -1) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "file %s does not exist\n", globals.google_app_credentials_filepath);
+		return SWITCH_STATUS_FALSE;
+	}
+	if (setenv("GOOGLE_APPLICATION_CREDENTIALS", globals.google_app_credentials_filepath, 1) < 0) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Error setting GOOGLE_APPLICATION_CREDENTIALS env var: %s\n", 
+			strerror(errno));
+		return SWITCH_STATUS_FALSE;
+	}
+
+
+	return SWITCH_STATUS_SUCCESS;
+}
+
+static void responseHandler(switch_core_session_t* session, char * json) {
+	switch_event_t *event;
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "json payload: %s.\n", json);
+
+	switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_RESULTS);
+	switch_channel_event_set_data(channel, event);
+	switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
+	switch_event_add_body(event, "%s", json);
+	switch_event_fire(&event);
+}
+
+static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type)
+{
+	switch_core_session_t *session = switch_core_media_bug_get_session(bug);
+
+	switch (type) {
+	case SWITCH_ABC_TYPE_INIT:
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_INIT.\n");
+		break;
+
+	case SWITCH_ABC_TYPE_CLOSE:
+		{
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_CLOSE.\n");
+
+			google_speech_session_cleanup(session);
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Finished SWITCH_ABC_TYPE_CLOSE.\n");
+		}
+		break;
+	
+	case SWITCH_ABC_TYPE_READ:
+
+		return google_speech_frame(bug, user_data);
+		break;
+
+	case SWITCH_ABC_TYPE_WRITE:
+	default:
+		break;
+	}
+
+	return SWITCH_TRUE;
+}
+
+static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, int interim, const char* base)
+{
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	switch_media_bug_t *bug;
+	switch_status_t status;
+	switch_codec_implementation_t read_impl = { 0 };
+	void *pUserData;
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "entering start_capture.\n");
+
+	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Already Running.\n");
+		return SWITCH_STATUS_FALSE;
+	}
+
+	switch_core_session_get_read_impl(session, &read_impl);
+
+	if (switch_channel_pre_answer(channel) != SWITCH_STATUS_SUCCESS) {
+		return SWITCH_STATUS_FALSE;
+	}
+
+	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, 
+		read_impl.samples_per_second, flags & SMBF_STEREO ? 2 : 1, interim, &pUserData)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google speech session.\n");
+		return SWITCH_STATUS_FALSE;
+	}
+	if ((status = switch_core_media_bug_add(session, "transcribe", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
+		return status;
+	}
+    switch_channel_set_private(channel, MY_BUG_NAME, bug);
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "exiting start_capture.\n");
+
+	return SWITCH_STATUS_SUCCESS;
+}
+
+static switch_status_t do_stop(switch_core_session_t *session)
+{
+	switch_status_t status = SWITCH_STATUS_SUCCESS;
+
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
+
+	if (bug) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command to stop transcription.\n");
+		status = google_speech_session_cleanup(session);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "stopped transcription.\n");
+	}
+
+	return status;
+}
+
+#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [interim|final] [stereo]"
+SWITCH_STANDARD_API(transcribe_function)
+{
+	char *mycmd = NULL, *argv[5] = { 0 };
+	int argc = 0;
+	switch_status_t status = SWITCH_STATUS_FALSE;
+	switch_media_bug_flag_t flags = SMBF_READ_STREAM /* | SMBF_WRITE_STREAM | SMBF_READ_PING */;
+
+	if (!zstr(cmd) && (mycmd = strdup(cmd))) {
+		argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
+	}
+
+	if (zstr(cmd) || argc < 2 || zstr(argv[0])) {
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s %s.\n", cmd, argv[0], argv[1]);
+		stream->write_function(stream, "-USAGE: %s\n", TRANSCRIBE_API_SYNTAX);
+		goto done;
+	} else {
+		switch_core_session_t *lsession = NULL;
+
+		if ((lsession = switch_core_session_locate(argv[0]))) {
+			if (!strcasecmp(argv[1], "stop")) {
+				status = do_stop(lsession);
+			} else if (!strcasecmp(argv[1], "start")) {
+				int interim = argc > 2 && !strcasecmp(argv[2], "interim") ? 1 : 0;
+				status = start_capture(lsession, flags, interim, "mod_transcribe");
+			}
+			switch_core_session_rwunlock(lsession);
+		}
+	}
+
+	if (status == SWITCH_STATUS_SUCCESS) {
+		stream->write_function(stream, "+OK Success\n");
+	} else {
+		stream->write_function(stream, "-ERR Operation Failed\n");
+	}
+
+  done:
+
+	switch_safe_free(mycmd);
+	return SWITCH_STATUS_SUCCESS;
+}
+
+
+
+/* Macro expands to: switch_status_t mod_google_transcribe_load(switch_loadable_module_interface_t **module_interface, switch_memory_pool_t *pool) */
+SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load)
+{
+	switch_api_interface_t *api_interface;
+
+	/* create/register custom event message type */
+	if (switch_event_reserve_subclass(TRANSCRIBE_EVENT_RESULTS) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass %s!\n", TRANSCRIBE_EVENT_RESULTS);
+		return SWITCH_STATUS_TERM;
+	}
+
+
+	/* connect my internal structure to the blank pointer passed to me */
+	*module_interface = switch_loadable_module_create_module_interface(pool, modname);
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Google Speech Transcription API loading..\n");
+
+	if (SWITCH_STATUS_FALSE == do_config(SWITCH_FALSE)) return SWITCH_STATUS_FALSE;
+
+    if (SWITCH_STATUS_FALSE == google_speech_init(globals.google_app_credentials_filepath, 0)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Failed initializing google speech interface\n");
+	}
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Google Speech Transcription API successfully loaded\n");
+
+	SWITCH_ADD_API(api_interface, "uuid_transcribe", "Google Speech Transcription API", transcribe_function, TRANSCRIBE_API_SYNTAX);
+	switch_console_set_complete("add uuid_transcribe start interim");
+	switch_console_set_complete("add uuid_transcribe start final");
+	switch_console_set_complete("add uuid_transcribe start ");
+	switch_console_set_complete("add uuid_transcribe stop ");
+
+	/* indicate that the module should continue to be loaded */
+	return SWITCH_STATUS_SUCCESS;
+}
+
+/*
+  Called when the system shuts down
+  Macro expands to: switch_status_t mod_google_transcribe_shutdown() */
+SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown)
+{
+	/* Cleanup dynamically allocated config settings */
+	switch_xml_config_cleanup(instructions);
+
+	google_speech_cleanup();
+
+	switch_event_free_subclass(TRANSCRIBE_EVENT_RESULTS);
+
+	return SWITCH_STATUS_SUCCESS;
+}
+
+
+/*
+  If it exists, this is called in it's own thread when the module-load completes
+  If it returns anything but SWITCH_STATUS_TERM it will be called again automatically
+  Macro expands to: switch_status_t mod_google_transcribe_runtime()
+SWITCH_MODULE_RUNTIME_FUNCTION(mod_google_transcribe_runtime)
+{
+	while(looping)
+	{
+		switch_cond_next();
+	}
+	return SWITCH_STATUS_TERM;
+}
+*/
+
+/* For Emacs:
+ * Local Variables:
+ * mode:c
+ * indent-tabs-mode:t
+ * tab-width:4
+ * c-basic-offset:4
+ * End:
+ * For VIM:
+ * vim:set softtabstop=4 shiftwidth=4 tabstop=4 noet
+ */

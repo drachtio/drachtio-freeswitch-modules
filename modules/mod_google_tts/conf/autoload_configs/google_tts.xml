@@ -1,0 +1,6 @@
+<configuration name="google_tts.conf" description="Google Text-to-Speech Configuration">
+  <settings>
+    <param name="google-application-credentials-json-file" value="your-service-account-key.json"/>
+    <param name="threadpool-size" value="1"/>
+  </settings>
+</configuration>

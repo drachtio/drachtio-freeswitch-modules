@@ -1,0 +1,121 @@
+--- modules.conf	2017-04-25 18:44:46.772490196 +0000
++++ modules.conf.new	2017-04-25 18:47:05.967886830 +0000
+@@ -10,19 +10,19 @@
+ applications/mod_conference
+ #applications/mod_curl
+ #applications/mod_cv
+-applications/mod_db
++#applications/mod_db
+ #applications/mod_directory
+ #applications/mod_distributor
+ applications/mod_dptools
+ #applications/mod_easyroute
+-applications/mod_enum
+-applications/mod_esf
++#applications/mod_enum
++#applications/mod_esf
+ #applications/mod_esl
+ applications/mod_expr
+-applications/mod_fifo
++#applications/mod_fifo
+ #applications/mod_fsk
+-applications/mod_fsv
+-applications/mod_hash
++#applications/mod_fsv
++#applications/mod_hash
+ #applications/mod_hiredis
+ applications/mod_httapi
+ #applications/mod_http_cache
+@@ -39,19 +39,19 @@
+ #applications/mod_rad_auth
+ #applications/mod_redis
+ #applications/mod_rss
+-applications/mod_sms
++#applications/mod_sms
+ #applications/mod_sms_flowroute
+ #applications/mod_snapshot
+ #applications/mod_snom
+ #applications/mod_sonar
+ #applications/mod_soundtouch
+-applications/mod_spandsp
++#applications/mod_spandsp
+ #applications/mod_spy
+ #applications/mod_stress
+ #applications/mod_translate
+-applications/mod_valet_parking
++#applications/mod_valet_parking
+ #applications/mod_vmd
+-applications/mod_voicemail
++#applications/mod_voicemail
+ #applications/mod_voicemail_ivr
+ #asr_tts/mod_cepstral
+ #asr_tts/mod_flite
+@@ -67,7 +67,7 @@
+ #codecs/mod_com_g729
+ #codecs/mod_dahdi_codec
+ codecs/mod_g723_1
+-codecs/mod_g729
++#codecs/mod_g729
+ codecs/mod_h26x
+ #codecs/mod_ilbc
+ #codecs/mod_isac
+@@ -77,7 +77,7 @@
+ #codecs/mod_silk
+ #codecs/mod_siren
+ #codecs/mod_theora
+-dialplans/mod_dialplan_asterisk
++#dialplans/mod_dialplan_asterisk
+ #dialplans/mod_dialplan_directory
+ dialplans/mod_dialplan_xml
+ #directories/mod_ldap
+@@ -89,17 +89,17 @@
+ endpoints/mod_loopback
+ #endpoints/mod_opal
+ #endpoints/mod_portaudio
+-endpoints/mod_rtc
++#endpoints/mod_rtc
+ #endpoints/mod_rtmp
+-endpoints/mod_skinny
++#endpoints/mod_skinny
+ #endpoints/mod_skypopen
+ endpoints/mod_sofia
+-endpoints/mod_verto
++#endpoints/mod_verto
+ #event_handlers/mod_amqp
+-event_handlers/mod_cdr_csv
++#event_handlers/mod_cdr_csv
+ #event_handlers/mod_cdr_mongodb
+ #event_handlers/mod_cdr_pg_csv
+-event_handlers/mod_cdr_sqlite
++#event_handlers/mod_cdr_sqlite
+ #event_handlers/mod_erlang_event
+ #event_handlers/mod_event_multicast
+ event_handlers/mod_event_socket
+@@ -125,7 +125,7 @@
+ #formats/mod_vlc
+ #languages/mod_basic
+ #languages/mod_java
+-languages/mod_lua
++#languages/mod_lua
+ #languages/mod_managed
+ #languages/mod_perl
+ #languages/mod_python
+@@ -155,12 +155,15 @@
+ #say/mod_say_zh
+ #timers/mod_posix_timer
+ #timers/mod_timerfd
+-xml_int/mod_xml_cdr
++#xml_int/mod_xml_cdr
+ #xml_int/mod_xml_curl
+ #xml_int/mod_xml_ldap
+ #xml_int/mod_xml_radius
+-xml_int/mod_xml_rpc
+-xml_int/mod_xml_scgi
++#xml_int/mod_xml_rpc
++#xml_int/mod_xml_scgi
++applications/mod_google_tts
++applications/mod_google_speech
++applications/mod_google_dialogflow
+
+ #../../libs/freetdm/mod_freetdm
+ 
