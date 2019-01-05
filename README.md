@@ -6,7 +6,7 @@ Review the module listing below for more details on each module.
 # Installation
 
 ## Overview
-These modules require a custom version of freeswitch to be built with support for [grpc](https://github.com/grpc/grpc) compiled in, in order to talk to google cloud.  
+These modules require a custom version of freeswitch to be built with support for [grpc](https://github.com/grpc/grpc) compiled in, in order to talk to google cloud services.  
 
 This project includes the tools to build a 1.6 version of Freeswitch that includes grpc support.  Options are provided for building a native Freeswitch (Debian 8) using ansible, or a docker image.
 

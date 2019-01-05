@@ -1,0 +1,95 @@
+---
+
+- name: Update apt-cache
+  apt: update_cache=yes 
+
+- name: install grpc dependencies
+  apt: name={{ item }} state=latest
+  with_items:
+  - 'build-essential'
+  - 'autoconf'
+  - 'libtool'
+  - 'pkg-config'
+  - 'libgflags-dev'
+  - 'libgtest-dev'
+  - 'clang'
+  - 'libc++-dev'
+
+- name: determine latest release to install
+  command: curl -L https://grpc.io/release
+  register: latest_grpc_release
+
+- name: check out grpc
+  git: repo=https://github.com/grpc/grpc
+    dest=/usr/local/src/grpc
+    version={{latest_grpc_release.stdout}}
+    depth=50
+    accept_hostkey=yes
+    force=yes
+            
+- name: update submodules
+  shell: git submodule update --init --recursive
+  args:
+    chdir: /usr/local/src/grpc
+
+- name: build grpc protobuf
+  shell: ./autogen.sh && ./configure && make install 
+  args:
+    chdir: /usr/local/src/grpc/third_party/protobuf
+
+- name: build grpc
+  shell: export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH && make && make install 
+  args:
+    chdir: /usr/local/src/grpc
+
+- name: check out googleapis
+  git: repo=https://github.com/googleapis/googleapis
+       dest={{freeswitch_sources_path}}/libs/googleapis
+       version=master
+       depth=50
+       accept_hostkey=yes
+       force=yes
+
+- name: build googleapis
+  shell: LANGUAGE=cpp make chdir={{freeswitch_sources_path}}/libs/googleapis
+
+- name: patch configure.ac
+  patch:
+    src: configure.ac.patch
+    dest: "{{freeswitch_sources_path}}/configure.ac"
+
+- name: patch Makefile.am
+  patch:
+    src: Makefile.am.patch
+    dest: "{{freeswitch_sources_path}}/Makefile.am"
+
+- name: copy modules.conf into place
+  copy: src=modules.conf.2 dest={{freeswitch_sources_path}}/modules.conf
+
+- name: copy mod_google_tts into place
+  copy: 
+    src: mod_google_tts 
+    dest: "{{freeswitch_sources_path}}/src/mod/applications/"
+    follow: yes
+
+- name: copy mod_google_speech into place
+  copy: 
+    src: mod_google_speech 
+    dest: "{{freeswitch_sources_path}}/src/mod/applications/"
+    follow: yes
+
+- name: copy mod_google_dialogflow into place
+  copy: 
+    src: mod_google_dialogflow
+    dest: "{{freeswitch_sources_path}}/src/mod/applications/"
+    follow: yes
+
+- name: re-run Freeswitch configuration
+  shell: ./{{freeswitch_configure_command}} --with-grpc=yes chdir={{freeswitch_sources_path}}
+
+- name: re-run FreeSwitch make
+  shell: make chdir={{freeswitch_sources_path}}
+
+- name: re-run FreeSwitch install
+  shell: make install chdir={{freeswitch_sources_path}}
+

@@ -1,0 +1,36 @@
+---
+# specific which version of freeswitch you want to install
+freeswitch_version: v1.6 
+
+# path to the FreeSwitch source directory
+freeswitch_sources_path: /usr/local/src/freeswitch/
+
+# path to the FreeSwitch install directory
+freeswitch_path: /usr/local/freeswitch/
+
+# freeswitch secret
+freeswitch_secret: ClueCon 
+
+# sip ports to listen on
+freeswitch_sip_port: 5080
+freeswitch_dtls_sip_port: 5081
+
+# add any addresses (in cidr format) that should be allowed to connect to event socket
+freeswitch_socket_acl:
+  - 127.0.0.1/32
+
+# freeswitch owner and group
+freeswitch_owner: freeswitch
+freeswitch_group: daemon
+
+# modules.conf file used for FreeSwitch compilation
+freeswitch_modules_template: ../templates/modules.conf 
+
+# freeswitch configure command - you can add option
+freeswitch_configure_command: configure 
+
+# freeswitch log configuration file template
+freeswitch_log_conf_template: ../templates/logfile.conf.xml
+
+# install google protobuf stuff
+install_grpc_libs: true

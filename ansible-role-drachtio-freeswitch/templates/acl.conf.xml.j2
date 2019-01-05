@@ -1,0 +1,9 @@
+<configuration name="acl.conf" description="Network Lists">
+  <network-lists>
+    <list name="socket_acl" default="deny">
+      {% for cidr in freeswitch_socket_acl %}
+      <node type="allow" cidr="{{ cidr }}"/>
+      {% endfor %}
+    </list>
+  </network-lists>
+</configuration>

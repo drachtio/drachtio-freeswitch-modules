@@ -1,0 +1,26 @@
+#!/bin/bash
+# logrotate replacement script
+# source : http://wiki.fusionpbx.com/index.php?title=RotateFSLogs
+# put in /etc/cron.daily
+# don't forget to make it executable
+# you might consider changing /usr/local/freeswitch/conf/autoload_configs/logfile.conf.xml
+#  <param name="rollover" value="0"/>
+
+#number of days of logs to keep
+NUMBERDAYS=30
+FSPATH="{{ freeswitch_path }}"
+
+$FSPATH/bin/fs_cli -x "fsctl send_sighup" |grep '+OK' >/tmp/rotateFSlogs
+if [ $? -eq 0 ]; then
+       #-cmin 2 could bite us (leave some files uncompressed, eg 11M auto-rotate). Maybe -1440 is better?
+       find $FSPATH/log/ -name "freeswitch.log.*" -cmin -2 -exec gzip {} \;
+       find $FSPATH/log/ -name "freeswitch.log.*.gz" -mtime +$NUMBERDAYS -exec /bin/rm {} \;
+       chown www-data.www-data $FSPATH/log/freeswitch.log
+       chmod 660 $FSPATH/log/freeswitch.log
+       logger FreeSWITCH Logs rotated
+       /bin/rm /tmp/rotateFSlogs
+else
+       logger FreeSWITCH Log Rotation Script FAILED
+       mail -s '$HOST FS Log Rotate Error' root < /tmp/rotateFSlogs
+       /bin/rm /tmp/rotateFSlogs
+fi
