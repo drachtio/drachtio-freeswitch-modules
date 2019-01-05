@@ -11,7 +11,7 @@ These modules require a custom version of freeswitch to be built with support fo
 This project includes the tools to build a 1.6 version of Freeswitch that includes grpc support.  Options are provided for building a native Freeswitch (Debian 8) using ansible, or a docker image.
 
 ## Building a native freeswitch
-Please see the ansible role provided.
+Please see the [ansible role](./ansible-role-drachtio-freeswitch/README.md) provided.
 
 ## Building a docker image
 The [Dockerfile](./Dockerfile) in the top-level directory will build a Freeswitch 1.6 image that has support for GRPC compiled in.  GRPC is needed for the freeswitch modules that interact with google for speech, tts, or dialogflow.  Other than adding in GRPC support, this is a fairly simple and stripped-down version of Freeswitch designed primarily for applications that use only dialplan or event socket.  No lua, javascript or other scripting languages are commpiled into this image, and many of the less frequently-used modules are also not provided.

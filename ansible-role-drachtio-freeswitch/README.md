@@ -11,7 +11,7 @@ freeswitch_version: v1.6
 ```
 specifies which version of freeswitch you want to install
 
->> Note: only version v1.6 has been tested.  The provided patchfiles may not work with other releases.
+> Note: only version v1.6 has been tested.  The provided patchfiles may not work with other releases.
 
 ```
 freeswitch_sources_path: /usr/local/src/freeswitch/
