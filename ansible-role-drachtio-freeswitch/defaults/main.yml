@@ -34,3 +34,6 @@ freeswitch_log_conf_template: ../templates/logfile.conf.xml
 
 # install google protobuf stuff
 install_grpc_libs: true
+
+# install libwebsockets
+install_lws_libs: no

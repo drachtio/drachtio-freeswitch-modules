@@ -8,6 +8,8 @@
 
 - name: install key for source code 
   shell: curl http://files.freeswitch.org/repo/deb/debian/freeswitch_archive_g0.pub | apt-key add -
+  args:
+    warn: false
 
 - name: update sources 
   shell: echo "deb http://files.freeswitch.org/repo/deb/freeswitch-1.6/ jessie main" > /etc/apt/sources.list.d/freeswitch.list
@@ -16,16 +18,9 @@
   apt: update_cache=yes 
 
 - name: install freeswitch dependencies
-  apt: name={{ item }} state=latest
-  with_items:
-  - 'freeswitch-all'
-  - 'freeswitch-all-dbg'
-  - 'gdb'
-  - 'libyuv-dev'
-  - 'libvpx2-dev'
-  - 'unixodbc-dev'
-  - 'mysql-common'
-  - 'mysql-client'
+  apt: 
+    name: ['freeswitch-all', 'freeswitch-all-dbg', 'gdb', 'libyuv-dev', 'libvpx2-dev', 'unixodbc-dev', 'mysql-common', 'mysql-client']
+    state: latest
 
 - name: install freeswitch video dependencies
   apt: name=freeswitch-video-deps-most state=latest force=yes
@@ -130,5 +125,7 @@
 
 - file: path=/etc/cron.daily/freeswitch_log_rotation mode="a+x"
 
-- include: grpc.yml
-  when:  install_grpc_libs == true
+- include: grpc.yaml
+
+- include: lws.yaml
+  when:  install_lws_libs == true

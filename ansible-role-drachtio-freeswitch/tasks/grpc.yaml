@@ -4,19 +4,14 @@
   apt: update_cache=yes 
 
 - name: install grpc dependencies
-  apt: name={{ item }} state=latest
-  with_items:
-  - 'build-essential'
-  - 'autoconf'
-  - 'libtool'
-  - 'pkg-config'
-  - 'libgflags-dev'
-  - 'libgtest-dev'
-  - 'clang'
-  - 'libc++-dev'
+  apt: 
+    name: ['build-essential','autoconf','libtool','pkg-config','libgflags-dev','libgtest-dev','clang','libc++-dev'] 
+    state: latest
 
 - name: determine latest release to install
   command: curl -L https://grpc.io/release
+  args:
+    warn: false
   register: latest_grpc_release
 
 - name: check out grpc
