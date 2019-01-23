@@ -13,7 +13,7 @@ uuid_audio_fork <uuid> start <wss-url> <metadata>
 Attaches media bug and starts streaming audio stream to the back-end server.
 - `uuid` - unique identifier of Freeswitch channel
 - `wss-url` - url to connect and stream audio to
-- `metadata` - JSON metadata to send to the back-end server
+- `metadata` - JSON metadata to send to the back-end server after initial connection
 
 ```
 uuid_drachtio_fork <uuid> stop
