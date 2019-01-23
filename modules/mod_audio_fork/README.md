@@ -8,7 +8,7 @@ A Freeswitch module that attaches a bug to a media server endpoint and streams a
 The freeswitch module exposes the following API commands:
 
 ```
-uuid_drachtio_fork <uuid> start <wss-url> <metadata>
+uuid_audio_fork <uuid> start <wss-url> <metadata>
 ```
 Attaches media bug and starts streaming audio stream to the back-end server.
 - `uuid` - unique identifier of Freeswitch channel

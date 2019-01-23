@@ -6,9 +6,9 @@ Review the module listing below for more details on each module.
 # Installation
 
 ## Overview
-These modules require a custom version of freeswitch to be built with support for [grpc](https://github.com/grpc/grpc) compiled in, in order to talk to google cloud services.  
+These modules require a custom version of freeswitch to be built, because they each require support for either  [grpc](https://github.com/grpc/grpc) or [libwebsockets](libwebsockets.org).  
 
-This project includes the tools to build a 1.6 version of Freeswitch that includes grpc support.  Options are provided for building a native Freeswitch (Debian 8) using ansible, or a docker image.
+This project includes the tools to build a 1.6 version of Freeswitch that includes grpc support.  Options are provided for building a native Freeswitch (Debian 8) using ansible, or a docker image.  See below for further details
 
 ## Building a native freeswitch
 Please see the [ansible role](./ansible-role-drachtio-freeswitch/README.md) provided.
@@ -19,6 +19,9 @@ The [Dockerfile](./Dockerfile) in the top-level directory will build a Freeswitc
 This is intended to be a base image that other Dockerfiles will reference via ONBBUILD directives to bring in their own dialplans and sip profiles to customize the install.
 
 # module listing
+
+## [mod_audio_fork](modules/mod_audio_fork/README.md)
+Forks an audio stream and sends the raw audio in linear16 over a websocket to a remote server in real-time. The audio stream is never stored to disk locally.
 
 ## [mod_google_tts](modules/mod_google_tts/README.md)
 Text-to-speech module using google cloud services.
