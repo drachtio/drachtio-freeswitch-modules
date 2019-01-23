@@ -6,7 +6,7 @@ Review the module listing below for more details on each module.
 # module listing
 
 ## [mod_audio_fork](modules/mod_audio_fork/README.md)
-Forks an audio stream and sends the raw audio in linear16 format over a websocket to a remote server in real-time. An initial text frame of JSON metadata can also be sent to the back-end to describe arbitrary information elements about the call or media.  The audio stream is never stored to disk locally on the media server, making it ideal for "no data at rest" applications.
+Forks an audio stream and sends the raw audio in linear16 format over a websocket to a remote server in real-time. An initial text frame of JSON metadata can also be sent to the back-end to describe arbitrary information elements about the call or media stream.  The audio is never stored to disk locally on the media server, making it ideal for "no data at rest" type of applications.
 
 ## [mod_google_tts](modules/mod_google_tts/README.md)
 Text-to-speech module using google cloud services.
