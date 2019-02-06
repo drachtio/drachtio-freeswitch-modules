@@ -28,6 +28,18 @@ This project includes the tools to build a 1.6 version of Freeswitch that includ
 Please see the [ansible role](./ansible-role-drachtio-freeswitch/README.md) provided.
 
 ## Building a docker image
+> This section in progress.
 The [Dockerfile](./Dockerfile) in the top-level directory will build a Freeswitch 1.6 image that has support for GRPC compiled in.  GRPC is needed for the freeswitch modules that interact with google for speech, tts, or dialogflow.  Other than adding in GRPC support, this is a fairly simple and stripped-down version of Freeswitch designed primarily for applications that use only dialplan or event socket.  No lua, javascript or other scripting languages are commpiled into this image, and many of the less frequently-used modules are also not provided.
 
 This is intended to be a base image that other Dockerfiles will reference via ONBBUILD directives to bring in their own dialplans and sip profiles to customize the install.
+
+# module listing
+
+## [mod_google_tts](modules/mod_google_tts/README.md)
+Text-to-speech module using google cloud services.
+
+## [mod_google_transcribe](modules/mod_google_transcribe)
+Speech recognition / transcription using google cloud services.
+
+## [mod_dialogflow](modules/mod_dialogflow/README.md)
+Google dialogflow integration.
