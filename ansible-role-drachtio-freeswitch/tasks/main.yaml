@@ -17,17 +17,11 @@
 - name: Update apt-cache
   apt: update_cache=yes 
 
-<<<<<<< HEAD:ansible-role-drachtio-freeswitch/tasks/main.yaml
-- name: install freeswitch dependencies
-  apt: 
-    name: ['freeswitch-all', 'freeswitch-all-dbg', 'gdb', 'libyuv-dev', 'libvpx2-dev', 'unixodbc-dev', 'mysql-common', 'mysql-client']
-=======
 - name: install dependencies
   apt: 
     name: ['freeswitch-all', 'freeswitch-all-dbg', 'gdb', 'libyuv-dev', 'libvpx2-dev', 
       'unixodbc-dev', 'mysql-common', 'mysql-client', 'cmake',
       'pkg-config','libgflags-dev','libgtest-dev','clang','libc++-dev']
->>>>>>> websockets:ansible-role-drachtio-freeswitch/tasks/main.yaml
     state: latest
 
 - name: install freeswitch video dependencies
@@ -77,7 +71,7 @@
 
 - include: lws.yaml
 
-- include: grpc.yaml
+- include: grpc.yaml  
 
 - name: bootstrap 
   shell: ./bootstrap.sh -j chdir={{freeswitch_sources_path}}
@@ -166,11 +160,3 @@
   template: src=freeswitch_log_rotation.j2 dest=/etc/cron.daily/freeswitch_log_rotation owner={{freeswitch_owner}} group={{freeswitch_group}}
 
 - file: path=/etc/cron.daily/freeswitch_log_rotation mode="a+x"
-<<<<<<< HEAD:ansible-role-drachtio-freeswitch/tasks/main.yaml
-
-- include: grpc.yaml
-
-- include: lws.yaml
-  when:  install_lws_libs == true
-=======
->>>>>>> websockets:ansible-role-drachtio-freeswitch/tasks/main.yaml
