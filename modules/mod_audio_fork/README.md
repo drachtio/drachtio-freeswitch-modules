@@ -16,6 +16,6 @@ Attaches media bug and starts streaming audio stream to the back-end server.
 - `metadata` - JSON metadata to send to the back-end server after initial connection
 
 ```
-uuid_drachtio_fork <uuid> stop
+uuid_audio_fork <uuid> stop
 ```
 Closes websocket connection and detaches media bug.
