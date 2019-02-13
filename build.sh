@@ -49,8 +49,8 @@ cd ../freeswitch/libs/
 git clone https://github.com/googleapis/googleapis
 cd googleapis
 LANGUAGE=cpp make
-cd ../..
-./bootstrap -j
+cd /usr/local/src/freeswitch
+./bootstrap.sh -j
 ./configure --with-lws=yes --with-grpc=yes
 make
 make install
