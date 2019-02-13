@@ -20,12 +20,19 @@ Google dialogflow
 # Installation
 
 ## Overview
-These modules require a custom version of freeswitch to be built, because they each require support for either  [grpc](https://github.com/grpc/grpc) or [libwebsockets](libwebsockets.org).  
+These modules require a custom version of freeswitch to be built, because they each require support for either [grpc](https://github.com/grpc/grpc) or [libwebsockets](libwebsockets.org).  The google modules require grpc support, and mod_audio_fork requires libwebsockets.
 
-This project includes the tools to build a 1.6 version of Freeswitch that includes grpc support.  Options are provided for building a native Freeswitch (Debian 8) using ansible, or a docker image.  See below for further details
+This project includes the tools to build a 1.6 version of Freeswitch that includes both libwebsockets and grpc support.  Options are provided for building a native Freeswitch (Debian 8) using ansible, or a docker image.  See below for further details,
 
 ## Building a native freeswitch
 Please see the [ansible role](./ansible-role-drachtio-freeswitch/README.md) provided.
+
+If you don't want to or can't use ansible for some reason and want to build everything by hand, have a look at the [build.sh](./build.sh) script, which has the commands to build freeswitch with the necessary support along with the modules on a debian 8 server.
+
+## Configuring
+Please note that although the modules are built if you follow the instructions above, they are not enabled by default.  You will need to edit the `/usr/local/freeswitch/conf/autoload_configs/modules.conf.xml` file to add them in.
+
+Also, please note that the google modules each require a config file to be placed into ``/usr/local/freeswitch/conf/autoload_configs`.  Copy the template config file from the module source "/conf" directory and edit appropriately.  You will need to download a google service key with permissions to execute the APIs that each module exercises, place it on the server somewhere, and reference it from the config file.
 
 ## Building a docker image
 > This section in progress.
