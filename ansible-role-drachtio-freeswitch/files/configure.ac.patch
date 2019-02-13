@@ -45,10 +45,11 @@
  dnl ---------------------------------------------------------------------------
  dnl - OpenLDAP SDK
  dnl ---------------------------------------------------------------------------
-@@ -1767,6 +1796,9 @@
+@@ -1767,6 +1796,10 @@
  		src/mod/applications/mod_curl/Makefile
  		src/mod/applications/mod_cv/Makefile
  		src/mod/applications/mod_db/Makefile
++		src/mod/applications/mod_audio_fork/Makefile
 +		src/mod/applications/mod_google_tts/Makefile
 +		src/mod/applications/mod_google_transcribe/Makefile
 +		src/mod/applications/mod_dialogflow/Makefile
