@@ -54,3 +54,4 @@ cd ../..
 ./configure --with-lws=yes --with-grpc=yes
 make
 make install
+make sounds-install moh-install
