@@ -1,0 +1,14 @@
+--- modules.conf.xml	2019-02-14 14:36:03.616000000 +0000
++++ modules.conf.xml.new	2019-02-14 17:40:48.000000000 +0000
+@@ -6,6 +6,11 @@
+     <load module="mod_logfile"/>
+     <!-- <load module="mod_syslog"/> -->
+ 
++    <load module="mod_audio_fork"/>
++    <load module="mod_google_tts"/>
++    <load module="mod_google_transcribe"/>
++    <load module="mod_dialogflow"/>
++
+     <!--<load module="mod_yaml"/>-->
+ 
+     <!-- Multi-Faceted -->

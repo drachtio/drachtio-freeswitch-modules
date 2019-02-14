@@ -1,6 +1,5 @@
 <configuration name="dialogflow.conf" description="Google Dialogflow Configuration">
   <settings>
-    <param name="google-application-credentials-json-file" value="your-service-account-key.json"/>
-    <param name="threadpool-size" value="1"/>
+    <param name="google-application-credentials-json-file" value="/tmp/gcs_service_account_key.json"/>
   </settings>
 </configuration>

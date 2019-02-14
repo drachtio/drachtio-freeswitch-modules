@@ -3,7 +3,7 @@ set -x
 
 # install dependencies
 apt-get update
-apt-get install -y --quiet --no-install-recommends git curl build-essential make autoconf automake gcc g++ cmake libssl-dev libtool libtool-bin libjpeg-dev pkg-config libsqlite3-dev libcurl4-openssl-dev libpcre3-dev libspeex-dev libspeexdsp-dev libldns-dev libedit-dev libssl-dev yasm libopus-dev libsndfile-dev
+apt-get install -y --quiet --no-install-recommends git curl build-essential make autoconf automake gcc g++ cmake libssl-dev libtool libtool-bin libjpeg-dev pkg-config libsqlite3-dev libcurl4-openssl-dev libpcre3-dev libspeex-dev libspeexdsp-dev libldns-dev libedit-dev libssl-dev yasm liblua5.2-dev libopus-dev libsndfile-dev
 
 # check out supporting code
 cd /usr/local/src/
@@ -20,7 +20,9 @@ patch -b < /usr/local/src/drachtio-freeswitch-modules/ansible-role-drachtio-free
 patch -b < /usr/local/src/drachtio-freeswitch-modules/ansible-role-drachtio-freeswitch/files/Makefile.am.patch
 cd build
 patch -b < /usr/local/src/drachtio-freeswitch-modules/ansible-role-drachtio-freeswitch/files/modules.conf.in.patch
-cd ../src/mod/applications
+cd /usr/local/src/freeswitch/conf/vanilla/autoload_configs
+patch -b < /usr/local/src/drachtio-freeswitch-modules/ansible-role-drachtio-freeswitch/files/modules.conf.vanilla.xml.patch
+cd /usr/local/src/freeswitch/src/mod/applications
 cp -r /usr/local/src/drachtio-freeswitch-modules/modules/mod_* .
 
 # build libwebsockets
@@ -33,8 +35,7 @@ make install
 cd /usr/local/src/
 
 # build grpc
-cd /usr/local/src/
-cd grpc
+cd /usr/local/src/grpc
 git submodule update --init --recursive
 cd third_party/protobuf
 ./autogen.sh

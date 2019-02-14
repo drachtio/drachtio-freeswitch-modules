@@ -20,7 +20,7 @@
 - name: install dependencies
   apt: 
     name: ['freeswitch-all', 'freeswitch-all-dbg', 'gdb', 'libyuv-dev', 'libvpx2-dev', 
-      'unixodbc-dev', 'mysql-common', 'mysql-client', 'cmake',
+      'unixodbc-dev', 'mysql-common', 'mysql-client', 'cmake', 'php5-dev',
       'pkg-config','libgflags-dev','libgtest-dev','clang','libc++-dev']
     state: latest
 
@@ -52,6 +52,17 @@
   patch:
     src: modules.conf.in.patch
     dest: "{{freeswitch_sources_path}}/build/modules.conf.in"
+
+- name: patch vanilla modules.conf for default configuration
+  patch:
+    src: modules.conf.vanilla.xml.patch
+    dest: "{{freeswitch_sources_path}}/conf/vanilla/autoload_configs/modules.conf.xml"
+
+- name: copy mod_audio_fork into place
+  copy: 
+    src: mod_audio_fork 
+    dest: "{{freeswitch_sources_path}}/src/mod/applications/"
+    follow: yes
 
 - name: copy mod_google_tts into place
   copy: 
