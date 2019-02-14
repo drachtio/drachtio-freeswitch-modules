@@ -1,5 +1,5 @@
---- Makefile.am	2019-02-06 17:37:24.540000000 +0000
-+++ Makefile.am.new	2019-02-06 17:37:16.644000000 +0000
+--- Makefile.am	2019-02-14 23:24:08.608000000 +0000
++++ Makefile.am.new	2019-02-14 23:31:17.740000000 +0000
 @@ -168,6 +168,19 @@
  CORE_CFLAGS += -DSWITCH_HAVE_FREETYPE $(LIBFREETYPE_CFLAGS)
  endif
@@ -30,7 +30,7 @@
  libfreeswitch_spandsp_la_SOURCES = libs/spandsp/src/plc.c libs/spandsp/src/alloc.c libs/spandsp/src/bit_operations.c
  libfreeswitch_spandsp_la_CFLAGS  = -Ilibs/spandsp/src $(CORE_CFLAGS) $(AM_CFLAGS)
  CORE_LIBS+=libfreeswitch_spandsp.la
-@@ -225,14 +241,166 @@
+@@ -225,14 +241,168 @@
      libs/libyuv/source/scale_neon.cc        \
      libs/libyuv/source/scale_win.cc
  
@@ -137,6 +137,8 @@
 +	libs/googleapis/gens/google/longrunning/operations.pb.cc \
 +	libs/googleapis/gens/google/cloud/speech/v1/cloud_speech.pb.cc \
 +	libs/googleapis/gens/google/cloud/speech/v1/cloud_speech.grpc.pb.cc \
++	libs/googleapis/gens/google/cloud/texttospeech/v1/cloud_tts.pb.cc \
++	libs/googleapis/gens/google/cloud/texttospeech/v1/cloud_tts.grpc.pb.cc \
 +	libs/googleapis/gens/google/logging/type/http_request.grpc.pb.cc  \
 +	libs/googleapis/gens/google/logging/type/log_severity.grpc.pb.cc \
 +	libs/googleapis/gens/google/logging/type/log_severity.pb.cc \
@@ -198,7 +200,7 @@
  libfreeswitch_la_DEPENDENCIES = $(BUILT_SOURCES)
  
  if HAVE_PNG
-@@ -471,7 +639,6 @@
+@@ -471,7 +641,6 @@
  freeswitch_LDADD += $(ODBC_LIB_FLAGS)
  endif
  
