@@ -3,7 +3,7 @@ set -x
 
 # install dependencies
 apt-get update
-apt-get install -y --quiet --no-install-recommends git curl build-essential make autoconf gcc g++ cmake libssl-dev libtool libtool-bin libjpeg-dev pkg-config libsqlite3-dev libcurl4-openssl-dev libpcre3-dev libspeex-dev libspeexdsp-dev libldns-dev libedit-dev libssl-dev yasm libopus-dev libsndfile-dev
+apt-get install -y --quiet --no-install-recommends git curl build-essential make autoconf automake gcc g++ cmake libssl-dev libtool libtool-bin libjpeg-dev pkg-config libsqlite3-dev libcurl4-openssl-dev libpcre3-dev libspeex-dev libspeexdsp-dev libldns-dev libedit-dev libssl-dev yasm libopus-dev libsndfile-dev
 
 # check out supporting code
 cd /usr/local/src/
