@@ -48,8 +48,10 @@
     src: Makefile.am.patch
     dest: "{{freeswitch_sources_path}}/Makefile.am"
 
-- name: copy modules.conf into place
-  copy: src=modules.conf dest={{freeswitch_sources_path}}/modules.conf
+- name: patch modules.conf.in
+  patch:
+    src: modules.conf.in.patch
+    dest: "{{freeswitch_sources_path}}/build/modules.conf.in"
 
 - name: copy mod_google_tts into place
   copy: 

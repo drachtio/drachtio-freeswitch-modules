@@ -18,8 +18,9 @@ git clone -b v3.1.0 https://github.com/warmcat/libwebsockets.git
 cd /usr/local/src/freeswitch
 patch -b < /usr/local/src/drachtio-freeswitch-modules/ansible-role-drachtio-freeswitch/files/configure.ac.patch
 patch -b < /usr/local/src/drachtio-freeswitch-modules/ansible-role-drachtio-freeswitch/files/Makefile.am.patch
-cp /usr/local/src/drachtio-freeswitch-modules/ansible-role-drachtio-freeswitch/files/modules.conf .
-cd src/mod/applications
+cd build
+patch -b < /usr/local/src/drachtio-freeswitch-modules/ansible-role-drachtio-freeswitch/files/modules.conf.in.patch
+cd ../src/mod/applications
 cp -r /usr/local/src/drachtio-freeswitch-modules/modules/mod_* .
 
 # build libwebsockets
