@@ -39,7 +39,6 @@ cd third_party/protobuf
 ./autogen.sh
 ./configure
 make install
-make sounds-install moh-install
 cd ../..
 export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH && make
 make install
