@@ -18,13 +18,14 @@ using google::cloud::texttospeech::v1::SsmlVoiceGender_Name;
 using google::cloud::texttospeech::v1::SynthesisInput;
 using google::cloud::texttospeech::v1::AudioEncoding;
 
-static auto creds = grpc::GoogleDefaultCredentials();
+std::shared_ptr<grpc::ChannelCredentials> creds;
 
 static std::unordered_set<std::string> setVoices;
 
 extern "C" {
 	switch_status_t google_speech_load() {
 		try {
+      creds = grpc::GoogleDefaultCredentials();
 			auto channel = grpc::CreateChannel("texttospeech.googleapis.com", creds);
 			auto stub = TextToSpeech::NewStub(channel);
 			ListVoicesRequest request;

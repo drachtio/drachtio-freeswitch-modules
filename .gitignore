@@ -32,3 +32,5 @@
 *.app
 
 /mod_transcribe_build_notes.txt
+
+node_modules
