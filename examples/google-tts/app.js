@@ -33,7 +33,6 @@ async function doTts(dlg, ep) {
     text
   });
   console.log('done speaking');
-  console.log(JSON.stringify(results.headers));
   dlg.destroy();
   ep.destroy();
 }
