@@ -27,9 +27,13 @@ function run(ms) {
 
 async function doTts(dlg, ep) {
   await ep.play('silence_stream://1000');
-  const results = await ep.execute('speak', `google_tts|en-GB-Wavenet-A|${text}`);
+  await ep.speak({
+    ttsEngine: 'google_tts',
+    voice: 'en-GB-Wavenet-A',
+    text
+  });
   console.log('done speaking');
-  console.log(results);
+  console.log(JSON.stringify(results.headers));
   dlg.destroy();
   ep.destroy();
 }

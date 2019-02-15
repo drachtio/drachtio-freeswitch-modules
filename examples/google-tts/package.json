@@ -10,7 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "config": "^3.0.1",
-    "drachtio-fsmrf": "^1.2.7",
+    "drachtio-fsmrf": "^1.2.8",
     "drachtio-srf": "^4.4.2"
   }
 }
