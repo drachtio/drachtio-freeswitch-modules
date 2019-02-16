@@ -137,7 +137,6 @@ namespace {
         // check if we have any new connections requested
         {
           std::lock_guard<std::mutex> guard(g_mutex_connects);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_EVENT_WAIT_CANCELLED processing %d connects\n", pendingConnects.size());
           for (auto it = pendingConnects.begin(); it != pendingConnects.end(); ++it) {
             struct cap_cb* cb = *it;
             if (cb->state == LWS_CLIENT_IDLE) {
@@ -148,7 +147,6 @@ namespace {
 
         // process disconnects
         {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_EVENT_WAIT_CANCELLED processing %d disconnects\n", pendingDisconnects.size());
           std::lock_guard<std::mutex> guard(g_mutex_disconnects);
           for (auto it = pendingDisconnects.begin(); it != pendingDisconnects.end(); ++it) {
             struct cap_cb* cb = *it;
@@ -159,7 +157,6 @@ namespace {
 
         // process writes
         {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_EVENT_WAIT_CANCELLED processing %d writes\n", pendingWrites.size());
           std::lock_guard<std::mutex> guard(g_mutex_writes);
           for (auto it = pendingWrites.begin(); it != pendingWrites.end(); ++it) {
             struct cap_cb* cb = *it;
