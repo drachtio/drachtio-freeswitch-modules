@@ -33,7 +33,7 @@ ep.api('uuid_audio_fork', `${ep.uuid} start ${url} ${JSON.stringify(callerData)}
 ## Examples
 [audio_fork.js](../../examples/audio_fork.js) provides an example of an application that connects an incoming call to Freeswitch and then forks the audio to a remote websocket server.
 
-To run this app, you can run [the simple websocket server provided](../../examples/ws_server.js) in a separate terminal.  It will listen on port 3001.  
+To run this app, you can run [the simple websocket server provided](../../examples/ws_server.js) in a separate terminal.  It will listen on port 3001 and will simply write the incoming raw audio to `/tmp/audio.raw` in linear16 format with no header or file container.
 
 So in the first terminal window run:
 ```
