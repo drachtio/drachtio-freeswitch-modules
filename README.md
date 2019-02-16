@@ -1,5 +1,5 @@
 # drachtio-freeswitch-modules
-An open-source collection of freeswitch modules, primarily built for for use with [drachtio](https://drachtio.org) applications utilizing [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), but generally usable and useful with generic freeswitch applications. 
+An open-source collection of freeswitch modules, primarily built for for use with [drachtio](https://drachtio.org) applications utilizing [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), but generally usable and useful with generic freeswitch applications.  These modules have beeen tested with Freeswitch version 1.6.
 
 #### [mod_audio_fork](modules/mod_audio_fork/README.md)
 Forks an audio stream and sends the raw audio in linear16 format over a websocket to a remote server in real-time. An initial text frame of JSON metadata can also be sent to the back-end to describe arbitrary information elements about the call or media stream.  The audio is never stored to disk locally on the media server, making it ideal for "no data at rest" type of applications.

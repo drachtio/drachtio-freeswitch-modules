@@ -2,6 +2,12 @@
 
 A Freeswitch module that connects a Freeswitch channel to a [dialogflow agent](https://dialogflow.com/docs/getting-started/first-agent) so that an IVR interaction can be driven completely by dialogflow logic.
 
+Once a Freeswitch channel is connected to a dialogflow agent, media is streamed to the dialogflow service, which returns information describing the "intent" that was detected, along with transcriptions and audio prompts and text to play to the caller.  The handling of returned audio by the module is two-fold:
+1.  If an audio clip was returned, it is *not* immediately played to the caller, but instead is written to a temporary wave file on the Freeswitch server.
+2.  Next, a Freeswitch custom event is sent to the application containing the details of the dialogflow response as well as the path to the wave file.
+
+This allows the application whether to decide to play the returned audio clip (via the mod_dptools 'play' command), or to use a text-to-speech service to generate audio using the returned prompt text.
+
 ## API
 
 ### Commands
@@ -34,3 +40,4 @@ When using [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), you c
 ep.api('dialogflow_start', `${ep.uuid} my-project-id en-US 30 welcome`); 
 ```
 ## Examples
+[dialogflow.js](../../examples/dialogflow.js)
