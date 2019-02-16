@@ -104,15 +104,14 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	return SWITCH_TRUE;
 }
 
-static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, int interim, const char* base)
+static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, 
+  char* lang, int interim, const char* base)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
 	switch_status_t status;
 	switch_codec_implementation_t read_impl = { 0 };
 	void *pUserData;
-
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "entering start_capture.\n");
 
 	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Already Running.\n");
@@ -126,16 +125,14 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	}
 
 	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, 
-		read_impl.samples_per_second, flags & SMBF_STEREO ? 2 : 1, interim, &pUserData)) {
+		read_impl.samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
-	if ((status = switch_core_media_bug_add(session, "transcribe", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
+	if ((status = switch_core_media_bug_add(session, "google_transcribe", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
 		return status;
 	}
-    switch_channel_set_private(channel, MY_BUG_NAME, bug);
-
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "exiting start_capture.\n");
+  switch_channel_set_private(channel, MY_BUG_NAME, bug);
 
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -156,7 +153,7 @@ static switch_status_t do_stop(switch_core_session_t *session)
 	return status;
 }
 
-#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [interim|final] [stereo]"
+#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim]"
 SWITCH_STANDARD_API(transcribe_function)
 {
 	char *mycmd = NULL, *argv[5] = { 0 };
@@ -168,7 +165,10 @@ SWITCH_STANDARD_API(transcribe_function)
 		argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
 	}
 
-	if (zstr(cmd) || argc < 2 || zstr(argv[0])) {
+	if (zstr(cmd) || 
+      (!strcasecmp(argv[1], "stop") && argc < 2) ||
+      (!strcasecmp(argv[1], "start") && argc < 3) ||
+      zstr(argv[0])) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s %s.\n", cmd, argv[0], argv[1]);
 		stream->write_function(stream, "-USAGE: %s\n", TRANSCRIBE_API_SYNTAX);
 		goto done;
@@ -177,10 +177,13 @@ SWITCH_STANDARD_API(transcribe_function)
 
 		if ((lsession = switch_core_session_locate(argv[0]))) {
 			if (!strcasecmp(argv[1], "stop")) {
+    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "stop transcribing\n");
 				status = do_stop(lsession);
 			} else if (!strcasecmp(argv[1], "start")) {
-				int interim = argc > 2 && !strcasecmp(argv[2], "interim") ? 1 : 0;
-				status = start_capture(lsession, flags, interim, "mod_transcribe");
+        char* lang = argv[2];
+        int interim = argc > 3 && !strcmp(argv[3], "interim");
+    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
+				status = start_capture(lsession, flags, lang, interim, "mod_transcribe");
 			}
 			switch_core_session_rwunlock(lsession);
 		}
@@ -198,9 +201,6 @@ SWITCH_STANDARD_API(transcribe_function)
 	return SWITCH_STATUS_SUCCESS;
 }
 
-
-
-/* Macro expands to: switch_status_t mod_google_transcribe_load(switch_loadable_module_interface_t **module_interface, switch_memory_pool_t *pool) */
 SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load)
 {
 	switch_api_interface_t *api_interface;
@@ -211,7 +211,6 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load)
 		return SWITCH_STATUS_TERM;
 	}
 
-
 	/* connect my internal structure to the blank pointer passed to me */
 	*module_interface = switch_loadable_module_create_module_interface(pool, modname);
 
@@ -219,17 +218,15 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load)
 
 	if (SWITCH_STATUS_FALSE == do_config(SWITCH_FALSE)) return SWITCH_STATUS_FALSE;
 
-    if (SWITCH_STATUS_FALSE == google_speech_init(globals.google_app_credentials_filepath, 0)) {
+  if (SWITCH_STATUS_FALSE == google_speech_init(globals.google_app_credentials_filepath, 0)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Failed initializing google speech interface\n");
 	}
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Google Speech Transcription API successfully loaded\n");
 
-	SWITCH_ADD_API(api_interface, "uuid_transcribe", "Google Speech Transcription API", transcribe_function, TRANSCRIBE_API_SYNTAX);
-	switch_console_set_complete("add uuid_transcribe start interim");
-	switch_console_set_complete("add uuid_transcribe start final");
-	switch_console_set_complete("add uuid_transcribe start ");
-	switch_console_set_complete("add uuid_transcribe stop ");
+	SWITCH_ADD_API(api_interface, "uuid_google_transcribe", "Google Speech Transcription API", transcribe_function, TRANSCRIBE_API_SYNTAX);
+	switch_console_set_complete("add uuid_google_transcribe start lang-code");
+	switch_console_set_complete("add uuid_google_transcribe stop ");
 
 	/* indicate that the module should continue to be loaded */
 	return SWITCH_STATUS_SUCCESS;
@@ -242,36 +239,7 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown)
 {
 	/* Cleanup dynamically allocated config settings */
 	switch_xml_config_cleanup(instructions);
-
 	google_speech_cleanup();
-
 	switch_event_free_subclass(TRANSCRIBE_EVENT_RESULTS);
-
 	return SWITCH_STATUS_SUCCESS;
 }
-
-
-/*
-  If it exists, this is called in it's own thread when the module-load completes
-  If it returns anything but SWITCH_STATUS_TERM it will be called again automatically
-  Macro expands to: switch_status_t mod_google_transcribe_runtime()
-SWITCH_MODULE_RUNTIME_FUNCTION(mod_google_transcribe_runtime)
-{
-	while(looping)
-	{
-		switch_cond_next();
-	}
-	return SWITCH_STATUS_TERM;
-}
-*/
-
-/* For Emacs:
- * Local Variables:
- * mode:c
- * indent-tabs-mode:t
- * tab-width:4
- * c-basic-offset:4
- * End:
- * For VIM:
- * vim:set softtabstop=4 shiftwidth=4 tabstop=4 noet
- */

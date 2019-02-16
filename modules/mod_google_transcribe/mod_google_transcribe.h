@@ -7,7 +7,7 @@
 #include <unistd.h>
 
 #define MY_BUG_NAME "google_transcribe"
-#define TRANSCRIBE_EVENT_RESULTS "transcription::maintenance"
+#define TRANSCRIBE_EVENT_RESULTS "google_transcribe::transcription"
 
 
 // simply write a wave file

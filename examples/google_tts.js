@@ -32,7 +32,6 @@ async function doTts(dlg, ep) {
     voice: 'en-GB-Wavenet-A',
     text
   });
-  console.log('done speaking');
   dlg.destroy();
   ep.destroy();
 }
