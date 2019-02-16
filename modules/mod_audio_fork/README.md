@@ -43,6 +43,6 @@ And in the second window run:
 ```
 node audio_fork.js http://localhost:3001
 ```
-The app uses text-to-speech to play prompts, so you will need mod_audio_tts loaded as well, and configured to use your GCS cloud credentials to access Google Cloud Text-to-Speech.
+The app uses text-to-speech to play prompts, so you will need mod_google_tts loaded as well, and configured to use your GCS cloud credentials to access Google Cloud Text-to-Speech.  (If you don't want to run mod_google_tts you can of course simply modify the application remove the prompt, just be aware that you will hear silence when you connect, and should simply begin speaking after the call connects).
 
 
