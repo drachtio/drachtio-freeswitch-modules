@@ -479,6 +479,7 @@ extern "C" {
     memset(&info, 0, sizeof info); 
     info.port = CONTEXT_PORT_NO_LISTEN; 
     info.protocols = protocols;
+    info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 
     context = lws_create_context(&info);
     if (!context) {
