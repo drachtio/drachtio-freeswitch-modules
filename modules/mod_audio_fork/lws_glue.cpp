@@ -348,6 +348,7 @@ extern "C" {
               unsigned int port,
               char *path,
               int sslFlags,
+              int channels,
               char* metadata, 
               void **ppUserData)
   {    	
@@ -373,7 +374,7 @@ extern "C" {
     switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
     switch_thread_cond_create(&cb->cond, switch_core_session_get_pool(session));
 
-    cb->resampler = speex_resampler_init(1, 8000, 16000, SWITCH_RESAMPLE_QUALITY, &err);
+    cb->resampler = speex_resampler_init(channels, 8000, 16000, SWITCH_RESAMPLE_QUALITY, &err);
 
     if (0 != err) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n", 
@@ -430,6 +431,7 @@ extern "C" {
     switch_core_session_t *session = switch_core_media_bug_get_session(bug);
     struct cap_cb *cb = (struct cap_cb *) user_data;
     bool written = false;
+    int channels = switch_core_media_bug_test_flag(bug, SMBF_STEREO) ? 2 : 1;
 
     if (switch_mutex_trylock(cb->mutex) == SWITCH_STATUS_SUCCESS) {
       uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
@@ -449,8 +451,9 @@ extern "C" {
               (spx_uint32_t *) &in_len, 
               (spx_int16_t *) bufGetWriteHead(cb),
               &out_len);
-            
-            bufBumpWriteHead(cb, out_len << 1);      // i.e., if we wrote 320 16bit items then we need to increment 320*2 bytes      
+
+             // i.e., if we wrote 320 16bit items then we need to increment 320*2 bytes in single-channel mode, twice that in dual channel  
+            bufBumpWriteHead(cb, out_len << channels);        
             written = true;
           }
           else {
@@ -479,6 +482,7 @@ extern "C" {
     memset(&info, 0, sizeof info); 
     info.port = CONTEXT_PORT_NO_LISTEN; 
     info.protocols = protocols;
+    info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 
     context = lws_create_context(&info);
     if (!context) {

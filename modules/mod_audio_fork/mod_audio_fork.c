@@ -55,6 +55,7 @@ static switch_status_t start_capture(switch_core_session_t *session,
 	switch_status_t status;
 	switch_codec_implementation_t read_impl = { 0 };
 	void *pUserData;
+  int channels = (flags & SMBF_STEREO) ? 2 : 1;
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "entering start_capture.\n");
 
@@ -70,7 +71,7 @@ static switch_status_t start_capture(switch_core_session_t *session,
 		return SWITCH_STATUS_FALSE;
 	}
 
-	if (SWITCH_STATUS_FALSE == fork_session_init(session, read_impl.samples_per_second, host, port, path, sslFlags, metadata, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == fork_session_init(session, read_impl.samples_per_second, host, port, path, sslFlags, channels, metadata, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing mod_audio_fork session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
@@ -98,19 +99,18 @@ static switch_status_t do_stop(switch_core_session_t *session)
 	return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop] [wss-url] [metadata]"
+#define FORK_API_SYNTAX "<uuid> [start | stop] [wss-url] [mono | mixed | stereo] [metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
-	char *mycmd = NULL, *argv[4] = { 0 };
+	char *mycmd = NULL, *argv[5] = { 0 };
 	int argc = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
-	switch_media_bug_flag_t flags = SMBF_READ_STREAM ;
 
 	if (!zstr(cmd) && (mycmd = strdup(cmd))) {
 		argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
 	}
 
-	if (zstr(cmd) || argc < 2  || (!strcmp(argv[1], "start") && argc < 3)) {
+	if (zstr(cmd) || argc < 2  || (!strcmp(argv[1], "start") && argc < 4)) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s %s.\n", cmd, argv[0], argv[1]);
 		stream->write_function(stream, "-USAGE: %s\n", FORK_API_SYNTAX);
 		goto done;
@@ -125,8 +125,20 @@ SWITCH_STANDARD_API(fork_function)
         char host[MAX_WS_URL_LEN], path[MAX_PATH_LEN];
         unsigned int port;
         int sslFlags;
-        char *metadata = argc > 3 ? argv[3] : "{}" ;
-
+      	switch_media_bug_flag_t flags = SMBF_READ_STREAM ;
+        char *metadata = argc > 4 ? argv[4] : "{}" ;
+        if (0 == strcmp(argv[3], "mixed")) {
+          flags |= SMBF_WRITE_STREAM ;
+        }
+        else if (0 == strcmp(argv[3], "stereo")) {
+          flags |= SMBF_WRITE_STREAM ;
+          flags |= SMBF_STEREO;
+        }
+        else if(0 !== strcmp(argv[3], "mono")) {
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid mix type: %s, must be mono, mixed, or stereo\n", argv[3]);
+          switch_core_session_rwunlock(lsession);
+          goto done;
+        }
         if (!parse_ws_uri(argv[2], &host[0], &path[0], &port, &sslFlags)) {
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid websocket uri: %s\n", argv[2]);
         }
