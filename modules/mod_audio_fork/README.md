@@ -8,11 +8,15 @@ A Freeswitch module that attaches a bug to a media server endpoint and streams a
 The freeswitch module exposes the following API commands:
 
 ```
-uuid_audio_fork <uuid> start <wss-url> <metadata>
+uuid_audio_fork <uuid> start <wss-url> <mix-type> <metadata>
 ```
-Attaches media bug and starts streaming audio stream to the back-end server.
+Attaches media bug and starts streaming audio stream to the back-end server.  Audio is streamed in linear 16 format (signed 16-bit PCM encoding, 16khz sampling) with either one or two channels depending on the mix-type requested.
 - `uuid` - unique identifier of Freeswitch channel
 - `wss-url` - websocket url to connect and stream audio to
+- `mix-type` - choice of 
+  - "mono" - single channel containing caller's audio
+  - "mixed" - single channel containing both caller and callee audio
+  - "stereo" - two channels with caller audio in one and callee audio in the other.
 - `metadata` - JSON metadata to send to the back-end server after initial connection
 
 ```
