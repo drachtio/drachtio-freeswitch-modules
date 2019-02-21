@@ -134,7 +134,7 @@ SWITCH_STANDARD_API(fork_function)
           flags |= SMBF_WRITE_STREAM ;
           flags |= SMBF_STEREO;
         }
-        else if(0 !== strcmp(argv[3], "mono")) {
+        else if(0 != strcmp(argv[3], "mono")) {
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid mix type: %s, must be mono, mixed, or stereo\n", argv[3]);
           switch_core_session_rwunlock(lsession);
           goto done;
