@@ -416,8 +416,10 @@ extern "C" {
       struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
       switch_mutex_lock(cb->mutex);
       switch_channel_set_private(channel, MY_BUG_NAME, NULL);
-      addPendingDisconnect(cb);
-      lws_cancel_service(cb->vhd->context);
+      if (cb->wsi) {
+        addPendingDisconnect(cb);
+        lws_cancel_service(cb->vhd->context);
+      }
       switch_mutex_unlock(cb->mutex);
 
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "fork_session_cleanup: Closed stream\n");

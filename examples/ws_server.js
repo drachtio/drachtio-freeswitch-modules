@@ -15,12 +15,12 @@ const wss = new WebSocket.Server({
 });
  
 wss.on('connection', (ws, req) => {
-  console.log(`received connection from ${req.connection.remoteAddress}, writing audio to ${path}`);
+  console.log(`received connection from ${req.connection.remoteAddress}`);
   wstream = fs.createWriteStream(recordingPath);
 
   ws.on('message',  (message) => {
     if (typeof message === 'string') {
-      console.log(`received message: ${JSON.stringify(message)}`);
+      console.log(`received message: ${message}`);
     }
     else if (message instanceof Buffer) {
       wstream.write(message);
