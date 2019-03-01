@@ -305,8 +305,18 @@ extern "C" {
       offset = 8;
       *pPort = 443;
     }
+    else if (0 == strncmp(server, "wss://", 6) || 0 == strncmp(server, "WSS://", 6)) {
+      *pSslFlags = LCCSCF_USE_SSL | LCCSCF_ALLOW_SELFSIGNED;
+      offset = 6;
+      *pPort = 443;
+    }
     else if (0 == strncmp(server, "http://", 7) || 0 == strncmp(server, "HTTP://", 7)) {
       offset = 7;
+      *pSslFlags = 0;
+      *pPort = 80;
+    }
+    else if (0 == strncmp(server, "ws://", 5) || 0 == strncmp(server, "WS://", 5)) {
+      offset = 5;
       *pSslFlags = 0;
       *pPort = 80;
     }
@@ -347,6 +357,7 @@ extern "C" {
               char *host,
               unsigned int port,
               char *path,
+              int sampling,
               int sslFlags,
               int channels,
               char* metadata, 
@@ -369,12 +380,13 @@ extern "C" {
     cb->wsi = NULL;
     cb->vhd = NULL;
     cb->metadata = NULL;
+    cb->sampling = sampling;
     bufInit(cb);
 
     switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
     switch_thread_cond_create(&cb->cond, switch_core_session_get_pool(session));
 
-    cb->resampler = speex_resampler_init(channels, 8000, 16000, SWITCH_RESAMPLE_QUALITY, &err);
+    cb->resampler = speex_resampler_init(channels, 8000, sampling, SWITCH_RESAMPLE_QUALITY, &err);
 
     if (0 != err) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n", 
@@ -414,13 +426,13 @@ extern "C" {
 
     if (bug) {
       struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
-      switch_mutex_lock(cb->mutex);
       switch_channel_set_private(channel, MY_BUG_NAME, NULL);
       if (cb->wsi) {
+        switch_mutex_lock(cb->mutex);
         addPendingDisconnect(cb);
         lws_cancel_service(cb->vhd->context);
+        switch_mutex_unlock(cb->mutex);
       }
-      switch_mutex_unlock(cb->mutex);
 
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "fork_session_cleanup: Closed stream\n");
       return SWITCH_STATUS_SUCCESS;

@@ -46,6 +46,7 @@ static switch_status_t start_capture(switch_core_session_t *session,
         char* host,
         unsigned int port, 
         char* path,
+        int sampling,
         int sslFlags,
 	      char* metadata, 
         const char* base)
@@ -57,7 +58,9 @@ static switch_status_t start_capture(switch_core_session_t *session,
 	void *pUserData;
   int channels = (flags & SMBF_STEREO) ? 2 : 1;
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "entering start_capture.\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+    "mod_audio_fork: streaming %d sampling to %s path %s port %d tls: %s.\n", 
+    sampling, host, path, port, sslFlags ? "yes" : "no");
 
 	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_audio_fork: bug already attached!\n");
@@ -71,7 +74,7 @@ static switch_status_t start_capture(switch_core_session_t *session,
 		return SWITCH_STATUS_FALSE;
 	}
 
-	if (SWITCH_STATUS_FALSE == fork_session_init(session, read_impl.samples_per_second, host, port, path, sslFlags, channels, metadata, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == fork_session_init(session, read_impl.samples_per_second, host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing mod_audio_fork session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
@@ -99,10 +102,10 @@ static switch_status_t do_stop(switch_core_session_t *session)
 	return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop] [wss-url] [mono | mixed | stereo] [metadata]"
+#define FORK_API_SYNTAX "<uuid> [start | stop] [wss-url] [mono | mixed | stereo] [8k | 16k] [metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
-	char *mycmd = NULL, *argv[5] = { 0 };
+	char *mycmd = NULL, *argv[6] = { 0 };
 	int argc = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
 
@@ -125,8 +128,9 @@ SWITCH_STANDARD_API(fork_function)
         char host[MAX_WS_URL_LEN], path[MAX_PATH_LEN];
         unsigned int port;
         int sslFlags;
+        int sampling = 16000;
       	switch_media_bug_flag_t flags = SMBF_READ_STREAM ;
-        char *metadata = argc > 4 ? argv[4] : "{}" ;
+        char *metadata = argc > 5 ? argv[5] : "{}" ;
         if (0 == strcmp(argv[3], "mixed")) {
           flags |= SMBF_WRITE_STREAM ;
         }
@@ -139,11 +143,14 @@ SWITCH_STANDARD_API(fork_function)
           switch_core_session_rwunlock(lsession);
           goto done;
         }
+        if (0 == strcmp(argv[4], "8k")) {
+          sampling = 8000;
+        }
         if (!parse_ws_uri(argv[2], &host[0], &path[0], &port, &sslFlags)) {
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid websocket uri: %s\n", argv[2]);
         }
         else {
-          status = start_capture(lsession, flags, host, port, path, sslFlags, metadata, "mod_audio_fork");
+          status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, metadata, "mod_audio_fork");
         }
 			}
       else {

@@ -40,6 +40,7 @@ struct cap_cb {
   uint8_t *metadata;
   size_t metadata_length;
   int sslFlags;
+  int sampling;
   struct lws *wsi;
   uint8_t audio_buffer[LWS_PRE + (SWITCH_RECOMMENDED_BUFFER_SIZE << 1)];
   uint8_t* buf_head;
