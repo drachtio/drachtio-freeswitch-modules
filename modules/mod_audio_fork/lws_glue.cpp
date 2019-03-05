@@ -226,6 +226,7 @@ namespace {
       {
         struct cap_cb *cb = *pCb;
         if (cb->state == LWS_CLIENT_DISCONNECTING) {
+          lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
           return -1;
         }
 
