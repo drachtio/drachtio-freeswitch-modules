@@ -225,12 +225,10 @@ namespace {
     case LWS_CALLBACK_CLIENT_WRITEABLE:
       {
         struct cap_cb *cb = *pCb;
-        if (cb->state == LWS_CLIENT_DISCONNECTING) {
-          lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
-          return -1;
-        }
 
-        // check for initial metadata
+        switch_mutex_lock(cb->mutex);
+
+        // check for text frames to send
         if (cb->metadata) {          
           int n = cb->metadata_length - LWS_PRE - 1;
           int m = lws_write(wsi, cb->metadata + LWS_PRE, n, LWS_WRITE_TEXT);
@@ -239,23 +237,32 @@ namespace {
           cb->metadata_length = 0;
           if (m < n) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error writing metadata %d requested, %d written\n", n, m);
+            switch_mutex_unlock(cb->mutex);
             return -1;
-          }          
-        }
-        else {
-          // check for audio packets
-          switch_mutex_lock(cb->mutex);
-          int n = bufGetUsed(cb);
-          if (n > 0) {
-            int m = lws_write(wsi, bufGetReadHead(cb), n, LWS_WRITE_BINARY);
-            if (m < n) {
-              switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error writing audio data %d requested, %d written\n", n, m);
-              return -1;
-            }
-            bufInit(cb);
           }
           switch_mutex_unlock(cb->mutex);
+          return 0;  // there may be audio data, but only one write per writeable event -- get it next time
         }
+
+        if (cb->state == LWS_CLIENT_DISCONNECTING) {
+          lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
+          switch_mutex_unlock(cb->mutex);
+          return -1;
+        }
+
+        // check for audio packets
+        int n = bufGetUsed(cb);
+        if (n > 0) {
+          int m = lws_write(wsi, bufGetReadHead(cb), n, LWS_WRITE_BINARY);
+          if (m < n) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error writing audio data %d requested, %d written\n", n, m);
+            switch_mutex_unlock(cb->mutex);
+            return -1;
+          }
+          bufInit(cb);
+        }
+        switch_mutex_unlock(cb->mutex);
+
         return 0;
       }
       break;
@@ -421,7 +428,7 @@ extern "C" {
     return SWITCH_STATUS_SUCCESS;
   }
 
-  switch_status_t fork_session_cleanup(switch_core_session_t *session) {
+  switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
 
@@ -431,11 +438,46 @@ extern "C" {
       if (cb->wsi) {
         switch_mutex_lock(cb->mutex);
         addPendingDisconnect(cb);
+
+        if (text) {
+          cb->metadata_length = strlen(text) + 1 + LWS_PRE;
+          cb->metadata = new uint8_t[cb->metadata_length];
+          memset(cb->metadata, 0, cb->metadata_length);
+          memcpy(cb->metadata + LWS_PRE, text, strlen(text));
+        }
+
         lws_cancel_service(cb->vhd->context);
         switch_mutex_unlock(cb->mutex);
       }
 
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "fork_session_cleanup: Closed stream\n");
+      return SWITCH_STATUS_SUCCESS; 
+    }
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s Bug is not attached.\n", switch_channel_get_name(channel));
+    return SWITCH_STATUS_FALSE;
+  }
+
+  switch_status_t fork_session_send_text(switch_core_session_t *session, char* text) {
+    switch_channel_t *channel = switch_core_session_get_channel(session);
+    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+
+    if (bug) {
+      struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
+      switch_channel_set_private(channel, MY_BUG_NAME, NULL);
+      if (cb->wsi) {
+        switch_mutex_lock(cb->mutex);
+
+        cb->metadata_length = strlen(text) + 1 + LWS_PRE;
+        cb->metadata = new uint8_t[cb->metadata_length];
+        memset(cb->metadata, 0, cb->metadata_length);
+        memcpy(cb->metadata + LWS_PRE, text, strlen(text));
+
+        switch_mutex_unlock(cb->mutex);
+
+        addPendingWrite(cb);
+        lws_cancel_service(cb->vhd->context);
+      }
+
       return SWITCH_STATUS_SUCCESS;
     }
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s Bug is not attached.\n", switch_channel_get_name(channel));

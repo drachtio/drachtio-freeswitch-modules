@@ -42,5 +42,5 @@ async function doFork(req, dlg, ep) {
     voice: 'en-GB-Wavenet-A',
     text
   });
-  ep.api('uuid_audio_fork', `${ep.uuid} start ${wsUrl} mono ${JSON.stringify(metadata)}`);
+  ep.api('uuid_audio_fork', `${ep.uuid} start ${wsUrl} mono 16k ${JSON.stringify(metadata)}`);
 }

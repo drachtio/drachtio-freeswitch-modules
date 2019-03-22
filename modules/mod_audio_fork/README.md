@@ -20,12 +20,17 @@ Attaches media bug and starts streaming audio stream to the back-end server.  Au
 - `sampling-rate` - choice of
   - "8k" = 8000 Hz sample rate will be generated
   - "16k" = 16000 Hz sample rate will be generated
-- `metadata` - JSON metadata to send to the back-end server after initial connection
+- `metadata` - a text frame of arbitrary data to send to the back-end server after initial connection
 
 ```
-uuid_audio_fork <uuid> stop
+uuid_audio_fork <uuid> send_text <metadata>
 ```
-Closes websocket connection and detaches media bug.
+Send a text frame of arbitrary data to the remote server (e.g. to notify of DTMF events).
+
+```
+uuid_audio_fork <uuid> stop <metadata>
+```
+Closes websocket connection and detaches media bug, optionally sending a final text frame over the websocket connection before closing.
 
 ### Events
 None.

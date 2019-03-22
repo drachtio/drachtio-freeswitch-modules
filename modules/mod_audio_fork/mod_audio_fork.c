@@ -25,7 +25,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	case SWITCH_ABC_TYPE_CLOSE:
 		{
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Got SWITCH_ABC_TYPE_CLOSE.\n");
-			fork_session_cleanup(session);
+			fork_session_cleanup(session, NULL);
 		}
 		break;
 	
@@ -87,7 +87,7 @@ static switch_status_t start_capture(switch_core_session_t *session,
 	return SWITCH_STATUS_SUCCESS;
 }
 
-static switch_status_t do_stop(switch_core_session_t *session)
+static switch_status_t do_stop(switch_core_session_t *session, char* text)
 {
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
@@ -96,13 +96,26 @@ static switch_status_t do_stop(switch_core_session_t *session)
 
 	if (bug) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: stopping audio feed.\n");
-		status = fork_session_cleanup(session);
+		status = fork_session_cleanup(session, text);
 	}
 
 	return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop] [wss-url] [mono | mixed | stereo] [8k | 16k] [metadata]"
+static switch_status_t send_text(switch_core_session_t *session, char* text) {
+	switch_status_t status = SWITCH_STATUS_SUCCESS;
+
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
+
+  if (bug) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: sending text: %s.\n", text);
+    status = fork_session_send_text(session, text);
+  }
+  return status;
+}
+
+#define FORK_API_SYNTAX "<uuid> [start | stop | send_text ] [wss-url] [mono | mixed | stereo] [8k | 16k] [metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
 	char *mycmd = NULL, *argv[6] = { 0 };
@@ -122,8 +135,16 @@ SWITCH_STANDARD_API(fork_function)
 
 		if ((lsession = switch_core_session_locate(argv[0]))) {
 			if (!strcasecmp(argv[1], "stop")) {
-				status = do_stop(lsession);
-      } 
+				status = do_stop(lsession, argc > 2 ? argv[2] : NULL);
+      }
+      else if (!strcasecmp(argv[1], "send_text")) {
+        if (argc < 3) {
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "send_text requires an argument specifying text to send\n");
+          switch_core_session_rwunlock(lsession);
+          goto done;
+        }
+        status = send_text(lsession, argv[2]);
+      }
       else if (!strcasecmp(argv[1], "start")) {
         char host[MAX_WS_URL_LEN], path[MAX_PATH_LEN];
         unsigned int port;
