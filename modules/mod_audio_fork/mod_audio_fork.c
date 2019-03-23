@@ -151,7 +151,7 @@ SWITCH_STANDARD_API(fork_function)
         int sslFlags;
         int sampling = 16000;
       	switch_media_bug_flag_t flags = SMBF_READ_STREAM ;
-        char *metadata = argc > 5 ? argv[5] : "{}" ;
+        char *metadata = argc > 5 ? argv[5] : NULL ;
         if (0 == strcmp(argv[3], "mixed")) {
           flags |= SMBF_WRITE_STREAM ;
         }

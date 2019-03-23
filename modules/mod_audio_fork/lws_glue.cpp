@@ -417,12 +417,14 @@ extern "C" {
     }
 
     // write initial metadata
-    cb->metadata_length = strlen(metadata) + 1 + LWS_PRE;
-    cb->metadata = new uint8_t[cb->metadata_length];
-    memset(cb->metadata, 0, cb->metadata_length);
-    memcpy(cb->metadata + LWS_PRE, metadata, strlen(metadata));
-    addPendingWrite(cb);
-    lws_cancel_service(cb->vhd->context);
+    if (metadata) {
+      cb->metadata_length = strlen(metadata) + 1 + LWS_PRE;
+      cb->metadata = new uint8_t[cb->metadata_length];
+      memset(cb->metadata, 0, cb->metadata_length);
+      memcpy(cb->metadata + LWS_PRE, metadata, strlen(metadata));
+      addPendingWrite(cb);
+      lws_cancel_service(cb->vhd->context);
+    }
 
     *ppUserData = cb;
     return SWITCH_STATUS_SUCCESS;
@@ -444,6 +446,7 @@ extern "C" {
           cb->metadata = new uint8_t[cb->metadata_length];
           memset(cb->metadata, 0, cb->metadata_length);
           memcpy(cb->metadata + LWS_PRE, text, strlen(text));
+          addPendingWrite(cb);
         }
 
         lws_cancel_service(cb->vhd->context);
