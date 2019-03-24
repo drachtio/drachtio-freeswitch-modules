@@ -145,16 +145,6 @@ namespace {
           }
         }
 
-        // process disconnects
-        {
-          std::lock_guard<std::mutex> guard(g_mutex_disconnects);
-          for (auto it = pendingDisconnects.begin(); it != pendingDisconnects.end(); ++it) {
-            struct cap_cb* cb = *it;
-            lws_callback_on_writable(cb->wsi);
-          }
-          pendingDisconnects.clear();
-        }
-
         // process writes
         {
           std::lock_guard<std::mutex> guard(g_mutex_writes);
@@ -163,6 +153,16 @@ namespace {
             lws_callback_on_writable(cb->wsi);
           }
           pendingWrites.clear();
+        }
+
+        // process disconnects
+        {
+          std::lock_guard<std::mutex> guard(g_mutex_disconnects);
+          for (auto it = pendingDisconnects.begin(); it != pendingDisconnects.end(); ++it) {
+            struct cap_cb* cb = *it;
+            lws_callback_on_writable(cb->wsi);
+          }
+          pendingDisconnects.clear();
         }
 
       }
@@ -240,8 +240,12 @@ namespace {
             switch_mutex_unlock(cb->mutex);
             return -1;
           }
+          // there may be audio data, but only one write per writeable event
+          // get it next time
+          lws_callback_on_writable(cb->wsi);
           switch_mutex_unlock(cb->mutex);
-          return 0;  // there may be audio data, but only one write per writeable event -- get it next time
+
+          return 0;
         }
 
         if (cb->state == LWS_CLIENT_DISCONNECTING) {
