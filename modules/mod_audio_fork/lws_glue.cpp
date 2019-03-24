@@ -419,6 +419,8 @@ extern "C" {
       destroy_cb(cb);
       return SWITCH_STATUS_FALSE;
     }
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: successfully connected to host %s\n", 
+        switch_channel_get_name(channel), host);
 
     // write initial metadata
     if (metadata) {
@@ -497,6 +499,7 @@ extern "C" {
     bool written = false;
     int channels = switch_core_media_bug_test_flag(bug, SMBF_STEREO) ? 2 : 1;
 
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Got audio frame.\n");
     if (switch_mutex_trylock(cb->mutex) == SWITCH_STATUS_SUCCESS) {
       uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
       switch_frame_t frame = {};
@@ -529,6 +532,7 @@ extern "C" {
     }
 
     if (written) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Wrote audio frame.\n");
       addPendingWrite(cb);
       lws_cancel_service(cb->vhd->context);
     }
