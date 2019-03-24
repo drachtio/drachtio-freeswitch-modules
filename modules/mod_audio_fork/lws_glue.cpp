@@ -215,8 +215,6 @@ namespace {
         }
         else if (cb && cb->state == LWS_CLIENT_CONNECTED) {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_CLIENT_CLOSED from far end wsi: %p\n", wsi);
-          switch_mutex_lock(cb->mutex);
-          switch_mutex_unlock(cb->mutex);
           destroy_cb(cb);
         }
       }
@@ -411,11 +409,11 @@ extern "C" {
     addPendingConnect(cb);
     lws_cancel_service(context);
     switch_thread_cond_wait(cb->cond, cb->mutex);
-    switch_mutex_unlock(cb->mutex);
 
     if (cb->state == LWS_CLIENT_FAILED) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: failed connecting to host %s\n", 
         switch_channel_get_name(channel), host);
+      switch_mutex_unlock(cb->mutex);
       destroy_cb(cb);
       return SWITCH_STATUS_FALSE;
     }
@@ -431,6 +429,8 @@ extern "C" {
       addPendingWrite(cb);
       lws_cancel_service(cb->vhd->context);
     }
+    switch_mutex_unlock(cb->mutex);
+
 
     *ppUserData = cb;
     return SWITCH_STATUS_SUCCESS;
@@ -507,7 +507,9 @@ extern "C" {
       frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
 
       while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Read single frame.\n");
         if (frame.datalen) {
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Read %d bytes.\n", frame.datalen);
           size_t n = bufGetAvailable(cb) >> 1;  // divide by 2 to num of uint16_t spaces available
           if (n  > frame.samples) {
             spx_uint32_t out_len = n;
@@ -529,6 +531,9 @@ extern "C" {
         }
       }
       switch_mutex_unlock(cb->mutex);
+    }
+    else {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Failed to lock mutex.\n"); 
     }
 
     if (written) {
