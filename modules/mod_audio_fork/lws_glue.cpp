@@ -417,7 +417,7 @@ extern "C" {
       destroy_cb(cb);
       return SWITCH_STATUS_FALSE;
     }
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: successfully connected to host %s\n", 
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s: successfully connected to host %s\n", 
         switch_channel_get_name(channel), host);
 
     // write initial metadata
