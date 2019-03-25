@@ -240,8 +240,8 @@ namespace {
           }
           // there may be audio data, but only one write per writeable event
           // get it next time
-          lws_callback_on_writable(cb->wsi);
           switch_mutex_unlock(cb->mutex);
+          lws_callback_on_writable(cb->wsi);
 
           return 0;
         }
@@ -499,17 +499,14 @@ extern "C" {
     bool written = false;
     int channels = switch_core_media_bug_test_flag(bug, SMBF_STEREO) ? 2 : 1;
 
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Got audio frame.\n");
     if (switch_mutex_trylock(cb->mutex) == SWITCH_STATUS_SUCCESS) {
       uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
-      switch_frame_t frame = {};
+      switch_frame_t frame = { 0 };
       frame.data = data;
       frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
 
       while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Read single frame.\n");
         if (frame.datalen) {
-          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Read %d bytes.\n", frame.datalen);
           size_t n = bufGetAvailable(cb) >> 1;  // divide by 2 to num of uint16_t spaces available
           if (n  > frame.samples) {
             spx_uint32_t out_len = n;
@@ -532,12 +529,8 @@ extern "C" {
       }
       switch_mutex_unlock(cb->mutex);
     }
-    else {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Failed to lock mutex.\n"); 
-    }
 
     if (written) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Wrote audio frame.\n");
       addPendingWrite(cb);
       lws_cancel_service(cb->vhd->context);
     }
