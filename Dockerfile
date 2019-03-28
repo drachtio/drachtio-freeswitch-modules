@@ -6,7 +6,9 @@ COPY ./modules/mod_google_tts /mod_google_tts
 COPY ./modules/mod_google_transcribe /mod_google_transcribe
 COPY ./modules/mod_dialogflow /mod_dialogflow
 
-RUN apt-get update && apt-get -y --quiet --force-yes upgrade \
+RUN echo "deb http://archive.debian.org/debian jessie-backports main" > /etc/apt/sources.list.d/jessie-backports.list \
+    && echo "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf \
+    && apt-get update && apt-get -y --quiet --force-yes upgrade \
     && apt-get install -y --quiet --no-install-recommends wget curl git automake autoconf cmake libtool libtool-bin build-essential pkg-config zlib1g-dev libjpeg-dev sqlite3 libsqlite3-dev libcurl4-gnutls-dev libldns-dev libpcre3-dev libspeex-dev libspeexdsp-dev libedit-dev libssl-dev yasm libopus-dev libsndfile-dev ca-certificates php5-dev liblua5.2-dev python \
     && apt-get update \
     && wget  --no-check-certificate  -O - https://files.freeswitch.org/repo/deb/debian/freeswitch_archive_g0.pub | apt-key add - \

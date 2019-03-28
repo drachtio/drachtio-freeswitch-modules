@@ -10,6 +10,7 @@ switch_status_t fork_cleanup();
 switch_status_t fork_session_init(switch_core_session_t *session, 
 		uint32_t samples_per_second, char *host, unsigned int port, char* path, int sampling, int sslFlags, int channels, char* metadata, void **ppUserData);
 switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text);
+switch_status_t fork_session_channel_close(switch_core_session_t *session);
 switch_status_t fork_session_send_text(switch_core_session_t *session, char* text);
 switch_bool_t fork_frame(switch_media_bug_t *bug, void* user_data);
 switch_status_t fork_service_thread();
