@@ -25,8 +25,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	case SWITCH_ABC_TYPE_CLOSE:
 		{
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Got SWITCH_ABC_TYPE_CLOSE.\n");
-			//fork_session_cleanup(session, NULL);
-      fork_session_channel_close(session)l
+      fork_session_channel_close(session);
 		}
 		break;
 	
