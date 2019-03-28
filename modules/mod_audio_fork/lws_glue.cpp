@@ -277,6 +277,7 @@ namespace {
             switch_mutex_unlock(cb->mutex);
             return -1;
           }
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "wrote %d bytes of text\n", n);
 
           // there may be audio data, but only one write per writeable event
           // get it next time

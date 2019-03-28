@@ -95,7 +95,12 @@ static switch_status_t do_stop(switch_core_session_t *session, char* text)
 	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
 
 	if (bug) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: stopping audio feed.\n");
+    if (text) {
+  		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: stop w/ final text %s\n", text);
+    }
+    else {
+  		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: stop\n");
+    }
 		status = fork_session_cleanup(session, text);
 	}
 
