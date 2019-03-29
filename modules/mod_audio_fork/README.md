@@ -42,6 +42,20 @@ const url = 'https://70f21a76.ngrok.io';
 const callerData = {to: '6173333456', from: '2061236666', callid: req.get('Call-Id')};
 ep.api('uuid_audio_fork', `${ep.uuid} start ${url} mono 8k ${JSON.stringify(callerData)}`);
 ```
+or, from version 1.4.1 on, by using the Endpoint convenience methods:
+```js
+await ep.forkAudioStart({
+  wsUrl,
+  mixType: 'stereo',
+  sampling: '16k',
+  metadata
+});
+..
+ep.forkAudioSendText(moremetadata);
+..
+ep.forkAudioStop(evenmoremetadata);
+```
+Each of the methods above returns a promise that resolves when the api command has been executed, or throws an error.
 ## Examples
 [audio_fork.js](../../examples/audio_fork.js) provides an example of an application that connects an incoming call to Freeswitch and then forks the audio to a remote websocket server.
 
