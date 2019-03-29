@@ -540,7 +540,6 @@ extern "C" {
 
     if (bug) {
       struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
-      switch_channel_set_private(channel, MY_BUG_NAME, NULL);
       if (cb->wsi) {
         switch_mutex_lock(cb->mutex);
 
@@ -557,7 +556,6 @@ extern "C" {
 
       return SWITCH_STATUS_SUCCESS;
     }
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s Bug is not attached.\n", switch_channel_get_name(channel));
     return SWITCH_STATUS_FALSE;
   }
 
