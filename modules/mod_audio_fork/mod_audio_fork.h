@@ -46,6 +46,9 @@ struct cap_cb {
   uint8_t audio_buffer[LWS_PRE + (SWITCH_RECOMMENDED_BUFFER_SIZE << 1)];
   uint8_t* buf_head;
   struct lws_per_vhost_data* vhd;
+  size_t frames_recv;
+  size_t bytes_sendable;
+  size_t bytes_sent;
 };
 
 #endif

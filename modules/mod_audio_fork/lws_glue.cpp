@@ -290,6 +290,9 @@ namespace {
 
         if (cb->state == LWS_CLIENT_DISCONNECTING) {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_WRITEABLE closing connection wsi: %p\n", wsi);
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
+            "lws_callback LWS_CALLBACK_WRITEABLE closing connection wsi: %p, frames recvd %d, bytes sendable: %d, bytes sent %d\n", 
+            wsi, cb->frames_recv, cb->bytes_sendable, cb->bytes_sent);
           lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
           switch_mutex_unlock(cb->mutex);
           return -1;
@@ -311,6 +314,7 @@ namespace {
             switch_mutex_unlock(cb->mutex);
             return -1;
           }
+          cb->bytes_sent += m;
           bufInit(cb);
         }
         switch_mutex_unlock(cb->mutex);
@@ -441,6 +445,7 @@ extern "C" {
     cb->vhd = NULL;
     cb->metadata = NULL;
     cb->sampling = sampling;
+    cb->frames_recv = cb->bytes_sendable = cb->bytes_sent = 0;
     bufInit(cb);
 
     switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
@@ -574,6 +579,7 @@ extern "C" {
       while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
         if (frame.datalen) {
           size_t n = bufGetAvailable(cb) >> 1;  // divide by 2 to num of uint16_t spaces available
+          cb->frames_recv += frame.samples;
           if (n  > frame.samples) {
             spx_uint32_t out_len = n;
             spx_uint32_t in_len = frame.samples;
@@ -585,7 +591,9 @@ extern "C" {
               &out_len);
 
              // i.e., if we wrote 320 16bit items then we need to increment 320*2 bytes in single-channel mode, twice that in dual channel  
-            bufBumpWriteHead(cb, out_len << channels);        
+            spx_uint32_t bytesWritten = out_len << channels;
+            bufBumpWriteHead(cb, bytesWritten);        
+            cb->bytes_sendable += bytesWritten;
             written = true;
           }
           else {
