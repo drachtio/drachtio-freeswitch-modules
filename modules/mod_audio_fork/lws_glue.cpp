@@ -18,11 +18,9 @@ namespace {
   static std::list<struct cap_cb *> pendingConnects;
   static std::list<struct cap_cb *> pendingDisconnects;
   static std::list<struct cap_cb *> pendingWrites;
-  static std::list<struct cap_cb *> pendingCloseWaits;
   static std::mutex g_mutex_connects;
   static std::mutex g_mutex_disconnects;
   static std::mutex g_mutex_writes;
-  static std::mutex g_mutex_close_waits;
 
   void bufInit(struct cap_cb* cb) {
     cb->buf_head = &cb->audio_buffer[0] + LWS_PRE;
@@ -58,13 +56,6 @@ namespace {
     cb->state = LWS_CLIENT_DISCONNECTING;
     pendingDisconnects.push_back(cb);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "addPendingDisconnect - after adding there are now %d pending\n", pendingDisconnects.size());
-  }
-
-  void addPendingCloseWait(struct cap_cb* cb) {
-    std::lock_guard<std::mutex> guard(g_mutex_close_waits);
-    cb->state = LWS_CLIENT_CLOSE_WAIT;
-    pendingCloseWaits.push_back(cb);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "wsi %p: addPendingCloseWait - after adding there are now %d pending\n", (void*) cb, pendingDisconnects.size());
   }
 
   void addPendingWrite(struct cap_cb* cb) {
@@ -120,10 +111,6 @@ namespace {
 
     return 1;
   }
-  static void schedule_callback(struct lws *wsi, int reason, int secs) {
-          lws_timed_callback_vh_protocol(lws_get_vhost(wsi),
-                  lws_get_protocol(wsi), reason, secs);
-  }
 
   static int lws_callback(struct lws *wsi, 
     enum lws_callback_reasons reason,
@@ -177,17 +164,6 @@ namespace {
           }
           pendingDisconnects.clear();
         }
-
-        // process close_waits
-        {
-          std::lock_guard<std::mutex> guard(g_mutex_close_waits);
-          for (auto it = pendingCloseWaits.begin(); it != pendingCloseWaits.end(); ++it) {
-            struct cap_cb* cb = *it;
-            lws_callback_on_writable(cb->wsi);
-          }
-          pendingCloseWaits.clear();
-        }
-
       }
       break;
 
@@ -243,22 +219,6 @@ namespace {
       }
       break;
 
-    case LWS_CALLBACK_USER:
-      {
-        struct cap_cb *cb = *pCb;
-
-        if (cb->state == LWS_CLIENT_CLOSE_WAIT) {
-          // timeout after channel close has expired (allows time to send last text frame)
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_USER close_wait timer expired wsi: %p\n", wsi);
-          lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
-          destroy_cb(cb);
-          return -1;
-        }
-
-      }
-
-      break;
-
     case LWS_CALLBACK_CLIENT_WRITEABLE:
       {
         struct cap_cb *cb = *pCb;
@@ -282,24 +242,17 @@ namespace {
           // there may be audio data, but only one write per writeable event
           // get it next time
           switch_mutex_unlock(cb->mutex);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_WRITEABLE sent text frame wsi: %p\n", wsi);
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_WRITEABLE sent text frame (%d bytes) wsi: %p\n", wsi, n);
           lws_callback_on_writable(cb->wsi);
 
           return 0;
         }
 
         if (cb->state == LWS_CLIENT_DISCONNECTING) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_WRITEABLE closing connection wsi: %p\n", wsi);
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_WRITEABLE closing connection wsi: %p\n", wsi);
           lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
           switch_mutex_unlock(cb->mutex);
           return -1;
-        }
-
-        if (cb->state == LWS_CLIENT_CLOSE_WAIT) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_WRITEABLE close_wait -- waiting 1 sec for final text frame, wsi: %p\n", wsi);
-          schedule_callback(wsi, LWS_CALLBACK_USER, 1);
-          switch_mutex_unlock(cb->mutex);
-          return 0;
         }
 
         // check for audio packets
@@ -484,24 +437,6 @@ extern "C" {
 
     *ppUserData = cb;
     return SWITCH_STATUS_SUCCESS;
-  }
-
-  switch_status_t fork_session_channel_close(switch_core_session_t *session) {
-    switch_channel_t *channel = switch_core_session_get_channel(session);
-    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
-
-    if (bug) {
-      struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
-      if (cb->wsi) {
-        switch_mutex_lock(cb->mutex);
-        addPendingCloseWait(cb);
-        switch_mutex_unlock(cb->mutex);
-      }
-
-      return SWITCH_STATUS_SUCCESS; 
-    }
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s Bug is not attached.\n", switch_channel_get_name(channel));
-    return SWITCH_STATUS_FALSE;
   }
 
   switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text) {
