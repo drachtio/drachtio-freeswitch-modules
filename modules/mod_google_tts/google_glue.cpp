@@ -25,6 +25,12 @@ static std::unordered_set<std::string> setVoices;
 extern "C" {
 	switch_status_t google_speech_load() {
 		try {
+			const char* gcsServiceKeyFile = std::getenv("GOOGLE_APPLICATION_CREDENTIALS");
+			if (NULL == gcsServiceKeyFile) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, 
+					"Error: \"GOOGLE_APPLICATION_CREDENTIALS\" environment variable must be set to path of the file containing service account json key\n");
+				return SWITCH_STATUS_FALSE;     
+			}
       creds = grpc::GoogleDefaultCredentials();
 			auto channel = grpc::CreateChannel("texttospeech.googleapis.com", creds);
 			auto stub = TextToSpeech::NewStub(channel);

@@ -11,54 +11,7 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown);
 SWITCH_MODULE_RUNTIME_FUNCTION(mod_transcribe_runtime);
 SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load);
 
-/* SWITCH_MODULE_DEFINITION(name, load, shutdown, runtime) 
- * Defines a switch_loadable_module_function_table_t and a static const char[] modname
- */
 SWITCH_MODULE_DEFINITION(mod_google_transcribe, mod_transcribe_load, mod_transcribe_shutdown, NULL);
-
-static struct {
-	char *google_app_credentials_filepath;
-	int threadpool_size;
-} globals;
-
-static switch_xml_config_int_options_t config_opt_integer = { SWITCH_TRUE, 0, SWITCH_TRUE, 10 };
-
-static switch_xml_config_item_t instructions[] = {
-	/* parameter name        type                 reloadable   pointer                         default value     options structure */
-	SWITCH_CONFIG_ITEM("google-application-credentials-json-file", SWITCH_CONFIG_STRING, CONFIG_RELOADABLE, &globals.google_app_credentials_filepath, 
-					NULL, NULL, NULL, "Specifies the path to the .json file containing the google service account credentials."),
-	SWITCH_CONFIG_ITEM("threadpool-size", SWITCH_CONFIG_INT, CONFIG_RELOADABLE, &globals.threadpool_size, (void *) 1, &config_opt_integer, NULL, NULL),
-	SWITCH_CONFIG_ITEM_END()
-};
-
-static switch_status_t do_config(switch_bool_t reload)
-{
-	memset(&globals, 0, sizeof(globals));
-
-	if (switch_xml_config_parse_module_settings("google_transcribe.conf", reload, instructions) != SWITCH_STATUS_SUCCESS) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Error finding or parsing configuration from google_transcribe.conf\n");
-		return SWITCH_STATUS_FALSE;
-	}
-
-	if (!globals.google_app_credentials_filepath || 
-		!strcmp("path-to-service-key.json", globals.google_app_credentials_filepath)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "You must set the 'google-application-credentials-json-file' attribute in google_transcribe.conf\n");
-		return SWITCH_STATUS_FALSE;
-	}
-
-	if (access(globals.google_app_credentials_filepath, F_OK) == -1) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "file %s does not exist\n", globals.google_app_credentials_filepath);
-		return SWITCH_STATUS_FALSE;
-	}
-	if (setenv("GOOGLE_APPLICATION_CREDENTIALS", globals.google_app_credentials_filepath, 1) < 0) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Error setting GOOGLE_APPLICATION_CREDENTIALS env var: %s\n", 
-			strerror(errno));
-		return SWITCH_STATUS_FALSE;
-	}
-
-
-	return SWITCH_STATUS_SUCCESS;
-}
 
 static void responseHandler(switch_core_session_t* session, char * json) {
 	switch_event_t *event;
@@ -216,9 +169,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load)
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Google Speech Transcription API loading..\n");
 
-	if (SWITCH_STATUS_FALSE == do_config(SWITCH_FALSE)) return SWITCH_STATUS_FALSE;
-
-  if (SWITCH_STATUS_FALSE == google_speech_init(globals.google_app_credentials_filepath, 0)) {
+  if (SWITCH_STATUS_FALSE == google_speech_init()) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Failed initializing google speech interface\n");
 	}
 
@@ -237,8 +188,6 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load)
   Macro expands to: switch_status_t mod_google_transcribe_shutdown() */
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown)
 {
-	/* Cleanup dynamically allocated config settings */
-	switch_xml_config_cleanup(instructions);
 	google_speech_cleanup();
 	switch_event_free_subclass(TRANSCRIBE_EVENT_RESULTS);
 	return SWITCH_STATUS_SUCCESS;

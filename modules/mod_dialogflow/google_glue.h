@@ -1,7 +1,7 @@
 #ifndef __GOOGLE_GLUE_H__
 #define __GOOGLE_GLUE_H__
 
-switch_status_t google_dialogflow_init(const char* szFilename, int threadpool_size);
+switch_status_t google_dialogflow_init();
 switch_status_t google_dialogflow_cleanup();
 switch_status_t google_dialogflow_session_init(switch_core_session_t *session, responseHandler_t responseHandler, errorHandler_t errorHandler, 
 		completionHandler_t completionHandler, uint32_t samples_per_second, char* lang, char* projectId, char* welcomeEvent, struct cap_cb **cb);

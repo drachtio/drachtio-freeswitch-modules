@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <cassert>
+#include <cstdlib>
 
 #include "mod_audio_fork.h"
 
@@ -13,6 +14,7 @@
 #define MAX_BUFFERED_MSGS (100)
 
 namespace {
+  static const char* mySubProtocolName = std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME");
   static int interrupted = 0;
   static struct lws_context *context = NULL;
   static std::list<struct cap_cb *> pendingConnects;
@@ -98,7 +100,7 @@ namespace {
     i.host = i.address;
     i.origin = i.address;
     i.ssl_connection = cb->sslFlags;
-    i.protocol = "audiostream.drachtio.org";
+    i.protocol = mySubProtocolName ? mySubProtocolName : "audiostream.drachtio.org";
     i.pwsi = &(cb->wsi);
 
     cb->state = LWS_CLIENT_CONNECTING;

@@ -1,3 +1,5 @@
+#include <cstdlib>
+
 #include <switch.h>
 #include <switch_json.h>
 #include <grpc++/grpc++.h>
@@ -117,12 +119,18 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
 }
 
 extern "C" {
-    switch_status_t google_speech_init(const char* szFilename) {
+    switch_status_t google_speech_init() {
+      const char* gcsServiceKeyFile = std::getenv("GOOGLE_APPLICATION_CREDENTIALS");
+      if (NULL == gcsServiceKeyFile) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, 
+          "Error: \"GOOGLE_APPLICATION_CREDENTIALS\" environment variable must be set to path of the file containing service account json key\n");
+        return SWITCH_STATUS_FALSE;     
+      }
       try {
         auto creds = grpc::GoogleDefaultCredentials();
       } catch (const std::exception& e) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, 
-          "Error initializing google api with provided credentials %s: %s\n", szFilename, e.what());
+          "Error initializing google api with provided credentials in %s: %s\n", gcsServiceKeyFile, e.what());
         return SWITCH_STATUS_FALSE;
       }
       return SWITCH_STATUS_SUCCESS;

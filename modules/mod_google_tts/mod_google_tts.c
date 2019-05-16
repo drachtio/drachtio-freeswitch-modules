@@ -12,45 +12,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_google_tts_load);
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_google_tts_shutdown);
 SWITCH_MODULE_DEFINITION(mod_google_tts, mod_google_tts_load, mod_google_tts_shutdown, NULL);
 
-static struct {
-	char *google_app_credentials_filepath;
-} globals;
 
-static switch_xml_config_item_t instructions[] = {
-	/* parameter name        type                 reloadable   pointer                         default value     options structure */
-	SWITCH_CONFIG_ITEM("google-application-credentials-json-file", SWITCH_CONFIG_STRING, CONFIG_RELOADABLE, &globals.google_app_credentials_filepath, 
-					NULL, NULL, NULL, "Specifies the path to the .json file containing the google service account credentials."),
-	SWITCH_CONFIG_ITEM_END()
-};
-
-static switch_status_t do_config(switch_bool_t reload)
-{
-	memset(&globals, 0, sizeof(globals));
-
-	if (switch_xml_config_parse_module_settings("google_tts.conf", reload, instructions) != SWITCH_STATUS_SUCCESS) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Error finding or parsing configuration from google_tts.conf\n");
-		return SWITCH_STATUS_FALSE;
-	}
-
-	if (!globals.google_app_credentials_filepath || 
-		!strcmp("path-to-service-key.json", globals.google_app_credentials_filepath)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "You must set the 'google-application-credentials-json-file' attribute in google_transcribe.conf\n");
-		return SWITCH_STATUS_FALSE;
-	}
-
-	if (access(globals.google_app_credentials_filepath, F_OK) == -1) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "file %s does not exist\n", globals.google_app_credentials_filepath);
-		return SWITCH_STATUS_FALSE;
-	}
-	if (setenv("GOOGLE_APPLICATION_CREDENTIALS", globals.google_app_credentials_filepath, 1) < 0) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Error setting GOOGLE_APPLICATION_CREDENTIALS env var: %s\n", 
-			strerror(errno));
-		return SWITCH_STATUS_FALSE;
-	}
-
-
-	return SWITCH_STATUS_SUCCESS;
-}
 static switch_status_t speech_open(switch_speech_handle_t *sh, const char *voice_name, int rate, int channels, switch_speech_flag_t *flags)
 {	
 	switch_uuid_t uuid;
@@ -186,8 +148,6 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_google_tts_load)
 	speech_interface->speech_numeric_param_tts = numeric_param_tts;
 	speech_interface->speech_float_param_tts = float_param_tts;
 
-	if (SWITCH_STATUS_FALSE == do_config(SWITCH_FALSE)) return SWITCH_STATUS_FALSE;
-
 	return google_speech_load();
 }
 
@@ -196,14 +156,3 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_google_tts_shutdown)
 
 	return SWITCH_STATUS_UNLOAD;
 }
-
-/* For Emacs:
- * Local Variables:
- * mode:c
- * indent-tabs-mode:t
- * tab-width:4
- * c-basic-offset:4
- * End:
- * For VIM:
- * vim:set softtabstop=4 shiftwidth=4 tabstop=4 noet:
- */
