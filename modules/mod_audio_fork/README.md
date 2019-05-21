@@ -35,12 +35,12 @@ Closes websocket connection and detaches media bug, optionally sending a final t
 ### Events
 An optional feature of this module is that it can receive JSON text frames from the server and generate associated events to an application.  The format of the JSON text frames and the associated events are described below.
 
-#### ivrAudio
+#### audio
 ##### server JSON message
 The server can provide audio content to be played back to the caller by sending a JSON text frame like this:
 ```json
 {
-	"type": "ivrAudio",
+	"type": "audio",
 	"data": {
 		"audioContentType": "raw",
 		"sampleRate": 8000,
@@ -51,7 +51,7 @@ The server can provide audio content to be played back to the caller by sending 
 ```
 The `audioContentType` value can be either `wave` or `raw`.  If the latter, then `sampleRate` must be specified.  The audio content itself is supplied as a base64 encoded string.  The `textContent` attribute can optionally contain the text of the prompt.  This allows an application to choose whether to play the raw audio or to use its own text-to-speech to play the text prompt.
 
-Note that the module does _not_ directly play out the raw audio.  Instead, it writes it to a temporary file and provides the path to the file in the event generated.
+Note that the module does _not_ directly play out the raw audio.  Instead, it writes it to a temporary file and provides the path to the file in the event generated.  It is left to the application to play out this file if it wishes to do so.
 ##### Freeswitch event generated
 **Name**: mod_audio_fork::audio
 **Body**: JSON string
