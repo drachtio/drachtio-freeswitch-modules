@@ -14,6 +14,21 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load);
 
 SWITCH_MODULE_DEFINITION(mod_audio_fork, mod_audio_fork_load, mod_audio_fork_shutdown, mod_audio_fork_runtime);
 
+static void responseHandler(const char* sessionId, const char * eventName, char * json) {
+	switch_event_t *event;
+
+  switch_core_session_t* session = switch_core_session_locate(sessionId);
+  if (session) {
+    switch_channel_t *channel = switch_core_session_get_channel(session);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "json payload: %s.\n", json);
+    switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
+    switch_channel_event_set_data(channel, event);
+    switch_event_add_body(event, "%s", json);
+    switch_event_fire(&event);
+    switch_core_session_rwunlock(session);
+  }
+}
+
 static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type)
 {
 	switch_core_session_t *session = switch_core_media_bug_get_session(bug);
@@ -74,7 +89,7 @@ static switch_status_t start_capture(switch_core_session_t *session,
 		return SWITCH_STATUS_FALSE;
 	}
 
-	if (SWITCH_STATUS_FALSE == fork_session_init(session, read_impl.samples_per_second, host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == fork_session_init(session, responseHandler, read_impl.samples_per_second, host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing mod_audio_fork session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
@@ -123,7 +138,7 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
   return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop | send_text ] [wss-url] [mono | mixed | stereo] [8k | 16k] [metadata]"
+#define FORK_API_SYNTAX "<uuid> [start | stop | send_text] [wss-url | path] [mono | mixed | stereo] [8k | 16k] [metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
 	char *mycmd = NULL, *argv[6] = { 0 };
@@ -214,6 +229,17 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load)
 	/* connect my internal structure to the blank pointer passed to me */
 	*module_interface = switch_loadable_module_create_module_interface(pool, modname);
 
+	/* create/register custom event message types */
+	if (switch_event_reserve_subclass(EVENT_TRANSCRIPTION) != SWITCH_STATUS_SUCCESS ||
+    switch_event_reserve_subclass(EVENT_TRANSFER) != SWITCH_STATUS_SUCCESS ||
+    switch_event_reserve_subclass(EVENT_AUDIO) != SWITCH_STATUS_SUCCESS ||
+    switch_event_reserve_subclass(EVENT_ERROR) != SWITCH_STATUS_SUCCESS ||
+    switch_event_reserve_subclass(EVENT_DISCONNECT) != SWITCH_STATUS_SUCCESS) {
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register an event subclass for mod_audio_fork API.\n");
+		return SWITCH_STATUS_TERM;
+	}
+
 	SWITCH_ADD_API(api_interface, "uuid_audio_fork", "audio_fork API", fork_function, FORK_API_SYNTAX);
 	switch_console_set_complete("add uuid_audio_fork start wss-url metadata");
 	switch_console_set_complete("add uuid_audio_fork start wss-url");
@@ -235,6 +261,12 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown)
 {
 	fork_cleanup();
   mod_running = 0;
+	switch_event_free_subclass(EVENT_TRANSCRIPTION);
+	switch_event_free_subclass(EVENT_TRANSFER);
+	switch_event_free_subclass(EVENT_AUDIO);
+	switch_event_free_subclass(EVENT_DISCONNECT);
+	switch_event_free_subclass(EVENT_ERROR);
+
 	return SWITCH_STATUS_SUCCESS;
 }
 

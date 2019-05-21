@@ -1,4 +1,5 @@
 #include <switch.h>
+#include <switch_json.h>
 #include <string.h>
 #include <string>
 #include <mutex>
@@ -7,14 +8,18 @@
 #include <condition_variable>
 #include <cassert>
 #include <cstdlib>
+#include <fstream>
 
+#include "base64.hpp"
+#include "parser.hpp"
 #include "mod_audio_fork.h"
 
 // buffer at most 2 secs of audio (at 20 ms packetization)
 #define MAX_BUFFERED_MSGS (100)
 
 namespace {
-  static const char* mySubProtocolName = std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME");
+  static const char* mySubProtocolName = std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") ?
+    std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") : "audiostream.drachtio.org";
   static int interrupted = 0;
   static struct lws_context *context = NULL;
   static std::list<struct cap_cb *> pendingConnects;
@@ -23,6 +28,9 @@ namespace {
   static std::mutex g_mutex_connects;
   static std::mutex g_mutex_disconnects;
   static std::mutex g_mutex_writes;
+  static uint32_t playCount = 0;
+
+	uint32_t bumpPlayCount(void) { return ++playCount; }
 
   void bufInit(struct cap_cb* cb) {
     cb->buf_head = &cb->audio_buffer[0] + LWS_PRE;
@@ -88,6 +96,129 @@ namespace {
     cb->state = LWS_CLIENT_DISCONNECTED;
   }
 
+  void processIncomingMessage(struct cap_cb* cb, int isBinary) {
+    assert(cb->recv_buf);
+    std::string type;
+
+    if (isBinary) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "processIncomingMessage - unexpected binary message, discarding..\n");
+      return;
+    }
+    std::string msg((char *)cb->recv_buf, cb->recv_buf_ptr - cb->recv_buf);
+    cJSON* json = parse_json(cb->sessionId, msg, type) ;
+    if (json) {
+      cJSON* jsonData = cJSON_GetObjectItem(json, "data");
+      if (jsonData) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "processIncomingMessage - received %s message\n", type.c_str());
+        if (0 == type.compare("audio")) {
+          if (jsonData) {
+            // dont send actual audio bytes in event message
+            cJSON* jsonFile = NULL;
+            cJSON* jsonAudio = cJSON_DetachItemFromObject(jsonData, "audioContent");
+            int validAudio = (jsonAudio && NULL != jsonAudio->valuestring);
+
+            const char* szAudioContentType = cJSON_GetObjectCstr(jsonData, "audioContentType");
+            char fileType[6];
+            int sampleRate = 16000;
+            if (0 == strcmp(szAudioContentType, "raw")) {
+              cJSON* jsonSR = cJSON_GetObjectItem(jsonData, "sampleRate");
+              sampleRate = jsonSR && jsonSR->valueint ? jsonSR->valueint : 0;
+
+              switch(sampleRate) {
+                case 8000:
+                  strcpy(fileType, ".r8");
+                  break;
+                case 16000:
+                  strcpy(fileType, ".r16");
+                  break;
+                case 24000:
+                  strcpy(fileType, ".r24");
+                  break;
+                case 32000:
+                  strcpy(fileType, ".r32");
+                  break;
+                case 48000:
+                  strcpy(fileType, ".r48");
+                  break;
+                case 64000:
+                  strcpy(fileType, ".r64");
+                  break;
+                default:
+                  strcpy(fileType, ".r16");
+                  break;
+              }
+            }
+            else if (0 == strcmp(szAudioContentType, ".wave")) {
+              strcpy(fileType, "wave");
+            }
+            else {
+              validAudio = 0;
+              switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "processIncomingMessage - unsupported audioContentType: %s\n", 
+                szAudioContentType);
+            }
+
+            if (validAudio) {
+              char szFilePath[256];
+
+              std::string rawAudio = drachtio::base64_decode(jsonAudio->valuestring);
+              switch_snprintf(szFilePath, 256, "%s%s%s_%d.tmp%s", SWITCH_GLOBAL_dirs.temp_dir, 
+                SWITCH_PATH_SEPARATOR, cb->sessionId, bumpPlayCount(), fileType);
+              std::ofstream f(szFilePath, std::ofstream::binary);
+              f << rawAudio;
+              f.close();
+
+              // add the file to the list of files played for this session, we'll delete when session closes
+              struct playout* playout = (struct playout *) malloc(sizeof(struct playout));
+              playout->file = (char *) malloc(strlen(szFilePath) + 1);
+              strcpy(playout->file, szFilePath);
+              playout->next = cb->playout;
+              cb->playout = playout;
+
+              jsonFile = cJSON_CreateString(szFilePath);
+              cJSON_AddItemToObject(jsonData, "file", jsonFile);
+            }
+
+            char* jsonString = cJSON_PrintUnformatted(jsonData);
+            cb->responseHandler(cb->sessionId, EVENT_AUDIO, jsonString);
+            free(jsonString);
+            if (jsonAudio) cJSON_Delete(jsonAudio);
+          }
+        }
+        else if (0 == type.compare("transcription")) {
+          char* jsonString = cJSON_PrintUnformatted(jsonData);
+          cb->responseHandler(cb->sessionId, EVENT_TRANSCRIPTION, jsonString);
+          free(jsonString);        
+        }
+        else if (0 == type.compare("transfer")) {
+          char* jsonString = cJSON_PrintUnformatted(jsonData);
+          cb->responseHandler(cb->sessionId, EVENT_TRANSFER, jsonString);
+          free(jsonString);                
+        }
+        else if (0 == type.compare("disconnect")) {
+          char* jsonString = cJSON_PrintUnformatted(jsonData);
+          cb->responseHandler(cb->sessionId, EVENT_DISCONNECT, jsonString);
+          free(jsonString);        
+        }
+        else if (0 == type.compare("error")) {
+          char* jsonString = cJSON_PrintUnformatted(jsonData);
+          cb->responseHandler(cb->sessionId, EVENT_ERROR, jsonString);
+          free(jsonString);        
+        }
+        else {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "processIncomingMessage - unsupported msg type %s\n", type.c_str());  
+        }
+      }
+      else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "processIncomingMessage - missing 'data' property\n", type.c_str());  
+      }
+      cJSON_Delete(json);
+    }
+
+    delete [] cb->recv_buf;
+    cb->recv_buf = NULL;
+    cb->recv_buf_ptr = NULL;
+  }
+
   int connect_client(struct cap_cb* cb, struct lws_per_vhost_data *vhd) {
     struct lws_client_connect_info i;
 
@@ -100,7 +231,7 @@ namespace {
     i.host = i.address;
     i.origin = i.address;
     i.ssl_connection = cb->sslFlags;
-    i.protocol = mySubProtocolName ? mySubProtocolName : "audiostream.drachtio.org";
+    i.protocol = mySubProtocolName;
     i.pwsi = &(cb->wsi);
 
     cb->state = LWS_CLIENT_CONNECTING;
@@ -221,6 +352,34 @@ namespace {
       }
       break;
 
+    case LWS_CALLBACK_CLIENT_RECEIVE:
+      {
+        struct cap_cb *cb = *pCb;
+        switch_mutex_lock(cb->mutex);
+
+        if (lws_is_first_fragment(wsi)) {
+          // allocate a buffer for the entire chunk of memory needed
+          assert(NULL == cb->recv_buf);
+          size_t bufLen = len + lws_remaining_packet_payload(wsi);
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "LWS_CALLBACK_CLIENT_RECEIVE allocating %d bytes\n", bufLen);
+          cb->recv_buf = new uint8_t[bufLen];
+          cb->recv_buf_ptr = cb->recv_buf;
+        }
+
+        assert(NULL != cb->recv_buf);
+        if (len > 0) {
+          // if we got any data, append it to the buffer
+          memcpy(cb->recv_buf_ptr, in, len);
+          cb->recv_buf_ptr += len;
+        }
+
+        if (lws_is_final_fragment(wsi)) {
+          processIncomingMessage(cb, lws_frame_is_binary(wsi));
+        }
+        switch_mutex_unlock(cb->mutex);
+      }
+      break;
+
     case LWS_CALLBACK_CLIENT_WRITEABLE:
       {
         struct cap_cb *cb = *pCb;
@@ -283,7 +442,7 @@ namespace {
 
   static const struct lws_protocols protocols[] = {
     {
-      "audiostream.drachtio.org",
+      mySubProtocolName,
       lws_callback,
       sizeof(void *),
       0,
@@ -368,6 +527,7 @@ extern "C" {
   }
 
   switch_status_t fork_session_init(switch_core_session_t *session, 
+              responseHandler_t responseHandler,
               uint32_t samples_per_second, 
               char *host,
               unsigned int port,
@@ -396,6 +556,8 @@ extern "C" {
     cb->vhd = NULL;
     cb->metadata = NULL;
     cb->sampling = sampling;
+    cb->responseHandler = responseHandler;
+    cb->playout = NULL;
     bufInit(cb);
 
     switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
@@ -458,6 +620,15 @@ extern "C" {
           memset(cb->metadata, 0, cb->metadata_length);
           memcpy(cb->metadata + LWS_PRE, text, strlen(text));
           addPendingWrite(cb);
+        }
+
+        struct playout* playout = cb->playout;
+        while (playout) {
+          std::remove(playout->file);
+          free(playout->file);
+          struct playout *tmp = playout;
+          playout = playout->next;
+          free(tmp);
         }
 
         lws_cancel_service(cb->vhd->context);

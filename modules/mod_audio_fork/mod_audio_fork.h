@@ -12,6 +12,12 @@
 #define MAX_WS_URL_LEN (512)
 #define MAX_PATH_LEN (128)
 
+#define EVENT_TRANSCRIPTION   "mod_audio_fork::transcription"
+#define EVENT_TRANSFER        "mod_audio_fork::transfer"
+#define EVENT_AUDIO           "mod_audio_fork::audio"
+#define EVENT_DISCONNECT      "mod_audio_fork::disconnect"
+#define EVENT_ERROR           "mod_audio_fork::error"
+
 enum {
 	LWS_CLIENT_IDLE,
 	LWS_CLIENT_CONNECTING,
@@ -27,12 +33,20 @@ struct lws_per_vhost_data {
   const struct lws_protocols *protocol;
 };
 
+struct playout {
+  char *file;
+  struct playout* next;
+};
+
+typedef void (*responseHandler_t)(const char* sessionId, const char* eventName, char* json);
+
 struct cap_cb {
 	switch_mutex_t *mutex;
   switch_thread_cond_t *cond;
 	char sessionId[MAX_SESSION_ID];
 	char *base;
   SpeexResamplerState *resampler;
+  responseHandler_t responseHandler;
   int state;
   char host[MAX_WS_URL_LEN];
   unsigned int port;
@@ -44,6 +58,9 @@ struct cap_cb {
   struct lws *wsi;
   uint8_t audio_buffer[LWS_PRE + (SWITCH_RECOMMENDED_BUFFER_SIZE << 1)];
   uint8_t* buf_head;
+  uint8_t* recv_buf;
+  uint8_t* recv_buf_ptr;
+  struct playout* playout;
   struct lws_per_vhost_data* vhd;
 };
 
