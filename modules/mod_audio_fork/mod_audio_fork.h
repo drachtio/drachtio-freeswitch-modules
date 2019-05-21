@@ -12,11 +12,11 @@
 #define MAX_WS_URL_LEN (512)
 #define MAX_PATH_LEN (128)
 
-#define EVENT_TRANSCRIPTION   "audio_fork::transcription"
-#define EVENT_TRANSFER        "audio_fork::transfer"
-#define EVENT_AUDIO           "audio_fork::audio"
-#define EVENT_DISCONNECT      "audio_fork::disconnect"
-#define EVENT_ERROR           "audio_fork::error"
+#define EVENT_TRANSCRIPTION   "mod_audio_fork::transcription"
+#define EVENT_TRANSFER        "mod_audio_fork::transfer"
+#define EVENT_AUDIO           "mod_audio_fork::audio"
+#define EVENT_DISCONNECT      "mod_audio_fork::disconnect"
+#define EVENT_ERROR           "mod_audio_fork::error"
 
 enum {
 	LWS_CLIENT_IDLE,

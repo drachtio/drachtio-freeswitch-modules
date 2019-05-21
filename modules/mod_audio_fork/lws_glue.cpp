@@ -110,7 +110,7 @@ namespace {
       cJSON* jsonData = cJSON_GetObjectItem(json, "data");
       if (jsonData) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "processIncomingMessage - received %s message\n", type.c_str());
-        if (0 == type.compare("ivrAudio")) {
+        if (0 == type.compare("audio")) {
           if (jsonData) {
             // dont send actual audio bytes in event message
             cJSON* jsonFile = NULL;
