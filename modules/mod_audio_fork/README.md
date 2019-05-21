@@ -2,6 +2,8 @@
 
 A Freeswitch module that attaches a bug to a media server endpoint and streams L16 audio via websockets to a remote server.  This module also supports receiving media from the server to play back to the caller, enabling the creation of full-fledged IVR or dialog-type applications.
 
+The [websocket sub-protocol](https://tools.ietf.org/html/rfc6455#section-1.9) used will default to "audiostream.drachtio.org", but this can be overridden by setting the environment variable MOD_AUDIO_FORK_SUBPROTOCOL_NAME to the preferred sub-protocol name.
+
 ## API
 
 ### Commands
