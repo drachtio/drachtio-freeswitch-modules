@@ -2,7 +2,9 @@
 
 A Freeswitch module that attaches a bug to a media server endpoint and streams L16 audio via websockets to a remote server.  This module also supports receiving media from the server to play back to the caller, enabling the creation of full-fledged IVR or dialog-type applications.
 
-The [websocket sub-protocol](https://tools.ietf.org/html/rfc6455#section-1.9) used will default to "audiostream.drachtio.org", but this can be overridden by setting the environment variable MOD_AUDIO_FORK_SUBPROTOCOL_NAME to the preferred sub-protocol name.
+#### Environment variables
+- MOD_AUDIO_FORK_SUBPROTOCOL_NAME - optional, name of the [websocket sub-protocol](https://tools.ietf.org/html/rfc6455#section-1.9) to advertise; defaults to "audiostream.drachtio.org"
+- MOD_AUDIO_FORK_SERVICE_THREADS - optional, number of libwebsocket service threads to create; these threads handling sending all messages for all sessions.  Defaults to 1, but can be set to as many as 5.
 
 ## API
 
@@ -42,7 +44,7 @@ An optional feature of this module is that it can receive JSON text frames from 
 The server can provide audio content to be played back to the caller by sending a JSON text frame like this:
 ```json
 {
-	"type": "audio",
+	"type": "playAudio",
 	"data": {
 		"audioContentType": "raw",
 		"sampleRate": 8000,
@@ -55,7 +57,7 @@ The `audioContentType` value can be either `wave` or `raw`.  If the latter, then
 
 Note that the module does _not_ directly play out the raw audio.  Instead, it writes it to a temporary file and provides the path to the file in the event generated.  It is left to the application to play out this file if it wishes to do so.
 ##### Freeswitch event generated
-**Name**: mod_audio_fork::audio
+**Name**: mod_audio_fork::play_audio
 **Body**: JSON string
 ```
 {
@@ -66,6 +68,21 @@ Note that the module does _not_ directly play out the raw audio.  Instead, it wr
 }
 ```
 Note the audioContent attribute has been replaced with the path to the file containing the audio.  This temporary file will be removed when the Freeswitch session ends.
+#### killAudio
+##### server JSON message
+The server can provide a request to kill the current audio playback:
+```json
+{
+	"type": "killAudio",
+}
+```
+Any current audio being played to the caller will be immediately stopped.  The event sent to the application is for information purposes only.
+
+##### Freeswitch event generated
+**Name**: mod_audio_fork::kill_audio
+**Body**: JSON string - the data attribute from the server message
+
+
 #### transcription
 ##### server JSON message
 The server can optionally provide transcriptions to the application in real-time:

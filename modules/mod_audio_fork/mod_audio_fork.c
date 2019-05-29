@@ -20,10 +20,10 @@ static void responseHandler(const char* sessionId, const char * eventName, char 
   switch_core_session_t* session = switch_core_session_locate(sessionId);
   if (session) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "json payload: %s.\n", json);
+    if (json) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "json payload: %s.\n", json);
     switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
     switch_channel_event_set_data(channel, event);
-    switch_event_add_body(event, "%s", json);
+    if (json) switch_event_add_body(event, "%s", json);
     switch_event_fire(&event);
     switch_core_session_rwunlock(session);
   }
@@ -232,7 +232,8 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load)
 	/* create/register custom event message types */
 	if (switch_event_reserve_subclass(EVENT_TRANSCRIPTION) != SWITCH_STATUS_SUCCESS ||
     switch_event_reserve_subclass(EVENT_TRANSFER) != SWITCH_STATUS_SUCCESS ||
-    switch_event_reserve_subclass(EVENT_AUDIO) != SWITCH_STATUS_SUCCESS ||
+    switch_event_reserve_subclass(EVENT_PLAY_AUDIO) != SWITCH_STATUS_SUCCESS ||
+    switch_event_reserve_subclass(EVENT_KILL_AUDIO) != SWITCH_STATUS_SUCCESS ||
     switch_event_reserve_subclass(EVENT_ERROR) != SWITCH_STATUS_SUCCESS ||
     switch_event_reserve_subclass(EVENT_DISCONNECT) != SWITCH_STATUS_SUCCESS) {
 
@@ -263,7 +264,8 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown)
   mod_running = 0;
 	switch_event_free_subclass(EVENT_TRANSCRIPTION);
 	switch_event_free_subclass(EVENT_TRANSFER);
-	switch_event_free_subclass(EVENT_AUDIO);
+	switch_event_free_subclass(EVENT_PLAY_AUDIO);
+	switch_event_free_subclass(EVENT_KILL_AUDIO);
 	switch_event_free_subclass(EVENT_DISCONNECT);
 	switch_event_free_subclass(EVENT_ERROR);
 
@@ -278,6 +280,6 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown)
 
 SWITCH_MODULE_RUNTIME_FUNCTION(mod_audio_fork_runtime)
 {
-  fork_service_thread(&mod_running);
+  fork_service_threads(&mod_running);
 	return SWITCH_STATUS_TERM;
 }
