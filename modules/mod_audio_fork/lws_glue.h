@@ -1,16 +1,12 @@
 #ifndef __LWS_GLUE_H__
 #define __LWS_GLUE_H__
 
-#include "mod_audio_fork.h"
+#include <switch.h>
 
-int parse_ws_uri(const char* szServerUri, char* host, char *path, unsigned int* pPort, int* pSslFlags);
+#define MAX_SESSION_ID (256)
+#define MAX_WS_URL_LEN (512)
+#define MAX_PATH_LEN (128)
 
-switch_status_t fork_init();
-switch_status_t fork_cleanup();
-switch_status_t fork_session_init(switch_core_session_t *session, responseHandler_t responseHandler,
-		uint32_t samples_per_second, char *host, unsigned int port, char* path, int sampling, int sslFlags, int channels, char* metadata, void **ppUserData);
-switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text);
-switch_status_t fork_session_send_text(switch_core_session_t *session, char* text);
-switch_bool_t fork_frame(switch_media_bug_t *bug, void* user_data);
-switch_status_t fork_service_threads();
+typedef void (*responseHandler_t)(const char* sessionId, const char* eventName, char* json);
+
 #endif

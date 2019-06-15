@@ -1,122 +1,107 @@
-#include <switch.h>
-#include <switch_json.h>
-#include <string.h>
+#include <unistd.h>
 #include <string>
 #include <mutex>
 #include <thread>
-#include <list>
 #include <algorithm>
-#include <condition_variable>
+#include <list>
 #include <cassert>
 #include <cstdlib>
 #include <fstream>
+#include <string.h>
+#include <libwebsockets.h>
+
+#include <switch.h>
+#include <switch_json.h>
 
 #include "base64.hpp"
 #include "parser.hpp"
+#include "lws_glue.h"
 #include "mod_audio_fork.h"
+#include "session_handler.hpp"
 
-// buffer at most 2 secs of audio (at 20 ms packetization)
-#define MAX_BUFFERED_MSGS (100)
+struct lws_per_vhost_data {
+  struct lws_context *context;
+  struct lws_vhost *vhost;
+  const struct lws_protocols *protocol;
+};
 
 namespace {
+
+  static bool running = true;
+
+  // environment variables to override defaults
   static const char *requestedNumServiceThreads = std::getenv("MOD_AUDIO_FORK_SERVICE_THREADS");
-  static const char* mySubProtocolName = std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") ?
-    std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") : "audiostream.drachtio.org";
+  static unsigned int nServiceThreads = std::max(1, std::min(requestedNumServiceThreads ? ::atoi(requestedNumServiceThreads) : 1, 10));
+  static const char* mySubProtocolName = std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") ? std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") : "audiostream.drachtio.org";
+  static int loglevel = std::getenv("MOD_AUDIO_FORK_LWS_LOGLEVEL") ? atoi(std::getenv("MOD_AUDIO_FORK_LWS_LOGLEVEL")) : 7777 /*(LLL_ERR | LLL_WARN | LLL_NOTICE)*/ ;
+
   static int interrupted = 0;
-  static unsigned int nServiceThreads = std::max(1, std::min(requestedNumServiceThreads ? ::atoi(requestedNumServiceThreads) : 1, 5));
-  static struct lws_context *context[5] = {NULL, NULL, NULL, NULL, NULL};
+  static struct lws_context *context[10] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+  static std::deque<std::thread> lwsContextThreads;
 
   static unsigned int idxCallCount = 0;
-  static std::list<struct cap_cb *> pendingConnects;
-  static std::list<struct cap_cb *> pendingDisconnects;
-  static std::list<struct cap_cb *> pendingWrites;
+  static std::list< std::weak_ptr<SessionHandler> > pendingConnects;
+  static std::list< std::weak_ptr<SessionHandler> > pendingDisconnects;
+  static std::list< std::weak_ptr<SessionHandler> > pendingWrites;
   static std::mutex g_mutex_connects;
   static std::mutex g_mutex_disconnects;
   static std::mutex g_mutex_writes;
   static uint32_t playCount = 0;
+  static responseHandler_t responseHandler = nullptr;
 
 	uint32_t bumpPlayCount(void) { return ++playCount; }
 
-  void bufInit(struct cap_cb* cb) {
-    cb->buf_head = &cb->audio_buffer[0] + LWS_PRE;
-  }
-  uint8_t* bufGetWriteHead(struct cap_cb* cb) {
-    return cb->buf_head;
-  }
-  uint8_t* bufGetReadHead(struct cap_cb* cb) {
-    return &cb->audio_buffer[0] + LWS_PRE;
-  }
-  size_t bufGetAvailable(struct cap_cb* cb) {
-    uint8_t* pEnd = &cb->audio_buffer[0] + sizeof(cb->audio_buffer);
-    assert(cb->buf_head <= pEnd);
-    return pEnd - cb->buf_head;
-  }
-  size_t bufGetUsed(struct cap_cb* cb) {
-    return cb->buf_head - &cb->audio_buffer[0] - LWS_PRE;
-  }
-  uint8_t* bufBumpWriteHead(struct cap_cb* cb, spx_uint32_t len) {
-    cb->buf_head += len;
-    assert(cb->buf_head <= &cb->audio_buffer[0] + sizeof(cb->audio_buffer));
-  }
-
-  void addPendingConnect(struct cap_cb* cb) {
+  void addPendingConnect(std::shared_ptr<SessionHandler> p) {
     std::lock_guard<std::mutex> guard(g_mutex_connects);
-    cb->state = LWS_CLIENT_IDLE;
-    pendingConnects.push_back(cb);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "addPendingConnect - after adding there are now %d pending\n", pendingConnects.size());
+    pendingConnects.push_back(p);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "addPendingConnect - after adding there are now %lu pending\n", pendingConnects.size());
   }
 
-  void addPendingDisconnect(struct cap_cb* cb) {
+  void addPendingDisconnect(std::shared_ptr<SessionHandler> p) {
     std::lock_guard<std::mutex> guard(g_mutex_disconnects);
-    cb->state = LWS_CLIENT_DISCONNECTING;
-    pendingDisconnects.push_back(cb);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "addPendingDisconnect - after adding there are now %d pending\n", pendingDisconnects.size());
+    p->setState(LWS_CLIENT_DISCONNECTING);
+    pendingDisconnects.push_back(p);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "addPendingDisconnect - after adding there are now %lu pending\n", pendingDisconnects.size());
   }
 
-  void addPendingWrite(struct cap_cb* cb) {
+  void addPendingWrite(std::shared_ptr<SessionHandler> p) {
     std::lock_guard<std::mutex> guard(g_mutex_writes);
-    pendingWrites.push_back(cb);
+    pendingWrites.push_back(p);
   }
 
-  struct cap_cb* findAndRemovePendingConnect(struct lws *wsi) {
-    struct cap_cb* cb = NULL;
+  std::shared_ptr<SessionHandler> findAndRemovePendingConnect(struct lws *wsi) {
+    std::shared_ptr<SessionHandler> ret;
     std::lock_guard<std::mutex> guard(g_mutex_connects);
 
-    for (auto it = pendingConnects.begin(); it != pendingConnects.end() && !cb; ++it) {
-      if ((*it)->state == LWS_CLIENT_CONNECTING && (*it)->wsi == wsi) cb = *it;
+    std::list< std::weak_ptr<SessionHandler> >::iterator i = pendingConnects.begin();
+    while (i != pendingConnects.end()) {
+      std::shared_ptr<SessionHandler> p = (*i).lock();
+      if (!p) pendingConnects.erase(i++);
+      else if (p->inState(LWS_CLIENT_CONNECTING) && p->hasWsi(wsi)) {
+        ret = p;
+        pendingConnects.erase(i++);
+        break;
+      }
+      else {
+        i++;
+      }
     }
 
-    if (cb) pendingConnects.remove(cb);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "findAndRemovePendingConnect - after removing there are now %lu pending\n", pendingConnects.size());
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "findAndRemovePendingConnect - after removing there are now %d pending\n", pendingConnects.size());
-
-    return cb;
+    return ret;
   }
 
-  void destroy_cb(struct cap_cb *cb) {
-    speex_resampler_destroy(cb->resampler);
-    switch_mutex_destroy(cb->mutex);
-    switch_thread_cond_destroy(cb->cond);
-    cb->wsi = NULL;
-    cb->state = LWS_CLIENT_DISCONNECTED;
-  }
-
-  void processIncomingMessage(struct cap_cb* cb, int isBinary) {
-    assert(cb->recv_buf);
+  void processIncomingMessage(std::shared_ptr<SessionHandler> p, std::string& msg) {
     std::string type;
-
-    if (isBinary) {
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "processIncomingMessage - unexpected binary message, discarding..\n");
-      return;
-    }
-    std::string msg((char *)cb->recv_buf, cb->recv_buf_ptr - cb->recv_buf);
-    cJSON* json = parse_json(cb->sessionId, msg, type) ;
+    std::string sessionId = p->getSessionId();
+    cJSON* json = parse_json(sessionId.c_str(), msg, type) ;
     if (json) {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "processIncomingMessage - received %s message\n", type.c_str());
       cJSON* jsonData = cJSON_GetObjectItem(json, "data");
       if (0 == type.compare("playAudio")) {
         if (jsonData) {
-          // dont send actual audio bytes in event message
+          // we don't send the actual audio bytes in event message
           cJSON* jsonFile = NULL;
           cJSON* jsonAudio = cJSON_DetachItemFromObject(jsonData, "audioContent");
           int validAudio = (jsonAudio && NULL != jsonAudio->valuestring);
@@ -165,24 +150,17 @@ namespace {
 
             std::string rawAudio = drachtio::base64_decode(jsonAudio->valuestring);
             switch_snprintf(szFilePath, 256, "%s%s%s_%d.tmp%s", SWITCH_GLOBAL_dirs.temp_dir, 
-              SWITCH_PATH_SEPARATOR, cb->sessionId, bumpPlayCount(), fileType);
+              SWITCH_PATH_SEPARATOR, sessionId.c_str(), bumpPlayCount(), fileType);
             std::ofstream f(szFilePath, std::ofstream::binary);
             f << rawAudio;
             f.close();
-
-            // add the file to the list of files played for this session, we'll delete when session closes
-            struct playout* playout = (struct playout *) malloc(sizeof(struct playout));
-            playout->file = (char *) malloc(strlen(szFilePath) + 1);
-            strcpy(playout->file, szFilePath);
-            playout->next = cb->playout;
-            cb->playout = playout;
-
+            p->addFile(szFilePath);
             jsonFile = cJSON_CreateString(szFilePath);
             cJSON_AddItemToObject(jsonData, "file", jsonFile);
           }
 
           char* jsonString = cJSON_PrintUnformatted(jsonData);
-          cb->responseHandler(cb->sessionId, EVENT_PLAY_AUDIO, jsonString);
+          responseHandler(sessionId.c_str(), EVENT_PLAY_AUDIO, jsonString);
           free(jsonString);
           if (jsonAudio) cJSON_Delete(jsonAudio);
         }
@@ -191,10 +169,10 @@ namespace {
         }
       }
       else if (0 == type.compare("killAudio")) {
-        cb->responseHandler(cb->sessionId, EVENT_KILL_AUDIO, NULL);
+        responseHandler(sessionId.c_str(), EVENT_KILL_AUDIO, NULL);
 
         // kill any current playback on the channel
-        switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
+        switch_core_session_t* session = switch_core_session_locate(sessionId.c_str());
         if (session) {
           switch_channel_t *channel = switch_core_session_get_channel(session);
           switch_channel_set_flag_value(channel, CF_BREAK, 2);
@@ -204,22 +182,22 @@ namespace {
       }
       else if (0 == type.compare("transcription")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        cb->responseHandler(cb->sessionId, EVENT_TRANSCRIPTION, jsonString);
+        responseHandler(sessionId.c_str(), EVENT_TRANSCRIPTION, jsonString);
         free(jsonString);        
       }
       else if (0 == type.compare("transfer")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        cb->responseHandler(cb->sessionId, EVENT_TRANSFER, jsonString);
+        responseHandler(sessionId.c_str(), EVENT_TRANSFER, jsonString);
         free(jsonString);                
       }
       else if (0 == type.compare("disconnect")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        cb->responseHandler(cb->sessionId, EVENT_DISCONNECT, jsonString);
+        responseHandler(sessionId.c_str(), EVENT_DISCONNECT, jsonString);
         free(jsonString);        
       }
       else if (0 == type.compare("error")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        cb->responseHandler(cb->sessionId, EVENT_ERROR, jsonString);
+        responseHandler(sessionId.c_str(), EVENT_ERROR, jsonString);
         free(jsonString);        
       }
       else {
@@ -227,47 +205,36 @@ namespace {
       }
       cJSON_Delete(json);
     }
-
-    delete [] cb->recv_buf;
-    cb->recv_buf = NULL;
-    cb->recv_buf_ptr = NULL;
   }
 
-  int connect_client(struct cap_cb* cb, struct lws_per_vhost_data *vhd) {
+  int connect_client(std::shared_ptr<SessionHandler> p, struct lws_per_vhost_data *vhd) {
     struct lws_client_connect_info i;
 
     memset(&i, 0, sizeof(i));
 
     i.context = vhd->context;
-    i.port = cb->port;
-    i.address = cb->host;
-    i.path = cb->path;
+    i.port = p->getPort();
+    i.address = p->getHost();
+    i.path = p->getPath();
     i.host = i.address;
     i.origin = i.address;
-    i.ssl_connection = cb->sslFlags;
+    i.ssl_connection = p->getSslFlags();
     i.protocol = mySubProtocolName;
-    i.pwsi = &(cb->wsi);
+    i.pwsi = p->getPointerToWsi();
 
-    cb->state = LWS_CLIENT_CONNECTING;
-    cb->vhd = vhd;
+    p->setState(LWS_CLIENT_CONNECTING);
+    p->setVhd(vhd);
 
     if (!lws_client_connect_via_info(&i)) {
-      //cb->state = LWS_CLIENT_IDLE;
       return 0;
     }
 
     return 1;
   }
 
-  static int lws_callback(struct lws *wsi, 
-    enum lws_callback_reasons reason,
-    void *user, void *in, size_t len) {
-
-    struct lws_per_vhost_data *vhd = 
-      (struct lws_per_vhost_data *) lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
-
+  static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
+    struct lws_per_vhost_data *vhd = (struct lws_per_vhost_data *) lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
     struct lws_vhost* vhost = lws_get_vhost(wsi);
-  	struct cap_cb ** pCb = (struct cap_cb **) user;
 
     switch (reason) {
 
@@ -276,7 +243,7 @@ namespace {
       vhd = (struct lws_per_vhost_data *) lws_protocol_vh_priv_zalloc(lws_get_vhost(wsi), lws_get_protocol(wsi), sizeof(struct lws_per_vhost_data));
       vhd->context = lws_get_context(wsi);
       vhd->protocol = lws_get_protocol(wsi);
-      vhd->vhost = lws_get_vhost(wsi);
+      vhd->vhost = lws_get_vhost(wsi);      
       break;
 
     case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
@@ -284,10 +251,13 @@ namespace {
         // check if we have any new connections requested
         {
           std::lock_guard<std::mutex> guard(g_mutex_connects);
-          for (auto it = pendingConnects.begin(); it != pendingConnects.end(); ++it) {
-            struct cap_cb* cb = *it;
-            if (cb->state == LWS_CLIENT_IDLE) {
-              connect_client(cb, vhd);
+          std::list< std::weak_ptr<SessionHandler> >::iterator i = pendingConnects.begin();
+          while (i != pendingConnects.end()) {
+            std::shared_ptr<SessionHandler> p = (*i).lock();
+            if (!p) pendingConnects.erase(i++);
+            else {
+              if (p->inState(LWS_CLIENT_IDLE)) connect_client(p, vhd);
+              i++;
             }
           }
         }
@@ -296,8 +266,8 @@ namespace {
         {
           std::lock_guard<std::mutex> guard(g_mutex_writes);
           for (auto it = pendingWrites.begin(); it != pendingWrites.end(); ++it) {
-            struct cap_cb* cb = *it;
-            lws_callback_on_writable(cb->wsi);
+            std::shared_ptr<SessionHandler> p = (*it).lock();
+            if (p && p->getWsi()) lws_callback_on_writable(p->getWsi());
           }
           pendingWrites.clear();
         }
@@ -306,8 +276,8 @@ namespace {
         {
           std::lock_guard<std::mutex> guard(g_mutex_disconnects);
           for (auto it = pendingDisconnects.begin(); it != pendingDisconnects.end(); ++it) {
-            struct cap_cb* cb = *it;
-            lws_callback_on_writable(cb->wsi);
+            std::shared_ptr<SessionHandler> p = (*it).lock();
+            if (p && p->getWsi()) lws_callback_on_writable(p->getWsi());
           }
           pendingDisconnects.clear();
         }
@@ -318,16 +288,15 @@ namespace {
     case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_CLIENT_CONNECTION_ERROR wsi: %p\n", wsi);
       {
-        struct cap_cb* my_cb = findAndRemovePendingConnect(wsi);
-        if (!my_cb) {
+        std::shared_ptr<SessionHandler> p = findAndRemovePendingConnect(wsi);
+        if (!p) {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "lws_callback LWS_CALLBACK_CLIENT_CONNECTION_ERROR unable to find pending connection for wsi: %p\n", wsi);
         }
         else {
-          struct cap_cb *cb = *pCb = my_cb;
-          switch_mutex_lock(cb->mutex);
-          cb->state = LWS_CLIENT_FAILED;
-          switch_thread_cond_signal(cb->cond);
-          switch_mutex_unlock(cb->mutex);
+          p->lock();
+          p->setState(LWS_CLIENT_FAILED);
+          p->cond_signal();
+          p->unlock();
         }
       }      
       break;
@@ -335,113 +304,78 @@ namespace {
 
     case LWS_CALLBACK_CLIENT_ESTABLISHED:
 
-      // remove the associated cb from the pending list and allocate audio ring buffer
       {
-        struct cap_cb* my_cb = findAndRemovePendingConnect(wsi);
-        if (!my_cb) {
+        std::shared_ptr<SessionHandler> p = findAndRemovePendingConnect(wsi);
+        if (!p) {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "lws_callback LWS_CALLBACK_CLIENT_ESTABLISHED unable to find pending connection for wsi: %p\n", wsi);
         }
         else {
-          struct cap_cb *cb = *pCb = my_cb;
-          switch_mutex_lock(cb->mutex);
-          cb->vhd = vhd;
-          cb->state = LWS_CLIENT_CONNECTED;
-          switch_thread_cond_signal(cb->cond);
-          switch_mutex_unlock(cb->mutex);
+          p->lock();
+          p->setVhd(vhd);
+          p->setState(LWS_CLIENT_CONNECTED);
+          p->cond_signal();
+          p->unlock();
+
+          // use placement new to allocate a new shared_ptr on the heap that points to the already-created session handler object
+          std::shared_ptr<SessionHandler> *pp = (std::shared_ptr<SessionHandler> *) user;
+          new (pp) std::shared_ptr<SessionHandler>(p);
         }
       }      
       break;
 
     case LWS_CALLBACK_CLIENT_CLOSED:
       {
-        struct cap_cb *cb = *pCb;
-        if (cb && cb->state == LWS_CLIENT_DISCONNECTING) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_CLIENT_CLOSED by us wsi: %p\n", wsi);
-          destroy_cb(cb);
+        std::shared_ptr<SessionHandler> *pp = (std::shared_ptr<SessionHandler> *) user;
+        {
+          std::shared_ptr<SessionHandler> p = *pp;
+
+          if (p && p->inState(LWS_CLIENT_DISCONNECTING)) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_CLIENT_CLOSED by us wsi: %p\n", wsi);
+          }
+          else if (p && p->inState(LWS_CLIENT_CONNECTED)) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_CLIENT_CLOSED by far end wsi: %p\n", wsi);
+          }
+          p->lock();
+          p->setState(LWS_CLIENT_DISCONNECTED);
+          p->setWsi(nullptr);
+          p->unlock();
         }
-        else if (cb && cb->state == LWS_CLIENT_CONNECTED) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_CLIENT_CLOSED from far end wsi: %p\n", wsi);
-          destroy_cb(cb);
-        }
+
+        // need to explicitly call destructor of items allocated with placement new
+        pp->~shared_ptr<SessionHandler>();
       }
       break;
 
     case LWS_CALLBACK_CLIENT_RECEIVE:
       {
-        struct cap_cb *cb = *pCb;
-        switch_mutex_lock(cb->mutex);
-
-        if (lws_is_first_fragment(wsi)) {
-          // allocate a buffer for the entire chunk of memory needed
-          assert(NULL == cb->recv_buf);
-          size_t bufLen = len + lws_remaining_packet_payload(wsi);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "LWS_CALLBACK_CLIENT_RECEIVE allocating %d bytes\n", bufLen);
-          cb->recv_buf = new uint8_t[bufLen];
-          cb->recv_buf_ptr = cb->recv_buf;
+        std::shared_ptr<SessionHandler> p = *((std::shared_ptr<SessionHandler> *) user);
+        if (p && !lws_frame_is_binary(wsi)) {
+          std::string msg ;
+          if (p->recvFrame(wsi, in, len, msg)) {
+            processIncomingMessage(p, msg);
+          }
         }
-
-        assert(NULL != cb->recv_buf);
-        if (len > 0) {
-          // if we got any data, append it to the buffer
-          memcpy(cb->recv_buf_ptr, in, len);
-          cb->recv_buf_ptr += len;
-        }
-
-        if (lws_is_final_fragment(wsi)) {
-          processIncomingMessage(cb, lws_frame_is_binary(wsi));
-        }
-        switch_mutex_unlock(cb->mutex);
       }
       break;
 
     case LWS_CALLBACK_CLIENT_WRITEABLE:
       {
-        struct cap_cb *cb = *pCb;
+        std::shared_ptr<SessionHandler> p = *((std::shared_ptr<SessionHandler> *) user);
+        if (p) {
+          if (p->actuallySendText()) {
+            if (p->inState(LWS_CLIENT_DISCONNECTING) || p->hasBufferedAudio()) lws_callback_on_writable(wsi);
+            return 0;
+          }
 
-        switch_mutex_lock(cb->mutex);
-
-        // check for text frames to send
-        if (cb->metadata) {          
-          int n = cb->metadata_length - LWS_PRE - 1;
-          int m = lws_write(wsi, cb->metadata + LWS_PRE, n, LWS_WRITE_TEXT);
-          delete[] cb->metadata;
-          cb->metadata = NULL;
-          cb->metadata_length = 0;
-          if (m < n) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error writing metadata %d requested, %d written\n", n, m);
-            switch_mutex_unlock(cb->mutex);
+          if (p->inState(LWS_CLIENT_DISCONNECTING)) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_WRITEABLE closing connection wsi: %p\n", wsi);
+            lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
             return -1;
           }
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "wrote %d bytes of text\n", n);
 
-          // there may be audio data, but only one write per writeable event
-          // get it next time
-          switch_mutex_unlock(cb->mutex);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_WRITEABLE sent text frame (%d bytes) wsi: %p\n", wsi, n);
-          lws_callback_on_writable(cb->wsi);
-
-          return 0;
+          // check for audio packets
+          p->actuallySendAudio();
         }
-
-        if (cb->state == LWS_CLIENT_DISCONNECTING) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_WRITEABLE closing connection wsi: %p\n", wsi);
-          lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
-          switch_mutex_unlock(cb->mutex);
-          return -1;
-        }
-
-        // check for audio packets
-        int n = bufGetUsed(cb);
-        if (n > 0) {
-          int m = lws_write(wsi, bufGetReadHead(cb), n, LWS_WRITE_BINARY);
-          if (m < n) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error writing audio data %d requested, %d written\n", n, m);
-            switch_mutex_unlock(cb->mutex);
-            return -1;
-          }
-          bufInit(cb);
-        }
-        switch_mutex_unlock(cb->mutex);
 
         return 0;
       }
@@ -458,7 +392,7 @@ namespace {
     {
       mySubProtocolName,
       lws_callback,
-      sizeof(void *),
+      sizeof(std::shared_ptr<SessionHandler>),
       0,
     },
     { NULL, NULL, 0, 0 }
@@ -532,89 +466,57 @@ extern "C" {
     return 1;
   }
 
-  switch_status_t fork_init() {
-  return SWITCH_STATUS_SUCCESS;
+  switch_status_t fork_init(responseHandler_t fn) {
+    responseHandler = fn;
+    return SWITCH_STATUS_SUCCESS;
   }
 
   switch_status_t fork_cleanup() {
-      return SWITCH_STATUS_SUCCESS;
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: stopping lws threads\n");
+    
+    running = false;
+    for (std::deque<std::thread>::iterator it = lwsContextThreads.begin(); it != lwsContextThreads.end(); it++) {
+      (*it).join();
+    }
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: lws threads stopped\n");
+    return SWITCH_STATUS_SUCCESS;
   }
 
   switch_status_t fork_session_init(switch_core_session_t *session, 
-              responseHandler_t responseHandler,
               uint32_t samples_per_second, 
               char *host,
               unsigned int port,
               char *path,
-              int sampling,
+              int desiredSampling,
               int sslFlags,
               int channels,
               char* metadata, 
               void **ppUserData)
   {    	
-    switch_channel_t *channel = switch_core_session_get_channel(session);
-    struct cap_cb *cb;
-    int err;
-    unsigned int nSelectedServiceThread = idxCallCount++ % nServiceThreads;
+   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, 
+    "fork_session_init read sampling %u desired sampling %d %s\n", samples_per_second, desiredSampling, host);
+   std::shared_ptr<SessionHandler> p = std::make_shared<SessionHandler>(session, host, port, path, sslFlags, 
+    samples_per_second, desiredSampling, channels, metadata);
 
-    // allocate per-session data structure
-    cb = (struct cap_cb *) switch_core_session_alloc(session, sizeof(struct cap_cb));
-    memset(cb, 0, sizeof(struct cap_cb));
-    cb->base = switch_core_session_strdup(session, "mod_audio_fork");
-    strncpy(cb->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
-    cb->state = LWS_CLIENT_IDLE;
-    strncpy(cb->host, host, MAX_WS_URL_LEN);
-    cb->port = port;
-    strncpy(cb->path, path, MAX_PATH_LEN);
-    cb->sslFlags = sslFlags;
-    cb->wsi = NULL;
-    cb->vhd = NULL;
-    cb->metadata = NULL;
-    cb->sampling = sampling;
-    cb->responseHandler = responseHandler;
-    cb->playout = NULL;
-    bufInit(cb);
-
-    switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
-    switch_thread_cond_create(&cb->cond, switch_core_session_get_pool(session));
-
-    cb->resampler = speex_resampler_init(channels, 8000, sampling, SWITCH_RESAMPLE_QUALITY, &err);
-
-    if (0 != err) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n", 
-        switch_channel_get_name(channel), speex_resampler_strerror(err));
+    if (!p || !p->isValid()) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "error allocating SessionHandler memory\n");  
       return SWITCH_STATUS_FALSE;
     }
 
-    // now try to connect
-    switch_mutex_lock(cb->mutex);
-    addPendingConnect(cb);
-    lws_cancel_service(context[nSelectedServiceThread]);
-    switch_thread_cond_wait(cb->cond, cb->mutex);
-
-    if (cb->state == LWS_CLIENT_FAILED) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: failed connecting to host %s\n", 
-        switch_channel_get_name(channel), host);
-      switch_mutex_unlock(cb->mutex);
-      destroy_cb(cb);
+   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "fork_session_init - calling connect %s\n", host);
+    if (!p->connect(context[idxCallCount++ % nServiceThreads])) {
       return SWITCH_STATUS_FALSE;
     }
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s: successfully connected to host %s\n", 
-        switch_channel_get_name(channel), host);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "successfully connected to host %s\n", host);
 
-    // write initial metadata
-    if (metadata) {
-      cb->metadata_length = strlen(metadata) + 1 + LWS_PRE;
-      cb->metadata = new uint8_t[cb->metadata_length];
-      memset(cb->metadata, 0, cb->metadata_length);
-      memcpy(cb->metadata + LWS_PRE, metadata, strlen(metadata));
-      addPendingWrite(cb);
-      lws_cancel_service(cb->vhd->context);
-    }
-    switch_mutex_unlock(cb->mutex);
+    // allocate a shared_ptr on the heap that will be the owner of the session handler object
+    // the lws thread will accesss this through weak pointers only, so when Freeswitch closes
+    // the channel we will delete the shared ptr and subsequent accesses from the lws thread
+    // will detect this when the lock the weak ptr.
 
+    std::shared_ptr<SessionHandler>* ppHeap = new std::shared_ptr<SessionHandler>(p);
+    *ppUserData = ppHeap;
 
-    *ppUserData = cb;
     return SWITCH_STATUS_SUCCESS;
   }
 
@@ -623,33 +525,13 @@ extern "C" {
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
 
     if (bug) {
-      struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
+      std::shared_ptr<SessionHandler>* ppHeap = (std::shared_ptr<SessionHandler>*) switch_core_media_bug_get_user_data(bug);
+      std::shared_ptr<SessionHandler> p = *ppHeap;
       switch_channel_set_private(channel, MY_BUG_NAME, NULL);
-      if (cb->wsi) {
-        switch_mutex_lock(cb->mutex);
-        addPendingDisconnect(cb);
 
-        if (text) {
-          cb->metadata_length = strlen(text) + 1 + LWS_PRE;
-          cb->metadata = new uint8_t[cb->metadata_length];
-          memset(cb->metadata, 0, cb->metadata_length);
-          memcpy(cb->metadata + LWS_PRE, text, strlen(text));
-          addPendingWrite(cb);
-        }
+      p->disconnect(text);
 
-        struct playout* playout = cb->playout;
-        while (playout) {
-          std::remove(playout->file);
-          free(playout->file);
-          struct playout *tmp = playout;
-          playout = playout->next;
-          free(tmp);
-        }
-
-        lws_cancel_service(cb->vhd->context);
-        switch_mutex_unlock(cb->mutex);
-      }
-
+      delete ppHeap;
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "fork_session_cleanup: Closed stream\n");
       return SWITCH_STATUS_SUCCESS; 
     }
@@ -662,21 +544,8 @@ extern "C" {
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
 
     if (bug) {
-      struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
-      if (cb->wsi) {
-        switch_mutex_lock(cb->mutex);
-
-        cb->metadata_length = strlen(text) + 1 + LWS_PRE;
-        cb->metadata = new uint8_t[cb->metadata_length];
-        memset(cb->metadata, 0, cb->metadata_length);
-        memcpy(cb->metadata + LWS_PRE, text, strlen(text));
-
-        switch_mutex_unlock(cb->mutex);
-
-        addPendingWrite(cb);
-        lws_cancel_service(cb->vhd->context);
-      }
-
+      std::shared_ptr<SessionHandler> p = *((std::shared_ptr<SessionHandler>*) switch_core_media_bug_get_user_data(bug));
+      p->sendText(text);
       return SWITCH_STATUS_SUCCESS;
     }
     return SWITCH_STATUS_FALSE;
@@ -684,50 +553,14 @@ extern "C" {
 
   switch_bool_t fork_frame(switch_media_bug_t *bug, void* user_data) {
     switch_core_session_t *session = switch_core_media_bug_get_session(bug);
-    struct cap_cb *cb = (struct cap_cb *) user_data;
-    bool written = false;
-    int channels = switch_core_media_bug_test_flag(bug, SMBF_STEREO) ? 2 : 1;
+    std::shared_ptr<SessionHandler> p = *((std::shared_ptr<SessionHandler>*) switch_core_media_bug_get_user_data(bug));
 
-    if (switch_mutex_trylock(cb->mutex) == SWITCH_STATUS_SUCCESS) {
-      uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
-      switch_frame_t frame = { 0 };
-      frame.data = data;
-      frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
-
-      while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
-        if (frame.datalen) {
-          size_t n = bufGetAvailable(cb) >> 1;  // divide by 2 to num of uint16_t spaces available
-          if (n  > frame.samples) {
-            spx_uint32_t out_len = n;
-            spx_uint32_t in_len = frame.samples;
-            
-            speex_resampler_process_interleaved_int(cb->resampler, 
-              (const spx_int16_t *) frame.data, 
-              (spx_uint32_t *) &in_len, 
-              (spx_int16_t *) bufGetWriteHead(cb),
-              &out_len);
-
-             // i.e., if we wrote 320 16bit items then we need to increment 320*2 bytes in single-channel mode, twice that in dual channel  
-            bufBumpWriteHead(cb, out_len << channels);        
-            written = true;
-          }
-          else {
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Dropping packet.\n");
-          }
-        }
-      }
-      switch_mutex_unlock(cb->mutex);
-    }
-
-    if (written) {
-      addPendingWrite(cb);
-      lws_cancel_service(cb->vhd->context);
-    }
+    p->sendAudio(bug, user_data);
 
     return SWITCH_TRUE;
   }
 
-  void service_thread(unsigned int nServiceThread, int *pRunning) {
+  void service_thread(unsigned int nServiceThread) {
     struct lws_context_creation_info info;
 
     memset(&info, 0, sizeof info); 
@@ -745,21 +578,19 @@ extern "C" {
     int n;
     do {
       n = lws_service(context[nServiceThread], 500);
-    } while (n >= 0 && *pRunning);
+    } while (n >= 0 && running);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: thread exiting\n");
 
     lws_context_destroy(context[nServiceThread]);
 
   }
 
   switch_status_t fork_service_threads(int *pRunning) {
-    int logs = LLL_ERR | LLL_WARN | LLL_NOTICE ;
-      //LLL_INFO | LLL_PARSER | LLL_HEADER | LLL_EXT | LLL_CLIENT  | LLL_LATENCY | LLL_DEBUG ;
-    lws_set_log_level(logs, lws_logger);
+    lws_set_log_level(loglevel, lws_logger);
 
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: starting %u lws service threads\n", nServiceThreads);
     for (unsigned int i = 0; i < nServiceThreads; i++) {
-      std::thread t(service_thread, i, pRunning);
-      t.detach();
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: started service thread %lu\n", i);
+      lwsContextThreads.push_back(std::thread(service_thread, i));
     }
 
 
@@ -768,3 +599,243 @@ extern "C" {
 
 }
 
+// Session Handler implementation
+
+// buffer at most 2 secs of audio @8khz sampling
+#define MAX_BUFFERED_SAMPLES (LWS_PRE + 16234)
+
+SessionHandler::SessionHandler(switch_core_session_t *session, const char *host, unsigned int port, const char *path, 
+  int sslFlags, uint32_t readSampling, uint32_t desiredSampling, int channels, char* metadata) : 
+  m_wsi(nullptr), m_valid(false), m_buffer(nullptr), m_mutex(nullptr), m_cond(nullptr), m_state(LWS_CLIENT_IDLE),
+  m_resampler(nullptr), m_sessionId(switch_core_session_get_uuid(session)), m_host(host), m_path(path), m_port(port), m_sslFlags(sslFlags),
+  m_sampling(desiredSampling), m_context(nullptr), m_hasAudio(false), m_bufWriteOffset(LWS_PRE) {
+
+  uint8_t pad[LWS_PRE];
+  switch_memory_pool_t *pool = switch_core_session_get_pool(session);
+  if (SWITCH_STATUS_SUCCESS != switch_buffer_create(pool, &m_buffer, MAX_BUFFERED_SAMPLES)) {
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_sessionId.c_str()), SWITCH_LOG_ERROR, "error allocating audio buffer");
+    return;
+  }
+
+  // libwebsockets requires this padding at front of buffer
+  switch_buffer_write(m_buffer, &pad, LWS_PRE);
+
+  if (SWITCH_STATUS_SUCCESS != switch_mutex_init(&m_mutex, SWITCH_MUTEX_DEFAULT, pool)) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error initializing mutex");
+    switch_buffer_destroy(&m_buffer);
+    m_buffer = nullptr;
+    return;
+  }
+  if (SWITCH_STATUS_SUCCESS != switch_thread_cond_create(&m_cond, pool)) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error initializing condition variable");
+    switch_mutex_destroy(m_mutex);
+    switch_buffer_destroy(&m_buffer);
+    m_buffer = nullptr;
+    m_mutex = nullptr;
+    return;
+  }
+  switch_buffer_add_mutex(m_buffer, m_mutex);
+
+  if (readSampling != desiredSampling) {
+    int err;
+    m_resampler = speex_resampler_init(channels, readSampling, desiredSampling, SWITCH_RESAMPLE_QUALITY, &err);
+    if (!m_resampler) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error initializing resampler");
+    }
+  }
+  if (metadata) m_deqTextOut.push_back(metadata);
+
+  m_valid = true;
+}
+
+SessionHandler::~SessionHandler() {
+  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "SessionHandler destroyed\n");
+  if (m_resampler) speex_resampler_destroy(m_resampler);
+  if (m_mutex) switch_mutex_destroy(m_mutex);
+  if (m_cond) switch_thread_cond_destroy(m_cond);
+  if (m_buffer) switch_buffer_destroy(&m_buffer);
+
+  // erase all files
+  std::for_each(m_filesCreated.begin(), m_filesCreated.end(), [](std::string &path) {
+    std::remove(path.c_str());
+  });
+}
+
+bool SessionHandler::connect(struct lws_context *context) {
+  assert(m_valid);
+
+  lock();
+  addPendingConnect(shared_from_this());
+  lws_cancel_service(context);
+  cond_wait();
+
+  if (m_state == LWS_CLIENT_FAILED) {
+    unlock();
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "failed connecting to host %s\n", m_host.c_str());
+    return false;
+  }
+  m_context = context;
+  unlock();
+
+  // write initial metadata
+  if (!m_deqTextOut.empty()) {
+    std::string metadata = m_deqTextOut.front();
+    m_deqTextOut.pop_front();
+    sendText(metadata.c_str());
+  }
+
+  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "successfully connected to host %s\n", m_host.c_str());
+  return true;
+}
+
+bool SessionHandler::sendAudio(switch_media_bug_t *bug, void* data) {
+  bool written = false;
+  if (!m_valid || !m_wsi) return false;
+
+  if (trylock()) {
+    const void *pBufHead ;
+    switch_frame_t frame = { 0 };
+    switch_buffer_peek_zerocopy(m_buffer, &pBufHead);
+
+    // write directly to the buffer if we don't have to resample
+    if (!m_resampler) {
+      frame.data = (char *) pBufHead + getBufWriteOffset();
+      frame.buflen = getBufFreespace();
+
+      while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
+        if (frame.datalen && !switch_test_flag((&frame), SFF_CNG) && frame.buflen > 0) {
+          bumpBufWriteOffset(frame.datalen);
+          frame.data = (char *) pBufHead + getBufWriteOffset();
+          frame.buflen = getBufFreespace();
+          written = m_hasAudio = true;
+        }
+        else if (frame.buflen == 0) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Buffer overrun.\n");
+          break;
+        }
+      }
+    }
+    else {
+      uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
+      frame.data = data;
+      frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
+
+      while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
+        if (frame.datalen) {
+          spx_uint32_t out_len = getBufFreespace() >> 1; //divide by 2 to get number of uint16_t samples
+          spx_uint32_t in_len = frame.samples;
+
+          speex_resampler_process_interleaved_int(m_resampler, 
+            (const spx_int16_t *) frame.data, 
+            (spx_uint32_t *) &in_len, 
+            (spx_int16_t *) ((char *) pBufHead + getBufWriteOffset()),
+            &out_len);
+
+          if (out_len > 0) {
+            bumpBufWriteOffset(out_len << frame.channels);  //num samples x 2 x num channels
+            written = m_hasAudio = true;
+          }
+          else {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Buffer overrun.\n");
+            break;
+          }
+        }
+      }
+    }
+
+    if (written) {
+      addPendingWrite(shared_from_this());
+      lws_cancel_service(m_context);
+    }
+    unlock();
+  }
+  return written;
+}
+
+void SessionHandler::disconnect(const char *finalText) {
+  if (!m_wsi) return;
+
+  addPendingDisconnect(shared_from_this());
+  if (finalText) sendText(finalText);
+  else lws_cancel_service(m_context);
+}
+
+void SessionHandler::sendText(const char* szText) {
+  if (!m_wsi) return;
+
+  std::lock_guard<std::mutex> l(m_mutexLws);
+  std::string metadata(LWS_PRE, '\0');
+  metadata.append(szText);
+  m_deqTextOut.push_back(metadata);
+  addPendingWrite(shared_from_this());
+  lws_cancel_service(m_context);
+}
+
+// called from lws thread
+bool SessionHandler::actuallySendAudio() {
+  bool ret = false;
+
+  if (m_wsi && m_hasAudio) {
+    uint8_t pad[LWS_PRE];
+    const void *pHead ;
+    switch_buffer_peek_zerocopy(m_buffer, &pHead);
+ 
+    lock();
+    size_t reading = m_bufWriteOffset - LWS_PRE;
+    int n = lws_write(m_wsi, (unsigned char *) pHead + LWS_PRE, reading, LWS_WRITE_BINARY);
+    if (n < reading) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error writing audio %lu requested, %d written\n", reading, n);
+    }
+
+    // reinitialize padding at front of buffer now that it is empty
+    switch_buffer_zero(m_buffer);
+    switch_buffer_write(m_buffer, &pad, LWS_PRE);
+    m_bufWriteOffset = LWS_PRE;
+    m_hasAudio = false;
+    ret = true;
+    unlock();
+  }
+
+  return ret;
+}
+
+// called from lws thread
+bool SessionHandler::actuallySendText() {
+  if (!m_wsi) return false;
+
+  std::lock_guard<std::mutex> l(m_mutexLws);
+  if (!m_deqTextOut.empty()) {
+    std::string msg = m_deqTextOut.front();
+    m_deqTextOut.pop_front();
+    size_t m = msg.length() - LWS_PRE;
+    int n = lws_write(m_wsi, (unsigned char *) msg.data() + LWS_PRE, m, LWS_WRITE_TEXT);
+    if (n < m) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error writing metadata %lu requested, %d written\n", msg.length(), n);
+      return false;
+    }
+    return true;
+  }  
+  return false;
+}
+
+bool SessionHandler::recvFrame(struct lws* wsi, void* in, size_t len, std::string& str) {
+  bool ret = false;
+  std::lock_guard<std::mutex> l(m_mutexLws);
+
+  if (lws_is_first_fragment(wsi)) {
+    std::string metadata(LWS_PRE, '\0');
+    m_deqTextIn.push_back(metadata);
+  }
+
+  std::string& md = m_deqTextIn.back();
+  if (len > 0) {
+    md.append((char *)in, len);
+  }
+
+  if (lws_is_final_fragment(wsi)) {
+    str = md;
+    ret = true;
+  }
+
+  return ret;
+}

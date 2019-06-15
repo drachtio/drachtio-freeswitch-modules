@@ -6,13 +6,21 @@
 #include "mod_audio_fork.h"
 #include "lws_glue.h"
 
-static int mod_running = 0;
-
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown);
 SWITCH_MODULE_RUNTIME_FUNCTION(mod_audio_fork_runtime);
 SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load);
 
 SWITCH_MODULE_DEFINITION(mod_audio_fork, mod_audio_fork_load, mod_audio_fork_shutdown, mod_audio_fork_runtime);
+
+extern int parse_ws_uri(const char* szServerUri, char* host, char *path, unsigned int* pPort, int* pSslFlags);
+extern switch_status_t fork_init(responseHandler_t responseHandler);
+extern switch_status_t fork_cleanup();
+extern switch_status_t fork_session_init(switch_core_session_t *session,
+		uint32_t samples_per_second, char *host, unsigned int port, char* path, int sampling, int sslFlags, int channels, char* metadata, void **ppUserData);
+extern switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text);
+extern switch_status_t fork_session_send_text(switch_core_session_t *session, char* text);
+extern switch_bool_t fork_frame(switch_media_bug_t *bug, void* user_data);
+extern switch_status_t fork_service_threads();
 
 static void responseHandler(const char* sessionId, const char * eventName, char * json) {
 	switch_event_t *event;
@@ -69,7 +77,8 @@ static switch_status_t start_capture(switch_core_session_t *session,
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
 	switch_status_t status;
-	switch_codec_implementation_t read_impl = { 0 };
+	//switch_codec_implementation_t read_impl = { 0 };
+	switch_codec_t* read_codec;
 	void *pUserData;
   int channels = (flags & SMBF_STEREO) ? 2 : 1;
 
@@ -82,14 +91,15 @@ static switch_status_t start_capture(switch_core_session_t *session,
 		return SWITCH_STATUS_FALSE;
 	}
 
-	switch_core_session_get_read_impl(session, &read_impl);
+	//switch_core_session_get_real_read_impl(session, &read_impl);
+	read_codec = switch_core_session_get_read_codec(session);
 
 	if (switch_channel_pre_answer(channel) != SWITCH_STATUS_SUCCESS) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_audio_fork: channel must have reached pre-answer status before calling start!\n");
 		return SWITCH_STATUS_FALSE;
 	}
 
-	if (SWITCH_STATUS_FALSE == fork_session_init(session, responseHandler, read_impl.samples_per_second, host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == fork_session_init(session, read_codec->implementation->actual_samples_per_second, host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing mod_audio_fork session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
@@ -138,12 +148,14 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
   return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop | send_text] [wss-url | path] [mono | mixed | stereo] [8k | 16k] [metadata]"
+#define FORK_API_SYNTAX "<uuid> [start | stop | send_text] [wss-url | path] [mono | mixed | stereo] [sample-rate] [metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
 	char *mycmd = NULL, *argv[6] = { 0 };
 	int argc = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork API called	\n");
 
 	if (!zstr(cmd) && (mycmd = strdup(cmd))) {
 		argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
@@ -187,8 +199,16 @@ SWITCH_STANDARD_API(fork_function)
           switch_core_session_rwunlock(lsession);
           goto done;
         }
+
         if (0 == strcmp(argv[4], "8k")) {
           sampling = 8000;
+        }
+        else if (0 == strcmp(argv[4], "16k")) {
+          sampling = 16000;
+        }
+        else {
+					sampling = atol(argv[4]);
+          if (0 == sampling) sampling = 8000;
         }
         if (!parse_ws_uri(argv[2], &host[0], &path[0], &port, &sslFlags)) {
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid websocket uri: %s\n", argv[2]);
@@ -246,12 +266,10 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load)
 	switch_console_set_complete("add uuid_audio_fork start wss-url");
 	switch_console_set_complete("add uuid_audio_fork stop");
 
-	fork_init();
+	fork_init(responseHandler);
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork API successfully loaded\n");
 
-	/* indicate that the module should continue to be loaded */
-  mod_running = 1;
 	return SWITCH_STATUS_SUCCESS;
 }
 
@@ -261,7 +279,6 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load)
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown)
 {
 	fork_cleanup();
-  mod_running = 0;
 	switch_event_free_subclass(EVENT_TRANSCRIPTION);
 	switch_event_free_subclass(EVENT_TRANSFER);
 	switch_event_free_subclass(EVENT_PLAY_AUDIO);
@@ -280,6 +297,6 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown)
 
 SWITCH_MODULE_RUNTIME_FUNCTION(mod_audio_fork_runtime)
 {
-  fork_service_threads(&mod_running);
+  fork_service_threads();
 	return SWITCH_STATUS_TERM;
 }

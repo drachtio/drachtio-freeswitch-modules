@@ -19,8 +19,10 @@ mrf.connect(config.get('freeswitch'))
 
 function run(ms) {
   srf.invite((req, res) => {
+    console.log('connecting call');
     ms.connectCaller(req, res)
       .then(({endpoint, dialog}) => {
+        console.log('call connected');
         dialog.on('destroy', () => endpoint.destroy());
         doFork(req, dialog, endpoint);  
       })
@@ -31,16 +33,25 @@ function run(ms) {
 }
 
 async function doFork(req, dlg, ep) {
+  console.log('sending command to fork audio');
   const metadata = {
     callId: req.get('Call-Id'),
     to: req.getParsedHeader('To').uri,
     from: req.getParsedHeader('From').uri,
   }
+  /*
   await ep.play('silence_stream://1000');
   await ep.speak({
     ttsEngine: 'google_tts',
     voice: 'en-GB-Wavenet-A',
     text
   });
-  ep.api('uuid_audio_fork', `${ep.uuid} start ${wsUrl} mono 16k ${JSON.stringify(metadata)}`);
+  */
+ const result = await ep.forkAudioStart({
+    wsUrl,
+    mixType: 'mono',
+    sampling: 48000,
+    metadata
+  });
+  console.log(`result from fork ${JSON.stringify(result)}`);
 }
