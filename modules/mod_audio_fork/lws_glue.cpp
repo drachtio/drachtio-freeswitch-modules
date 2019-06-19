@@ -54,7 +54,7 @@ namespace {
   size_t bufGetUsed(struct cap_cb* cb) {
     return cb->buf_head - &cb->audio_buffer[0] - LWS_PRE;
   }
-  uint8_t* bufBumpWriteHead(struct cap_cb* cb, spx_uint32_t len) {
+  void bufBumpWriteHead(struct cap_cb* cb, spx_uint32_t len) {
     cb->buf_head += len;
     assert(cb->buf_head <= &cb->audio_buffer[0] + sizeof(cb->audio_buffer));
   }
@@ -63,14 +63,14 @@ namespace {
     std::lock_guard<std::mutex> guard(g_mutex_connects);
     cb->state = LWS_CLIENT_IDLE;
     pendingConnects.push_back(cb);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "addPendingConnect - after adding there are now %d pending\n", pendingConnects.size());
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "addPendingConnect - after adding there are now %lu pending\n", pendingConnects.size());
   }
 
   void addPendingDisconnect(struct cap_cb* cb) {
     std::lock_guard<std::mutex> guard(g_mutex_disconnects);
     cb->state = LWS_CLIENT_DISCONNECTING;
     pendingDisconnects.push_back(cb);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "addPendingDisconnect - after adding there are now %d pending\n", pendingDisconnects.size());
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "addPendingDisconnect - after adding there are now %lu pending\n", pendingDisconnects.size());
   }
 
   void addPendingWrite(struct cap_cb* cb) {
@@ -88,7 +88,7 @@ namespace {
 
     if (cb) pendingConnects.remove(cb);
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "findAndRemovePendingConnect - after removing there are now %d pending\n", pendingConnects.size());
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "findAndRemovePendingConnect - after removing there are now %lu pending\n", pendingConnects.size());
 
     return cb;
   }
@@ -375,7 +375,7 @@ namespace {
           // allocate a buffer for the entire chunk of memory needed
           assert(NULL == cb->recv_buf);
           size_t bufLen = len + lws_remaining_packet_payload(wsi);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "LWS_CALLBACK_CLIENT_RECEIVE allocating %d bytes\n", bufLen);
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "LWS_CALLBACK_CLIENT_RECEIVE allocating %lu bytes\n", bufLen);
           cb->recv_buf = new uint8_t[bufLen];
           cb->recv_buf_ptr = cb->recv_buf;
         }
@@ -417,7 +417,7 @@ namespace {
           // there may be audio data, but only one write per writeable event
           // get it next time
           switch_mutex_unlock(cb->mutex);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_WRITEABLE sent text frame (%d bytes) wsi: %p\n", wsi, n);
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_WRITEABLE sent text frame (%d bytes) wsi: %p\n", n, wsi);
           lws_callback_on_writable(cb->wsi);
 
           return 0;
@@ -759,7 +759,7 @@ extern "C" {
     for (unsigned int i = 0; i < nServiceThreads; i++) {
       std::thread t(service_thread, i, pRunning);
       t.detach();
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: started service thread %lu\n", i);
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: started service thread %  u\n", i);
     }
 
 
