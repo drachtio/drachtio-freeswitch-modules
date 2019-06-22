@@ -495,8 +495,9 @@ namespace {
           switch_buffer_peek_zerocopy(tech_pvt->ws_audio_buffer, &pData);
           int sent = lws_write(wsi, (unsigned char *) pData + LWS_PRE, datalen, LWS_WRITE_BINARY);
           if (sent < datalen) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u)  LWS_CALLBACK_WRITEABLE wrote only %u of %lu bytes wsi: %p\n", 
-              tech_pvt->id, , sent, datalen, wsi);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
+            "(%u)  LWS_CALLBACK_WRITEABLE wrote only %u of %lu bytes wsi: %p\n", 
+              tech_pvt->id, sent, datalen, wsi);
           }
           initAudioBuffer(tech_pvt);
         }
