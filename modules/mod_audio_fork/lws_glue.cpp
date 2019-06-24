@@ -15,10 +15,11 @@
 #include "parser.hpp"
 #include "mod_audio_fork.h"
 
-#define FRAME_SIZE_16000 640 /* which means each 20ms frame as 640 bytes at 16 khz (1 channel only) */
-#define FRAME_SIZE_8000  320 /*which means each 20ms frame as 320 bytes at 8 khz (1 channel only)*/
 #define WS_TIMEOUT_MS    50
-#define WS_AUDIO_BUFFER_SIZE (FRAME_SIZE_16000 * 2 * 50)  /* 50 frames at 20 ms packetization = 1 sec of audio, allow for 2 channels */
+#define RTP_PACKETIZATION_PERIOD 20
+#define FRAME_SIZE_8000  320 /*which means each 20ms frame as 320 bytes at 8 khz (1 channel only)*/
+
+#define WS_AUDIO_BUFFER_SIZE (FRAME_SIZE_16000 * 2 * 50 + LWS_PRE)  /* 50 frames at 20 ms packetization = 1 sec of audio, allow for 2 channels */
 
 namespace {
   static const char *requestedNumServiceThreads = std::getenv("MOD_AUDIO_FORK_SERVICE_THREADS");
@@ -38,16 +39,17 @@ namespace {
   static uint32_t playCount = 0;
 
   void initAudioBuffer(private_t *tech_pvt) {
-    char pad[LWS_PRE];
-    switch_buffer_zero(tech_pvt->ws_audio_buffer);
-    switch_buffer_write(tech_pvt->ws_audio_buffer, pad, LWS_PRE);
     tech_pvt->ws_audio_buffer_write_offset = LWS_PRE;
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) reset write offset to start: %lu\n", 
+      tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset);
   }
 
   switch_status_t fork_data_init(private_t *tech_pvt, switch_core_session_t *session, char * host, 
     unsigned int port, char* path, int sslFlags, int sampling, int desiredSampling, int channels, char* metadata, responseHandler_t responseHandler) {
 
     int err;
+    switch_codec_implementation_t read_impl;
+    switch_core_session_get_read_impl(session, &read_impl);
   
     memset(tech_pvt, 0, sizeof(private_t));
   
@@ -66,27 +68,32 @@ namespace {
     tech_pvt->channels = channels;
     tech_pvt->id = ++idxCallCount;
 
-    if (SWITCH_STATUS_SUCCESS != switch_buffer_create_dynamic(&tech_pvt->ws_audio_buffer, WS_AUDIO_BUFFER_SIZE, WS_AUDIO_BUFFER_SIZE,  WS_AUDIO_BUFFER_SIZE)) {
+    tech_pvt->ws_audio_buffer_max_len = LWS_PRE + (FRAME_SIZE_8000 * (desiredSampling / 8000) * channels * (1000 / RTP_PACKETIZATION_PERIOD));  // 1 sec worth of audio
+    tech_pvt->ws_audio_buffer = (uint8_t *) malloc(tech_pvt->ws_audio_buffer_max_len);
+    if (nullptr == tech_pvt->ws_audio_buffer) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error allocating audio buffer\n");
       return SWITCH_STATUS_FALSE;
     }
+    tech_pvt->ws_audio_buffer_min_freespace = read_impl.decoded_bytes_per_packet;
     initAudioBuffer(tech_pvt);
 
+    switch_mutex_init(&tech_pvt->ws_send_mutex, SWITCH_MUTEX_DEFAULT, switch_core_session_get_pool(session));
+    switch_mutex_init(&tech_pvt->ws_recv_mutex, SWITCH_MUTEX_DEFAULT, switch_core_session_get_pool(session));
     switch_mutex_init(&tech_pvt->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
     switch_thread_cond_create(&tech_pvt->cond, switch_core_session_get_pool(session));
 
     if (desiredSampling != sampling) {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) resampling from %u to %u\n", tech_pvt->id, sampling, desiredSampling);
       tech_pvt->resampler = speex_resampler_init(channels, sampling, desiredSampling, SWITCH_RESAMPLE_QUALITY, &err);
+      if (0 != err) {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing resampler: %s.\n", speex_resampler_strerror(err));
+        return SWITCH_STATUS_FALSE;
+      }
     }
     else {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) no resampling needed for this call\n", tech_pvt->id);
     }
 
-    if (0 != err) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing resampler: %s.\n", speex_resampler_strerror(err));
-      return SWITCH_STATUS_FALSE;
-    }
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) fork_data_init\n", tech_pvt->id);
 
     return SWITCH_STATUS_SUCCESS;
@@ -97,20 +104,20 @@ namespace {
     tech_pvt->ws_state = LWS_CLIENT_DISCONNECTED;
     if (tech_pvt->resampler) {
       speex_resampler_destroy(tech_pvt->resampler);
-      tech_pvt->resampler = NULL;
+      tech_pvt->resampler = nullptr;
     }
     if (tech_pvt->mutex) {
       switch_mutex_destroy(tech_pvt->mutex);
-      tech_pvt->mutex = NULL;
+      tech_pvt->mutex = nullptr;
     }
     if (tech_pvt->cond) {
       switch_thread_cond_destroy(tech_pvt->cond);
-      tech_pvt->cond = NULL;
+      tech_pvt->cond = nullptr;
     }
-    tech_pvt->wsi = NULL;
+    tech_pvt->wsi = nullptr;
     if (tech_pvt->ws_audio_buffer) {
-      switch_buffer_destroy(&tech_pvt->ws_audio_buffer);
-      tech_pvt->ws_audio_buffer;
+      free(tech_pvt->ws_audio_buffer);
+      tech_pvt->ws_audio_buffer = nullptr;
     }
   }
 
@@ -359,7 +366,7 @@ namespace {
           std::lock_guard<std::mutex> guard(g_mutex_disconnects);
           for (auto it = pendingDisconnects.begin(); it != pendingDisconnects.end(); ++it) {
             private_t* tech_pvt = *it;
-            if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_CONNECTED) lws_callback_on_writable(tech_pvt->wsi);
+            if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_DISCONNECTING) lws_callback_on_writable(tech_pvt->wsi);
           }
           pendingDisconnects.clear();
         }
@@ -427,7 +434,7 @@ namespace {
     case LWS_CALLBACK_CLIENT_RECEIVE:
       {
         private_t* tech_pvt = *pCb;
-        switch_mutex_lock(tech_pvt->mutex);
+        switch_mutex_lock(tech_pvt->ws_recv_mutex);
 
         if (lws_is_first_fragment(wsi)) {
           // allocate a buffer for the entire chunk of memory needed
@@ -448,15 +455,16 @@ namespace {
         if (lws_is_final_fragment(wsi)) {
           processIncomingMessage(tech_pvt, lws_frame_is_binary(wsi));
         }
-        switch_mutex_unlock(tech_pvt->mutex);
+        switch_mutex_unlock(tech_pvt->ws_recv_mutex);
       }
       break;
 
     case LWS_CALLBACK_CLIENT_WRITEABLE:
       {
         private_t* tech_pvt = *pCb;
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_WRITEABLE\n", tech_pvt->id);
 
-        switch_mutex_lock(tech_pvt->mutex);
+        switch_mutex_lock(tech_pvt->ws_send_mutex);
 
         // check for text frames to send
         if (tech_pvt->metadata) {          
@@ -467,20 +475,22 @@ namespace {
           tech_pvt->metadata_length = 0;
           if (m < n) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) error writing metadata %d requested, %d written\n", tech_pvt->id, n, m);
-            switch_mutex_unlock(tech_pvt->mutex);
+            switch_mutex_unlock(tech_pvt->ws_send_mutex);
             return -1;
           }
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) wrote %d bytes of text\n", tech_pvt->id, n);
 
           // there may be audio data, but only one write per writeable event
           // get it next time
-          switch_mutex_unlock(tech_pvt->mutex);
+          switch_mutex_unlock(tech_pvt->ws_send_mutex);
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) LWS_CALLBACK_WRITEABLE sent text frame (%d bytes) wsi: %p\n", tech_pvt->id, n, wsi);
           lws_callback_on_writable(tech_pvt->wsi);
 
           return 0;
         }
+        switch_mutex_unlock(tech_pvt->ws_send_mutex);
 
+        switch_mutex_lock(tech_pvt->mutex);
         if (tech_pvt->ws_state == LWS_CLIENT_DISCONNECTING) {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) lws_callback LWS_CALLBACK_WRITEABLE closing connection wsi: %p\n", tech_pvt->id, wsi);
           lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
@@ -489,11 +499,11 @@ namespace {
         }
 
         // check for audio packets
-        if (tech_pvt->ws_audio_buffer_write_offset > FRAME_SIZE_8000) {
-          const void *pData ;
-          size_t datalen = tech_pvt->ws_audio_buffer_write_offset - LWS_PRE;
-          switch_buffer_peek_zerocopy(tech_pvt->ws_audio_buffer, &pData);
-          int sent = lws_write(wsi, (unsigned char *) pData + LWS_PRE, datalen, LWS_WRITE_BINARY);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) (lwsthread) offset %lu\n", tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset);
+
+        if (tech_pvt->ws_audio_buffer_write_offset > LWS_PRE) {
+          size_t datalen = tech_pvt->ws_audio_buffer_write_offset - LWS_PRE - 1;
+          int sent = lws_write(wsi, (unsigned char *) tech_pvt->ws_audio_buffer + LWS_PRE, datalen, LWS_WRITE_BINARY);
           if (sent < datalen) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
             "(%u)  LWS_CALLBACK_WRITEABLE wrote only %u of %lu bytes wsi: %p\n", 
@@ -622,6 +632,7 @@ extern "C" {
       return SWITCH_STATUS_FALSE;
     }
     if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, host, port, path, sslFlags, samples_per_second, sampling, channels, metadata, responseHandler)) {
+      destroy_tech_pvt(tech_pvt);
       return SWITCH_STATUS_FALSE;
     }
 
@@ -631,9 +642,9 @@ extern "C" {
     addPendingConnect(tech_pvt);
     lws_cancel_service(context[nSelectedServiceThread]);
     switch_thread_cond_wait(tech_pvt->cond, tech_pvt->mutex);
-    switch_mutex_unlock(tech_pvt->mutex);
 
     if (tech_pvt->ws_state == LWS_CLIENT_FAILED) {
+      switch_mutex_unlock(tech_pvt->mutex);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) failed connecting to host %s\n", tech_pvt->id, host);
       destroy_tech_pvt(tech_pvt);
       return SWITCH_STATUS_FALSE;
@@ -649,6 +660,7 @@ extern "C" {
       addPendingWrite(tech_pvt);
       lws_cancel_service(tech_pvt->vhd->context);
     }
+    switch_mutex_unlock(tech_pvt->mutex);
 
     *ppUserData = tech_pvt;
     return SWITCH_STATUS_SUCCESS;
@@ -686,11 +698,13 @@ extern "C" {
 
       addPendingDisconnect(tech_pvt);
       lws_cancel_service(tech_pvt->vhd->context);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) waiting to complete ws teardown\n", id);
 
       // wait for disconnect to complete
       switch_thread_cond_wait(tech_pvt->cond, tech_pvt->mutex);
-      switch_mutex_unlock(tech_pvt->mutex);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) teardown completed\n", id);
 
+      switch_mutex_unlock(tech_pvt->mutex);
       destroy_tech_pvt(tech_pvt);
 
       // delete any temp files
@@ -702,7 +716,6 @@ extern "C" {
         playout = playout->next;
         free(tmp);
       }
-
 
       switch_channel_t *channel = switch_core_session_get_channel(session);
       switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
@@ -726,9 +739,9 @@ extern "C" {
   
     if (!tech_pvt || !tech_pvt->wsi) return SWITCH_STATUS_FALSE;
       
-    switch_mutex_lock(tech_pvt->mutex);
+    switch_mutex_lock(tech_pvt->ws_send_mutex);
     if (tech_pvt->ws_state != LWS_CLIENT_CONNECTED) {
-      switch_mutex_unlock(tech_pvt->mutex);
+      switch_mutex_unlock(tech_pvt->ws_send_mutex);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) fork_session_send_text failed because ws state is %d\n", tech_pvt->id, tech_pvt->ws_state);
       return SWITCH_STATUS_FALSE;
     }
@@ -739,8 +752,8 @@ extern "C" {
       memcpy(tech_pvt->metadata + LWS_PRE, text, strlen(text));
 
       addPendingWrite(tech_pvt);
-      switch_mutex_unlock(tech_pvt->mutex);
       lws_cancel_service(tech_pvt->vhd->context);
+      switch_mutex_unlock(tech_pvt->ws_send_mutex);
     }
     return SWITCH_STATUS_SUCCESS;
   }
@@ -748,48 +761,55 @@ extern "C" {
   switch_bool_t fork_frame(switch_core_session_t *session, switch_media_bug_t *bug) {
     private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
     size_t inuse = 0;
-    bool written = false;
+    bool dirty = false;
 
     if (!tech_pvt || !tech_pvt->wsi) return SWITCH_FALSE;
     
     if (switch_mutex_trylock(tech_pvt->mutex) == SWITCH_STATUS_SUCCESS) {
+      size_t available = tech_pvt->ws_audio_buffer_max_len - tech_pvt->ws_audio_buffer_write_offset;
       if (tech_pvt->ws_state != LWS_CLIENT_CONNECTED) {
         switch_mutex_unlock(tech_pvt->mutex);
         return SWITCH_TRUE;
       }
+      else if (available < tech_pvt->ws_audio_buffer_min_freespace) {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets! write offset %lu available %lu\n", 
+          tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
+      }
       else if (NULL == tech_pvt->resampler) {
         switch_frame_t frame = { 0 };
-        const void *pData;
-        switch_buffer_peek_zerocopy(tech_pvt->ws_audio_buffer, &pData);
-        frame.data = (char *) pData + tech_pvt->ws_audio_buffer_write_offset;
-        frame.buflen = switch_buffer_len(tech_pvt->ws_audio_buffer) - tech_pvt->ws_audio_buffer_write_offset;
-        while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
+        frame.data = (char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset;
+        frame.buflen = available;
+        while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
           if (frame.datalen) {
-            written = true;
             tech_pvt->ws_audio_buffer_write_offset += frame.datalen;
-            frame.data = (char *) pData + tech_pvt->ws_audio_buffer_write_offset;
-            frame.buflen -= frame.datalen;
+            available -= frame.datalen;
+            frame.data = (char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset;
+            frame.buflen = available;
+            dirty = true;
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) (rtpthread) wrote %u bytes, write offset now %lu available %lu\n", 
+              tech_pvt->id, frame.datalen, tech_pvt->ws_audio_buffer_write_offset, available);
+          }
+          else {
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropped packet! write offset %lu available %lu\n", 
+              tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
+            break;
           }
         }
       }
       else {
-        const void *pData;
-        switch_buffer_peek_zerocopy(tech_pvt->ws_audio_buffer, &pData);
         uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
         switch_frame_t frame = { 0 };
-        size_t available = switch_buffer_len(tech_pvt->ws_audio_buffer) - tech_pvt->ws_audio_buffer_write_offset;
-
         frame.data = data;
         frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
         while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
           if (frame.datalen) {
-            spx_uint32_t out_len = available / 2;  // space for samples which are 2 bytes
+            spx_uint32_t out_len = available >> 1;  // space for samples which are 2 bytes
             spx_uint32_t in_len = frame.samples;
 
             speex_resampler_process_interleaved_int(tech_pvt->resampler, 
               (const spx_int16_t *) frame.data, 
               (spx_uint32_t *) &in_len, 
-              (spx_int16_t *) ((char *) pData + tech_pvt->ws_audio_buffer_write_offset),
+              (spx_int16_t *) ((char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset),
               &out_len);
 
             if (out_len > 0) {
@@ -797,21 +817,24 @@ extern "C" {
               size_t bytes_written = out_len << tech_pvt->channels;
               tech_pvt->ws_audio_buffer_write_offset += bytes_written ;
               available -= bytes_written;
-              written = true;
+              dirty = true;
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) (rtpthread) wrote %lu bytes, write offset now %lu available %lu\n", 
+                tech_pvt->id, bytes_written, tech_pvt->ws_audio_buffer_write_offset, available);
             }
-            if (available == 0) {
-              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) mod_audio_fork: buffer full\n", tech_pvt->id);
+            if (available < tech_pvt->ws_audio_buffer_min_freespace) {
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packet! write offset %lu available %lu\n", 
+                tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
               break;
             }
           }
         }
       }
 
-      switch_mutex_unlock(tech_pvt->mutex);
-      if (written) {
+      if (dirty) {
         addPendingWrite(tech_pvt);
         lws_cancel_service(tech_pvt->vhd->context);
       }
+      switch_mutex_unlock(tech_pvt->mutex);
     }
     return SWITCH_TRUE;
   }

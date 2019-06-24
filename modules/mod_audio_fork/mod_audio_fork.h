@@ -43,6 +43,8 @@ typedef void (*responseHandler_t)(const char* sessionId, const char* eventName, 
 
 struct private_data {
 	switch_mutex_t *mutex;
+	switch_mutex_t *ws_send_mutex;
+	switch_mutex_t *ws_recv_mutex;
   switch_thread_cond_t *cond;
 	char sessionId[MAX_SESSION_ID];
   SpeexResamplerState *resampler;
@@ -56,8 +58,10 @@ struct private_data {
   int sslFlags;
   int sampling;
   struct lws *wsi;
-  switch_buffer_t *ws_audio_buffer;
+  uint8_t *ws_audio_buffer;
+  size_t ws_audio_buffer_max_len;
   size_t ws_audio_buffer_write_offset;
+  size_t ws_audio_buffer_min_freespace;
   uint8_t* recv_buf;
   uint8_t* recv_buf_ptr;
   struct playout* playout;
