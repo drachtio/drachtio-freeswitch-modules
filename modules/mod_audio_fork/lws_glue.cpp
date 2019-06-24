@@ -15,10 +15,15 @@
 #include "parser.hpp"
 #include "mod_audio_fork.h"
 
-// buffer at most 2 secs of audio (at 20 ms packetization)
-#define MAX_BUFFERED_MSGS (100)
+#define WS_TIMEOUT_MS    50
+#define RTP_PACKETIZATION_PERIOD 20
+#define FRAME_SIZE_8000  320 /*which means each 20ms frame as 320 bytes at 8 khz (1 channel only)*/
+
+#define WS_AUDIO_BUFFER_SIZE (FRAME_SIZE_16000 * 2 * 50 + LWS_PRE)  /* 50 frames at 20 ms packetization = 1 sec of audio, allow for 2 channels */
 
 namespace {
+  static const char *requestedBufferSecs = std::getenv("MOD_AUDIO_FORK_BUFFER_SECS");
+  static int nAudioBufferSecs = std::max(1, std::min(requestedBufferSecs ? ::atoi(requestedBufferSecs) : 2, 5));
   static const char *requestedNumServiceThreads = std::getenv("MOD_AUDIO_FORK_SERVICE_THREADS");
   static const char* mySubProtocolName = std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") ?
     std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") : "audiostream.drachtio.org";
@@ -27,92 +32,148 @@ namespace {
   static struct lws_context *context[5] = {NULL, NULL, NULL, NULL, NULL};
 
   static unsigned int idxCallCount = 0;
-  static std::list<struct cap_cb *> pendingConnects;
-  static std::list<struct cap_cb *> pendingDisconnects;
-  static std::list<struct cap_cb *> pendingWrites;
+  static std::list<private_t*> pendingConnects;
+  static std::list<private_t*> pendingDisconnects;
+  static std::list<private_t*> pendingWrites;
   static std::mutex g_mutex_connects;
   static std::mutex g_mutex_disconnects;
   static std::mutex g_mutex_writes;
   static uint32_t playCount = 0;
 
-	uint32_t bumpPlayCount(void) { return ++playCount; }
-
-  void bufInit(struct cap_cb* cb) {
-    cb->buf_head = &cb->audio_buffer[0] + LWS_PRE;
-  }
-  uint8_t* bufGetWriteHead(struct cap_cb* cb) {
-    return cb->buf_head;
-  }
-  uint8_t* bufGetReadHead(struct cap_cb* cb) {
-    return &cb->audio_buffer[0] + LWS_PRE;
-  }
-  size_t bufGetAvailable(struct cap_cb* cb) {
-    uint8_t* pEnd = &cb->audio_buffer[0] + sizeof(cb->audio_buffer);
-    assert(cb->buf_head <= pEnd);
-    return pEnd - cb->buf_head;
-  }
-  size_t bufGetUsed(struct cap_cb* cb) {
-    return cb->buf_head - &cb->audio_buffer[0] - LWS_PRE;
-  }
-  void bufBumpWriteHead(struct cap_cb* cb, spx_uint32_t len) {
-    cb->buf_head += len;
-    assert(cb->buf_head <= &cb->audio_buffer[0] + sizeof(cb->audio_buffer));
+  void initAudioBuffer(private_t *tech_pvt) {
+    tech_pvt->ws_audio_buffer_write_offset = LWS_PRE;
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) reset write offset to start: %lu\n", 
+      tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset);
   }
 
-  void addPendingConnect(struct cap_cb* cb) {
-    std::lock_guard<std::mutex> guard(g_mutex_connects);
-    cb->state = LWS_CLIENT_IDLE;
-    pendingConnects.push_back(cb);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "addPendingConnect - after adding there are now %lu pending\n", pendingConnects.size());
-  }
+  switch_status_t fork_data_init(private_t *tech_pvt, switch_core_session_t *session, char * host, 
+    unsigned int port, char* path, int sslFlags, int sampling, int desiredSampling, int channels, char* metadata, responseHandler_t responseHandler) {
 
-  void addPendingDisconnect(struct cap_cb* cb) {
-    std::lock_guard<std::mutex> guard(g_mutex_disconnects);
-    cb->state = LWS_CLIENT_DISCONNECTING;
-    pendingDisconnects.push_back(cb);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "addPendingDisconnect - after adding there are now %lu pending\n", pendingDisconnects.size());
-  }
+    int err;
+    switch_codec_implementation_t read_impl;
+    switch_core_session_get_read_impl(session, &read_impl);
+  
+    memset(tech_pvt, 0, sizeof(private_t));
+  
+    strncpy(tech_pvt->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
+    tech_pvt->ws_state = LWS_CLIENT_IDLE;
+    strncpy(tech_pvt->host, host, MAX_WS_URL_LEN);
+    tech_pvt->port = port;
+    strncpy(tech_pvt->path, path, MAX_PATH_LEN);
+    tech_pvt->sslFlags = sslFlags;
+    tech_pvt->wsi = NULL;
+    tech_pvt->vhd = NULL;
+    tech_pvt->metadata = NULL;
+    tech_pvt->sampling = desiredSampling;
+    tech_pvt->responseHandler = responseHandler;
+    tech_pvt->playout = NULL;
+    tech_pvt->channels = channels;
+    tech_pvt->id = ++idxCallCount;
 
-  void addPendingWrite(struct cap_cb* cb) {
-    std::lock_guard<std::mutex> guard(g_mutex_writes);
-    pendingWrites.push_back(cb);
-  }
+    tech_pvt->ws_audio_buffer_max_len = LWS_PRE +
+      (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
+    tech_pvt->ws_audio_buffer = (uint8_t *) malloc(tech_pvt->ws_audio_buffer_max_len);
+    if (nullptr == tech_pvt->ws_audio_buffer) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error allocating audio buffer\n");
+      return SWITCH_STATUS_FALSE;
+    }
+    tech_pvt->ws_audio_buffer_min_freespace = read_impl.decoded_bytes_per_packet;
+    initAudioBuffer(tech_pvt);
 
-  struct cap_cb* findAndRemovePendingConnect(struct lws *wsi) {
-    struct cap_cb* cb = NULL;
-    std::lock_guard<std::mutex> guard(g_mutex_connects);
+    switch_mutex_init(&tech_pvt->ws_send_mutex, SWITCH_MUTEX_DEFAULT, switch_core_session_get_pool(session));
+    switch_mutex_init(&tech_pvt->ws_recv_mutex, SWITCH_MUTEX_DEFAULT, switch_core_session_get_pool(session));
+    switch_mutex_init(&tech_pvt->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
+    switch_thread_cond_create(&tech_pvt->cond, switch_core_session_get_pool(session));
 
-    for (auto it = pendingConnects.begin(); it != pendingConnects.end() && !cb; ++it) {
-      if ((*it)->state == LWS_CLIENT_CONNECTING && (*it)->wsi == wsi) cb = *it;
+    if (desiredSampling != sampling) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) resampling from %u to %u\n", tech_pvt->id, sampling, desiredSampling);
+      tech_pvt->resampler = speex_resampler_init(channels, sampling, desiredSampling, SWITCH_RESAMPLE_QUALITY, &err);
+      if (0 != err) {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing resampler: %s.\n", speex_resampler_strerror(err));
+        return SWITCH_STATUS_FALSE;
+      }
+    }
+    else {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) no resampling needed for this call\n", tech_pvt->id);
     }
 
-    if (cb) pendingConnects.remove(cb);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) fork_data_init\n", tech_pvt->id);
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "findAndRemovePendingConnect - after removing there are now %lu pending\n", pendingConnects.size());
-
-    return cb;
+    return SWITCH_STATUS_SUCCESS;
   }
 
-  void destroy_cb(struct cap_cb *cb) {
-    speex_resampler_destroy(cb->resampler);
-    switch_mutex_destroy(cb->mutex);
-    switch_thread_cond_destroy(cb->cond);
-    cb->wsi = NULL;
-    cb->state = LWS_CLIENT_DISCONNECTED;
+  void destroy_tech_pvt(private_t* tech_pvt) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) destroy_tech_pvt\n", tech_pvt->id);
+    tech_pvt->ws_state = LWS_CLIENT_DISCONNECTED;
+    if (tech_pvt->resampler) {
+      speex_resampler_destroy(tech_pvt->resampler);
+      tech_pvt->resampler = nullptr;
+    }
+    if (tech_pvt->mutex) {
+      switch_mutex_destroy(tech_pvt->mutex);
+      tech_pvt->mutex = nullptr;
+    }
+    if (tech_pvt->cond) {
+      switch_thread_cond_destroy(tech_pvt->cond);
+      tech_pvt->cond = nullptr;
+    }
+    tech_pvt->wsi = nullptr;
+    if (tech_pvt->ws_audio_buffer) {
+      free(tech_pvt->ws_audio_buffer);
+      tech_pvt->ws_audio_buffer = nullptr;
+      tech_pvt->ws_audio_buffer_max_len = tech_pvt->ws_audio_buffer_write_offset = 0;
+    }
   }
 
-  void processIncomingMessage(struct cap_cb* cb, int isBinary) {
-    assert(cb->recv_buf);
+	uint32_t bumpPlayCount(void) { return ++playCount; }
+
+  void addPendingConnect(private_t* tech_pvt) {
+    std::lock_guard<std::mutex> guard(g_mutex_connects);
+    tech_pvt->ws_state = LWS_CLIENT_IDLE;
+    pendingConnects.push_back(tech_pvt);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) there are now %lu pending connections\n", tech_pvt->id, pendingConnects.size());
+  }
+
+  void addPendingDisconnect(private_t* tech_pvt) {
+    std::lock_guard<std::mutex> guard(g_mutex_disconnects);
+    tech_pvt->ws_state = LWS_CLIENT_DISCONNECTING;
+    pendingDisconnects.push_back(tech_pvt);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) there are now %lu pending disconnects\n", tech_pvt->id, pendingDisconnects.size());
+  }
+
+  void addPendingWrite(private_t* tech_pvt) {
+    std::lock_guard<std::mutex> guard(g_mutex_writes);
+    pendingWrites.push_back(tech_pvt);
+  }
+
+  private_t* findAndRemovePendingConnect(struct lws *wsi) {
+    private_t* tech_pvt = NULL;
+    std::lock_guard<std::mutex> guard(g_mutex_connects);
+
+    for (auto it = pendingConnects.begin(); it != pendingConnects.end() && !tech_pvt; ++it) {
+      if ((*it)->ws_state == LWS_CLIENT_CONNECTING && (*it)->wsi == wsi) tech_pvt = *it;
+    }
+
+    if (tech_pvt) {
+      pendingConnects.remove(tech_pvt);
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) after removing connection there are now %lu pending connections\n", tech_pvt->id, pendingConnects.size());
+    }
+
+    return tech_pvt;
+  }
+
+  void processIncomingMessage(private_t* tech_pvt, int isBinary) {
+    assert(tech_pvt->recv_buf);
     std::string type;
 
     if (isBinary) {
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "processIncomingMessage - unexpected binary message, discarding..\n");
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) processIncomingMessage - unexpected binary message, discarding..\n", tech_pvt->id);
       return;
     }
-    std::string msg((char *)cb->recv_buf, cb->recv_buf_ptr - cb->recv_buf);
-    cJSON* json = parse_json(cb->sessionId, msg, type) ;
+    std::string msg((char *)tech_pvt->recv_buf, tech_pvt->recv_buf_ptr - tech_pvt->recv_buf);
+    cJSON* json = parse_json(tech_pvt->sessionId, msg, type) ;
     if (json) {
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "processIncomingMessage - received %s message\n", type.c_str());
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - received %s message\n", tech_pvt->id, type.c_str());
       cJSON* jsonData = cJSON_GetObjectItem(json, "data");
       if (0 == type.compare("playAudio")) {
         if (jsonData) {
@@ -157,7 +218,7 @@ namespace {
           }
           else {
             validAudio = 0;
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "processIncomingMessage - unsupported audioContentType: %s\n", szAudioContentType);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - unsupported audioContentType: %s\n", tech_pvt->id, szAudioContentType);
           }
 
           if (validAudio) {
@@ -165,7 +226,7 @@ namespace {
 
             std::string rawAudio = drachtio::base64_decode(jsonAudio->valuestring);
             switch_snprintf(szFilePath, 256, "%s%s%s_%d.tmp%s", SWITCH_GLOBAL_dirs.temp_dir, 
-              SWITCH_PATH_SEPARATOR, cb->sessionId, bumpPlayCount(), fileType);
+              SWITCH_PATH_SEPARATOR, tech_pvt->sessionId, bumpPlayCount(), fileType);
             std::ofstream f(szFilePath, std::ofstream::binary);
             f << rawAudio;
             f.close();
@@ -174,27 +235,27 @@ namespace {
             struct playout* playout = (struct playout *) malloc(sizeof(struct playout));
             playout->file = (char *) malloc(strlen(szFilePath) + 1);
             strcpy(playout->file, szFilePath);
-            playout->next = cb->playout;
-            cb->playout = playout;
+            playout->next = tech_pvt->playout;
+            tech_pvt->playout = playout;
 
             jsonFile = cJSON_CreateString(szFilePath);
             cJSON_AddItemToObject(jsonData, "file", jsonFile);
           }
 
           char* jsonString = cJSON_PrintUnformatted(jsonData);
-          cb->responseHandler(cb->sessionId, EVENT_PLAY_AUDIO, jsonString);
+          tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_PLAY_AUDIO, jsonString);
           free(jsonString);
           if (jsonAudio) cJSON_Delete(jsonAudio);
         }
         else {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "processIncomingMessage - missing data payload in playAudio request\n"); 
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) processIncomingMessage - missing data payload in playAudio request\n", tech_pvt->id); 
         }
       }
       else if (0 == type.compare("killAudio")) {
-        cb->responseHandler(cb->sessionId, EVENT_KILL_AUDIO, NULL);
+        tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_KILL_AUDIO, NULL);
 
         // kill any current playback on the channel
-        switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
+        switch_core_session_t* session = switch_core_session_locate(tech_pvt->sessionId);
         if (session) {
           switch_channel_t *channel = switch_core_session_get_channel(session);
           switch_channel_set_flag_value(channel, CF_BREAK, 2);
@@ -204,55 +265,57 @@ namespace {
       }
       else if (0 == type.compare("transcription")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        cb->responseHandler(cb->sessionId, EVENT_TRANSCRIPTION, jsonString);
+        tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_TRANSCRIPTION, jsonString);
         free(jsonString);        
       }
       else if (0 == type.compare("transfer")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        cb->responseHandler(cb->sessionId, EVENT_TRANSFER, jsonString);
+        tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_TRANSFER, jsonString);
         free(jsonString);                
       }
       else if (0 == type.compare("disconnect")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        cb->responseHandler(cb->sessionId, EVENT_DISCONNECT, jsonString);
+        tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_DISCONNECT, jsonString);
         free(jsonString);        
       }
       else if (0 == type.compare("error")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        cb->responseHandler(cb->sessionId, EVENT_ERROR, jsonString);
+        tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_ERROR, jsonString);
         free(jsonString);        
       }
       else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "processIncomingMessage - unsupported msg type %s\n", type.c_str());  
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) processIncomingMessage - unsupported msg type %s\n", tech_pvt->id, type.c_str());  
       }
       cJSON_Delete(json);
     }
 
-    delete [] cb->recv_buf;
-    cb->recv_buf = NULL;
-    cb->recv_buf_ptr = NULL;
+    delete [] tech_pvt->recv_buf;
+    tech_pvt->recv_buf = NULL;
+    tech_pvt->recv_buf_ptr = NULL;
   }
 
-  int connect_client(struct cap_cb* cb, struct lws_per_vhost_data *vhd) {
+  int connect_client(private_t* tech_pvt, struct lws_per_vhost_data *vhd) {
     struct lws_client_connect_info i;
 
     memset(&i, 0, sizeof(i));
 
     i.context = vhd->context;
-    i.port = cb->port;
-    i.address = cb->host;
-    i.path = cb->path;
+    i.port = tech_pvt->port;
+    i.address = tech_pvt->host;
+    i.path = tech_pvt->path;
     i.host = i.address;
     i.origin = i.address;
-    i.ssl_connection = cb->sslFlags;
+    i.ssl_connection = tech_pvt->sslFlags;
     i.protocol = mySubProtocolName;
-    i.pwsi = &(cb->wsi);
+    i.pwsi = &(tech_pvt->wsi);
 
-    cb->state = LWS_CLIENT_CONNECTING;
-    cb->vhd = vhd;
+    tech_pvt->ws_state = LWS_CLIENT_CONNECTING;
+    tech_pvt->vhd = vhd;
+
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) calling lws_client_connect_via_info\n", tech_pvt->id);
 
     if (!lws_client_connect_via_info(&i)) {
-      //cb->state = LWS_CLIENT_IDLE;
+      //tech_pvt->ws_state = LWS_CLIENT_IDLE;
       return 0;
     }
 
@@ -267,7 +330,7 @@ namespace {
       (struct lws_per_vhost_data *) lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
 
     struct lws_vhost* vhost = lws_get_vhost(wsi);
-  	struct cap_cb ** pCb = (struct cap_cb **) user;
+  	private_t ** pCb = (private_t **) user;
 
     switch (reason) {
 
@@ -285,9 +348,9 @@ namespace {
         {
           std::lock_guard<std::mutex> guard(g_mutex_connects);
           for (auto it = pendingConnects.begin(); it != pendingConnects.end(); ++it) {
-            struct cap_cb* cb = *it;
-            if (cb->state == LWS_CLIENT_IDLE) {
-              connect_client(cb, vhd);
+            private_t* tech_pvt = *it;
+            if (tech_pvt->ws_state == LWS_CLIENT_IDLE) {
+              connect_client(tech_pvt, vhd);
             }
           }
         }
@@ -296,8 +359,8 @@ namespace {
         {
           std::lock_guard<std::mutex> guard(g_mutex_writes);
           for (auto it = pendingWrites.begin(); it != pendingWrites.end(); ++it) {
-            struct cap_cb* cb = *it;
-            lws_callback_on_writable(cb->wsi);
+            private_t* tech_pvt = *it;
+            if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_CONNECTED) lws_callback_on_writable(tech_pvt->wsi);
           }
           pendingWrites.clear();
         }
@@ -306,8 +369,8 @@ namespace {
         {
           std::lock_guard<std::mutex> guard(g_mutex_disconnects);
           for (auto it = pendingDisconnects.begin(); it != pendingDisconnects.end(); ++it) {
-            struct cap_cb* cb = *it;
-            lws_callback_on_writable(cb->wsi);
+            private_t* tech_pvt = *it;
+            if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_DISCONNECTING) lws_callback_on_writable(tech_pvt->wsi);
           }
           pendingDisconnects.clear();
         }
@@ -318,16 +381,15 @@ namespace {
     case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_CLIENT_CONNECTION_ERROR wsi: %p\n", wsi);
       {
-        struct cap_cb* my_cb = findAndRemovePendingConnect(wsi);
-        if (!my_cb) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "lws_callback LWS_CALLBACK_CLIENT_CONNECTION_ERROR unable to find pending connection for wsi: %p\n", wsi);
+        private_t* tech_pvt = findAndRemovePendingConnect(wsi);
+        if (!tech_pvt) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS_CALLBACK_CLIENT_CONNECTION_ERROR unable to find pending connection for wsi: %p\n", wsi);
         }
         else {
-          struct cap_cb *cb = *pCb = my_cb;
-          switch_mutex_lock(cb->mutex);
-          cb->state = LWS_CLIENT_FAILED;
-          switch_thread_cond_signal(cb->cond);
-          switch_mutex_unlock(cb->mutex);
+          switch_mutex_lock(tech_pvt->mutex);
+          tech_pvt->ws_state = LWS_CLIENT_FAILED;
+          switch_thread_cond_signal(tech_pvt->cond);
+          switch_mutex_unlock(tech_pvt->mutex);
         }
       }      
       break;
@@ -337,111 +399,124 @@ namespace {
 
       // remove the associated cb from the pending list and allocate audio ring buffer
       {
-        struct cap_cb* my_cb = findAndRemovePendingConnect(wsi);
-        if (!my_cb) {
+        private_t* tech_pvt = findAndRemovePendingConnect(wsi);
+        if (!tech_pvt) {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "lws_callback LWS_CALLBACK_CLIENT_ESTABLISHED unable to find pending connection for wsi: %p\n", wsi);
         }
         else {
-          struct cap_cb *cb = *pCb = my_cb;
-          switch_mutex_lock(cb->mutex);
-          cb->vhd = vhd;
-          cb->state = LWS_CLIENT_CONNECTED;
-          switch_thread_cond_signal(cb->cond);
-          switch_mutex_unlock(cb->mutex);
+          *pCb = tech_pvt;
+          switch_mutex_lock(tech_pvt->mutex);
+          tech_pvt->vhd = vhd;
+          tech_pvt->ws_state = LWS_CLIENT_CONNECTED;
+          switch_thread_cond_signal(tech_pvt->cond);
+          switch_mutex_unlock(tech_pvt->mutex);
         }
       }      
       break;
 
     case LWS_CALLBACK_CLIENT_CLOSED:
       {
-        struct cap_cb *cb = *pCb;
-        if (cb && cb->state == LWS_CLIENT_DISCONNECTING) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_CLIENT_CLOSED by us wsi: %p\n", wsi);
-          destroy_cb(cb);
+        private_t* tech_pvt = *pCb;
+        if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_DISCONNECTING) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_CLOSED by us wsi: %p, context: %p, thread: %lu\n", 
+            tech_pvt->id, wsi, vhd->context, switch_thread_self());
+
+          //destroy_tech_pvt(tech_pvt);
+          switch_mutex_lock(tech_pvt->mutex);
+          switch_thread_cond_signal(tech_pvt->cond);
+          switch_mutex_unlock(tech_pvt->mutex);
+
         }
-        else if (cb && cb->state == LWS_CLIENT_CONNECTED) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_CLIENT_CLOSED from far end wsi: %p\n", wsi);
-          destroy_cb(cb);
+        else if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_CONNECTED) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_CLOSED from far end wsi: %p, context: %p, thread: %lu\n", 
+            tech_pvt->id, wsi, vhd->context, switch_thread_self());
+          destroy_tech_pvt(tech_pvt);
         }
       }
       break;
 
     case LWS_CALLBACK_CLIENT_RECEIVE:
       {
-        struct cap_cb *cb = *pCb;
-        switch_mutex_lock(cb->mutex);
+        private_t* tech_pvt = *pCb;
+        switch_mutex_lock(tech_pvt->ws_recv_mutex);
 
         if (lws_is_first_fragment(wsi)) {
           // allocate a buffer for the entire chunk of memory needed
-          assert(NULL == cb->recv_buf);
+          assert(NULL == tech_pvt->recv_buf);
           size_t bufLen = len + lws_remaining_packet_payload(wsi);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "LWS_CALLBACK_CLIENT_RECEIVE allocating %lu bytes\n", bufLen);
-          cb->recv_buf = new uint8_t[bufLen];
-          cb->recv_buf_ptr = cb->recv_buf;
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_RECEIVE allocating %lu bytes\n", tech_pvt->id, bufLen);
+          tech_pvt->recv_buf = new uint8_t[bufLen];
+          tech_pvt->recv_buf_ptr = tech_pvt->recv_buf;
         }
 
-        assert(NULL != cb->recv_buf);
+        assert(NULL != tech_pvt->recv_buf);
         if (len > 0) {
           // if we got any data, append it to the buffer
-          memcpy(cb->recv_buf_ptr, in, len);
-          cb->recv_buf_ptr += len;
+          memcpy(tech_pvt->recv_buf_ptr, in, len);
+          tech_pvt->recv_buf_ptr += len;
         }
 
         if (lws_is_final_fragment(wsi)) {
-          processIncomingMessage(cb, lws_frame_is_binary(wsi));
+          processIncomingMessage(tech_pvt, lws_frame_is_binary(wsi));
         }
-        switch_mutex_unlock(cb->mutex);
+        switch_mutex_unlock(tech_pvt->ws_recv_mutex);
       }
       break;
 
     case LWS_CALLBACK_CLIENT_WRITEABLE:
       {
-        struct cap_cb *cb = *pCb;
+        private_t* tech_pvt = *pCb;
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_WRITEABLE\n", tech_pvt->id);
 
-        switch_mutex_lock(cb->mutex);
+        switch_mutex_lock(tech_pvt->ws_send_mutex);
 
         // check for text frames to send
-        if (cb->metadata) {          
-          int n = cb->metadata_length - LWS_PRE - 1;
-          int m = lws_write(wsi, cb->metadata + LWS_PRE, n, LWS_WRITE_TEXT);
-          delete[] cb->metadata;
-          cb->metadata = NULL;
-          cb->metadata_length = 0;
+        if (tech_pvt->metadata) {          
+          int n = tech_pvt->metadata_length - LWS_PRE - 1;
+          int m = lws_write(wsi, tech_pvt->metadata + LWS_PRE, n, LWS_WRITE_TEXT);
+          delete[] tech_pvt->metadata;
+          tech_pvt->metadata = NULL;
+          tech_pvt->metadata_length = 0;
           if (m < n) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error writing metadata %d requested, %d written\n", n, m);
-            switch_mutex_unlock(cb->mutex);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) error writing metadata %d requested, %d written\n", tech_pvt->id, n, m);
+            switch_mutex_unlock(tech_pvt->ws_send_mutex);
             return -1;
           }
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "wrote %d bytes of text\n", n);
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) wrote %d bytes of text\n", tech_pvt->id, n);
 
           // there may be audio data, but only one write per writeable event
           // get it next time
-          switch_mutex_unlock(cb->mutex);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_WRITEABLE sent text frame (%d bytes) wsi: %p\n", n, wsi);
-          lws_callback_on_writable(cb->wsi);
+          switch_mutex_unlock(tech_pvt->ws_send_mutex);
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) LWS_CALLBACK_WRITEABLE sent text frame (%d bytes) wsi: %p\n", tech_pvt->id, n, wsi);
+          lws_callback_on_writable(tech_pvt->wsi);
 
           return 0;
         }
+        switch_mutex_unlock(tech_pvt->ws_send_mutex);
 
-        if (cb->state == LWS_CLIENT_DISCONNECTING) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_WRITEABLE closing connection wsi: %p\n", wsi);
+        switch_mutex_lock(tech_pvt->mutex);
+        if (tech_pvt->ws_state == LWS_CLIENT_DISCONNECTING) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) lws_callback LWS_CALLBACK_WRITEABLE closing connection wsi: %p\n", tech_pvt->id, wsi);
           lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
-          switch_mutex_unlock(cb->mutex);
+          switch_mutex_unlock(tech_pvt->mutex);
           return -1;
         }
 
         // check for audio packets
-        int n = bufGetUsed(cb);
-        if (n > 0) {
-          int m = lws_write(wsi, bufGetReadHead(cb), n, LWS_WRITE_BINARY);
-          if (m < n) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "error writing audio data %d requested, %d written\n", n, m);
-            switch_mutex_unlock(cb->mutex);
-            return -1;
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) (lwsthread) offset %lu\n", tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset);
+
+        if (tech_pvt->ws_audio_buffer_write_offset > LWS_PRE) {
+          size_t datalen = tech_pvt->ws_audio_buffer_write_offset - LWS_PRE;
+          int sent = lws_write(wsi, (unsigned char *) tech_pvt->ws_audio_buffer + LWS_PRE, datalen, LWS_WRITE_BINARY);
+          if (sent < datalen) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
+            "(%u)  LWS_CALLBACK_WRITEABLE wrote only %u of %lu bytes wsi: %p\n", 
+              tech_pvt->id, sent, datalen, wsi);
           }
-          bufInit(cb);
+          initAudioBuffer(tech_pvt);
         }
-        switch_mutex_unlock(cb->mutex);
+
+        switch_mutex_unlock(tech_pvt->mutex);
 
         return 0;
       }
@@ -459,7 +534,7 @@ namespace {
       mySubProtocolName,
       lws_callback,
       sizeof(void *),
-      0,
+      1024,
     },
     { NULL, NULL, 0, 0 }
   };
@@ -552,178 +627,219 @@ extern "C" {
               char* metadata, 
               void **ppUserData)
   {    	
-    switch_channel_t *channel = switch_core_session_get_channel(session);
-    struct cap_cb *cb;
     int err;
-    unsigned int nSelectedServiceThread = idxCallCount++ % nServiceThreads;
 
     // allocate per-session data structure
-    cb = (struct cap_cb *) switch_core_session_alloc(session, sizeof(struct cap_cb));
-    memset(cb, 0, sizeof(struct cap_cb));
-    cb->base = switch_core_session_strdup(session, "mod_audio_fork");
-    strncpy(cb->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
-    cb->state = LWS_CLIENT_IDLE;
-    strncpy(cb->host, host, MAX_WS_URL_LEN);
-    cb->port = port;
-    strncpy(cb->path, path, MAX_PATH_LEN);
-    cb->sslFlags = sslFlags;
-    cb->wsi = NULL;
-    cb->vhd = NULL;
-    cb->metadata = NULL;
-    cb->sampling = sampling;
-    cb->responseHandler = responseHandler;
-    cb->playout = NULL;
-    bufInit(cb);
-
-    switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
-    switch_thread_cond_create(&cb->cond, switch_core_session_get_pool(session));
-
-    cb->resampler = speex_resampler_init(channels, 8000, sampling, SWITCH_RESAMPLE_QUALITY, &err);
-
-    if (0 != err) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n", 
-        switch_channel_get_name(channel), speex_resampler_strerror(err));
+    private_t* tech_pvt = (private_t *) switch_core_session_alloc(session, sizeof(private_t));
+    if (!tech_pvt) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "error allocating memory!\n");
+      return SWITCH_STATUS_FALSE;
+    }
+    if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, host, port, path, sslFlags, samples_per_second, sampling, channels, metadata, responseHandler)) {
+      destroy_tech_pvt(tech_pvt);
       return SWITCH_STATUS_FALSE;
     }
 
     // now try to connect
-    switch_mutex_lock(cb->mutex);
-    addPendingConnect(cb);
+    unsigned int nSelectedServiceThread = tech_pvt->id % nServiceThreads;
+    switch_mutex_lock(tech_pvt->mutex);
+    addPendingConnect(tech_pvt);
     lws_cancel_service(context[nSelectedServiceThread]);
-    switch_thread_cond_wait(cb->cond, cb->mutex);
+    switch_thread_cond_wait(tech_pvt->cond, tech_pvt->mutex);
 
-    if (cb->state == LWS_CLIENT_FAILED) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: failed connecting to host %s\n", 
-        switch_channel_get_name(channel), host);
-      switch_mutex_unlock(cb->mutex);
-      destroy_cb(cb);
+    if (tech_pvt->ws_state == LWS_CLIENT_FAILED) {
+      switch_mutex_unlock(tech_pvt->mutex);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) failed connecting to host %s\n", tech_pvt->id, host);
+      destroy_tech_pvt(tech_pvt);
       return SWITCH_STATUS_FALSE;
     }
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s: successfully connected to host %s\n", 
-        switch_channel_get_name(channel), host);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) successfully connected to host %s\n", tech_pvt->id, host);
 
     // write initial metadata
     if (metadata) {
-      cb->metadata_length = strlen(metadata) + 1 + LWS_PRE;
-      cb->metadata = new uint8_t[cb->metadata_length];
-      memset(cb->metadata, 0, cb->metadata_length);
-      memcpy(cb->metadata + LWS_PRE, metadata, strlen(metadata));
-      addPendingWrite(cb);
-      lws_cancel_service(cb->vhd->context);
+      tech_pvt->metadata_length = strlen(metadata) + 1 + LWS_PRE;
+      tech_pvt->metadata = new uint8_t[tech_pvt->metadata_length];
+      memset(tech_pvt->metadata, 0, tech_pvt->metadata_length);
+      memcpy(tech_pvt->metadata + LWS_PRE, metadata, strlen(metadata));
+      addPendingWrite(tech_pvt);
+      lws_cancel_service(tech_pvt->vhd->context);
     }
-    switch_mutex_unlock(cb->mutex);
+    switch_mutex_unlock(tech_pvt->mutex);
 
-
-    *ppUserData = cb;
+    *ppUserData = tech_pvt;
     return SWITCH_STATUS_SUCCESS;
   }
 
   switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+    if (!bug) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "fork_session_cleanup failed because no bug\n");
+      return SWITCH_STATUS_FALSE;
+    }
+    private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
+    uint32_t id = tech_pvt->id;
 
-    if (bug) {
-      struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
-      switch_channel_set_private(channel, MY_BUG_NAME, NULL);
-      if (cb->wsi) {
-        switch_mutex_lock(cb->mutex);
-        addPendingDisconnect(cb);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) fork_session_cleanup\n", id);
 
-        if (text) {
-          cb->metadata_length = strlen(text) + 1 + LWS_PRE;
-          cb->metadata = new uint8_t[cb->metadata_length];
-          memset(cb->metadata, 0, cb->metadata_length);
-          memcpy(cb->metadata + LWS_PRE, text, strlen(text));
-          addPendingWrite(cb);
-        }
+    if (!tech_pvt || !tech_pvt->wsi) return SWITCH_STATUS_FALSE;
+      
+    switch_mutex_lock(tech_pvt->mutex);
 
-        struct playout* playout = cb->playout;
-        while (playout) {
-          std::remove(playout->file);
-          free(playout->file);
-          struct playout *tmp = playout;
-          playout = playout->next;
-          free(tmp);
-        }
-
-        lws_cancel_service(cb->vhd->context);
-        switch_mutex_unlock(cb->mutex);
+    if (tech_pvt->ws_state != LWS_CLIENT_CONNECTED) {
+      switch_mutex_unlock(tech_pvt->mutex);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) fork_session_cleanup failed because ws state is %d\n", tech_pvt->id, tech_pvt->ws_state);
+      return SWITCH_STATUS_FALSE;
+    }
+    else {
+      if (text) {
+        tech_pvt->metadata_length = strlen(text) + 1 + LWS_PRE;
+        tech_pvt->metadata = new uint8_t[tech_pvt->metadata_length];
+        memset(tech_pvt->metadata, 0, tech_pvt->metadata_length);
+        memcpy(tech_pvt->metadata + LWS_PRE, text, strlen(text));
+        addPendingWrite(tech_pvt);
       }
 
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "fork_session_cleanup: Closed stream\n");
-      return SWITCH_STATUS_SUCCESS; 
+      addPendingDisconnect(tech_pvt);
+      lws_cancel_service(tech_pvt->vhd->context);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) waiting to complete ws teardown\n", id);
+
+      // wait for disconnect to complete
+      switch_thread_cond_wait(tech_pvt->cond, tech_pvt->mutex);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) teardown completed\n", id);
+
+      switch_mutex_unlock(tech_pvt->mutex);
+      destroy_tech_pvt(tech_pvt);
+
+      // delete any temp files
+      struct playout* playout = tech_pvt->playout;
+      while (playout) {
+        std::remove(playout->file);
+        free(playout->file);
+        struct playout *tmp = playout;
+        playout = playout->next;
+        free(tmp);
+      }
+
+      switch_channel_t *channel = switch_core_session_get_channel(session);
+      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+      if (bug) {
+        switch_channel_set_private(channel, MY_BUG_NAME, NULL);
+      }
+
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) fork_session_cleanup: connection closed\n", id);
     }
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s Bug is not attached.\n", switch_channel_get_name(channel));
-    return SWITCH_STATUS_FALSE;
+    return SWITCH_STATUS_SUCCESS;
   }
 
   switch_status_t fork_session_send_text(switch_core_session_t *session, char* text) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
-
-    if (bug) {
-      struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
-      if (cb->wsi) {
-        switch_mutex_lock(cb->mutex);
-
-        cb->metadata_length = strlen(text) + 1 + LWS_PRE;
-        cb->metadata = new uint8_t[cb->metadata_length];
-        memset(cb->metadata, 0, cb->metadata_length);
-        memcpy(cb->metadata + LWS_PRE, text, strlen(text));
-
-        switch_mutex_unlock(cb->mutex);
-
-        addPendingWrite(cb);
-        lws_cancel_service(cb->vhd->context);
-      }
-
-      return SWITCH_STATUS_SUCCESS;
+    if (!bug) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "fork_session_send_text failed because no bug\n");
+      return SWITCH_STATUS_FALSE;
     }
-    return SWITCH_STATUS_FALSE;
+    private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
+  
+    if (!tech_pvt || !tech_pvt->wsi) return SWITCH_STATUS_FALSE;
+      
+    switch_mutex_lock(tech_pvt->ws_send_mutex);
+    if (tech_pvt->ws_state != LWS_CLIENT_CONNECTED) {
+      switch_mutex_unlock(tech_pvt->ws_send_mutex);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) fork_session_send_text failed because ws state is %d\n", tech_pvt->id, tech_pvt->ws_state);
+      return SWITCH_STATUS_FALSE;
+    }
+    else {
+      tech_pvt->metadata_length = strlen(text) + 1 + LWS_PRE;
+      tech_pvt->metadata = new uint8_t[tech_pvt->metadata_length];
+      memset(tech_pvt->metadata, 0, tech_pvt->metadata_length);
+      memcpy(tech_pvt->metadata + LWS_PRE, text, strlen(text));
+
+      addPendingWrite(tech_pvt);
+      lws_cancel_service(tech_pvt->vhd->context);
+      switch_mutex_unlock(tech_pvt->ws_send_mutex);
+    }
+    return SWITCH_STATUS_SUCCESS;
   }
 
-  switch_bool_t fork_frame(switch_media_bug_t *bug, void* user_data) {
-    switch_core_session_t *session = switch_core_media_bug_get_session(bug);
-    struct cap_cb *cb = (struct cap_cb *) user_data;
-    bool written = false;
-    int channels = switch_core_media_bug_test_flag(bug, SMBF_STEREO) ? 2 : 1;
+  switch_bool_t fork_frame(switch_core_session_t *session, switch_media_bug_t *bug) {
+    private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
+    size_t inuse = 0;
+    bool dirty = false;
 
-    if (switch_mutex_trylock(cb->mutex) == SWITCH_STATUS_SUCCESS) {
-      uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
-      switch_frame_t frame = { 0 };
-      frame.data = data;
-      frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
-
-      while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
-        if (frame.datalen) {
-          size_t n = bufGetAvailable(cb) >> 1;  // divide by 2 to num of uint16_t spaces available
-          if (n  > frame.samples) {
-            spx_uint32_t out_len = n;
-            spx_uint32_t in_len = frame.samples;
-            
-            speex_resampler_process_interleaved_int(cb->resampler, 
-              (const spx_int16_t *) frame.data, 
-              (spx_uint32_t *) &in_len, 
-              (spx_int16_t *) bufGetWriteHead(cb),
-              &out_len);
-
-             // i.e., if we wrote 320 16bit items then we need to increment 320*2 bytes in single-channel mode, twice that in dual channel  
-            bufBumpWriteHead(cb, out_len << channels);        
-            written = true;
+    if (!tech_pvt || !tech_pvt->wsi) return SWITCH_FALSE;
+    
+    if (switch_mutex_trylock(tech_pvt->mutex) == SWITCH_STATUS_SUCCESS) {
+      size_t available = tech_pvt->ws_audio_buffer_max_len - tech_pvt->ws_audio_buffer_write_offset;
+      if (tech_pvt->ws_state != LWS_CLIENT_CONNECTED) {
+        switch_mutex_unlock(tech_pvt->mutex);
+        return SWITCH_TRUE;
+      }
+      else if (available < tech_pvt->ws_audio_buffer_min_freespace) {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets! write offset %lu available %lu\n", 
+          tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
+      }
+      else if (NULL == tech_pvt->resampler) {
+        switch_frame_t frame = { 0 };
+        frame.data = (char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset;
+        frame.buflen = available;
+        while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
+          if (frame.datalen) {
+            tech_pvt->ws_audio_buffer_write_offset += frame.datalen;
+            available -= frame.datalen;
+            frame.data = (char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset;
+            frame.buflen = available;
+            dirty = true;
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) (rtpthread) wrote %u bytes, write offset now %lu available %lu\n", 
+              tech_pvt->id, frame.datalen, tech_pvt->ws_audio_buffer_write_offset, available);
           }
           else {
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Dropping packet.\n");
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropped packet! write offset %lu available %lu\n", 
+              tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
+            break;
           }
         }
       }
-      switch_mutex_unlock(cb->mutex);
-    }
+      else {
+        uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
+        switch_frame_t frame = { 0 };
+        frame.data = data;
+        frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
+        while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
+          if (frame.datalen) {
+            spx_uint32_t out_len = available >> 1;  // space for samples which are 2 bytes
+            spx_uint32_t in_len = frame.samples;
 
-    if (written) {
-      addPendingWrite(cb);
-      lws_cancel_service(cb->vhd->context);
-    }
+            speex_resampler_process_interleaved_int(tech_pvt->resampler, 
+              (const spx_int16_t *) frame.data, 
+              (spx_uint32_t *) &in_len, 
+              (spx_int16_t *) ((char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset),
+              &out_len);
 
+            if (out_len > 0) {
+              // bytes written = num samples * 2 * num channels
+              size_t bytes_written = out_len << tech_pvt->channels;
+              tech_pvt->ws_audio_buffer_write_offset += bytes_written ;
+              available -= bytes_written;
+              dirty = true;
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) (rtpthread) wrote %lu bytes, write offset now %lu available %lu\n", 
+                tech_pvt->id, bytes_written, tech_pvt->ws_audio_buffer_write_offset, available);
+            }
+            if (available < tech_pvt->ws_audio_buffer_min_freespace) {
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packet! write offset %lu available %lu\n", 
+                tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
+              break;
+            }
+          }
+        }
+      }
+
+      if (dirty) {
+        addPendingWrite(tech_pvt);
+        lws_cancel_service(tech_pvt->vhd->context);
+      }
+      switch_mutex_unlock(tech_pvt->mutex);
+    }
     return SWITCH_TRUE;
   }
 
@@ -740,15 +856,15 @@ extern "C" {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_audio_fork: lws_create_context failed\n");
       return;
     }
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: successfully created lws context\n");
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: successfully created lws context in thread %lu\n", 
+      switch_thread_self());
 
     int n;
     do {
-      n = lws_service(context[nServiceThread], 500);
+      n = lws_service(context[nServiceThread], WS_TIMEOUT_MS);
     } while (n >= 0 && *pRunning);
 
     lws_context_destroy(context[nServiceThread]);
-
   }
 
   switch_status_t fork_service_threads(int *pRunning) {
@@ -756,10 +872,10 @@ extern "C" {
       //LLL_INFO | LLL_PARSER | LLL_HEADER | LLL_EXT | LLL_CLIENT  | LLL_LATENCY | LLL_DEBUG ;
     lws_set_log_level(logs, lws_logger);
 
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: starting %u service threads\n", nServiceThreads);
     for (unsigned int i = 0; i < nServiceThreads; i++) {
       std::thread t(service_thread, i, pRunning);
       t.detach();
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: started service thread %  u\n", i);
     }
 
 

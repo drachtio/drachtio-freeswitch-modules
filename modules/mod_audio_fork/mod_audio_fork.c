@@ -45,7 +45,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 		break;
 	
 	case SWITCH_ABC_TYPE_READ:
-		return fork_frame(bug, user_data);
+		return fork_frame(session, bug);
 		break;
 
 	case SWITCH_ABC_TYPE_WRITE:
@@ -69,8 +69,9 @@ static switch_status_t start_capture(switch_core_session_t *session,
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
 	switch_status_t status;
-	switch_codec_implementation_t read_impl = { 0 };
-	void *pUserData;
+	switch_codec_t* read_codec;
+
+	void *pUserData = NULL;
   int channels = (flags & SMBF_STEREO) ? 2 : 1;
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
@@ -82,14 +83,15 @@ static switch_status_t start_capture(switch_core_session_t *session,
 		return SWITCH_STATUS_FALSE;
 	}
 
-	switch_core_session_get_read_impl(session, &read_impl);
+	read_codec = switch_core_session_get_read_codec(session);
 
 	if (switch_channel_pre_answer(channel) != SWITCH_STATUS_SUCCESS) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_audio_fork: channel must have reached pre-answer status before calling start!\n");
 		return SWITCH_STATUS_FALSE;
 	}
 
-	if (SWITCH_STATUS_FALSE == fork_session_init(session, responseHandler, read_impl.samples_per_second, host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == fork_session_init(session, responseHandler, read_codec->implementation->actual_samples_per_second, 
+		host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing mod_audio_fork session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
@@ -106,18 +108,13 @@ static switch_status_t do_stop(switch_core_session_t *session, char* text)
 {
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
-	switch_channel_t *channel = switch_core_session_get_channel(session);
-	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
-
-	if (bug) {
-    if (text) {
-  		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: stop w/ final text %s\n", text);
-    }
-    else {
-  		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: stop\n");
-    }
-		status = fork_session_cleanup(session, text);
+	if (text) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: stop w/ final text %s\n", text);
 	}
+	else {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: stop\n");
+	}
+	status = fork_session_cleanup(session, text);
 
 	return status;
 }
@@ -172,7 +169,7 @@ SWITCH_STANDARD_API(fork_function)
         char host[MAX_WS_URL_LEN], path[MAX_PATH_LEN];
         unsigned int port;
         int sslFlags;
-        int sampling = 16000;
+        int sampling = 8000;
       	switch_media_bug_flag_t flags = SMBF_READ_STREAM ;
         char *metadata = argc > 5 ? argv[5] : NULL ;
         if (0 == strcmp(argv[3], "mixed")) {
@@ -187,12 +184,18 @@ SWITCH_STANDARD_API(fork_function)
           switch_core_session_rwunlock(lsession);
           goto done;
         }
-        if (0 == strcmp(argv[4], "8k")) {
-          sampling = 8000;
+        if (0 == strcmp(argv[4], "16k")) {
+          sampling = 16000;
         }
+				else {
+					sampling = atoi(argv[4]);
+				}
         if (!parse_ws_uri(argv[2], &host[0], &path[0], &port, &sslFlags)) {
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid websocket uri: %s\n", argv[2]);
         }
+				else if (sampling % 8000 != 0) {
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid sample rate: %s\n", argv[4]);					
+				}
         else {
           status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, metadata, "mod_audio_fork");
         }

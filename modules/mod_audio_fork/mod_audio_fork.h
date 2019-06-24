@@ -41,14 +41,15 @@ struct playout {
 
 typedef void (*responseHandler_t)(const char* sessionId, const char* eventName, char* json);
 
-struct cap_cb {
+struct private_data {
 	switch_mutex_t *mutex;
+	switch_mutex_t *ws_send_mutex;
+	switch_mutex_t *ws_recv_mutex;
   switch_thread_cond_t *cond;
 	char sessionId[MAX_SESSION_ID];
-	char *base;
   SpeexResamplerState *resampler;
   responseHandler_t responseHandler;
-  int state;
+  int ws_state;
   char host[MAX_WS_URL_LEN];
   unsigned int port;
   char path[MAX_PATH_LEN];
@@ -57,12 +58,18 @@ struct cap_cb {
   int sslFlags;
   int sampling;
   struct lws *wsi;
-  uint8_t audio_buffer[LWS_PRE + (SWITCH_RECOMMENDED_BUFFER_SIZE << 1)];
-  uint8_t* buf_head;
+  uint8_t *ws_audio_buffer;
+  size_t ws_audio_buffer_max_len;
+  size_t ws_audio_buffer_write_offset;
+  size_t ws_audio_buffer_min_freespace;
   uint8_t* recv_buf;
   uint8_t* recv_buf_ptr;
   struct playout* playout;
   struct lws_per_vhost_data* vhd;
+  int  channels;
+  unsigned int id;
 };
+
+typedef struct private_data private_t;
 
 #endif
