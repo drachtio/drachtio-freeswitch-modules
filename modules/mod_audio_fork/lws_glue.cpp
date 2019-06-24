@@ -22,6 +22,8 @@
 #define WS_AUDIO_BUFFER_SIZE (FRAME_SIZE_16000 * 2 * 50 + LWS_PRE)  /* 50 frames at 20 ms packetization = 1 sec of audio, allow for 2 channels */
 
 namespace {
+  static const char *requestedBufferSecs = std::getenv("MOD_AUDIO_FORK_BUFFER_SECS");
+  static int nAudioBufferSecs = std::max(1, std::min(requestedBufferSecs ? ::atoi(requestedBufferSecs) : 2, 5));
   static const char *requestedNumServiceThreads = std::getenv("MOD_AUDIO_FORK_SERVICE_THREADS");
   static const char* mySubProtocolName = std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") ?
     std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") : "audiostream.drachtio.org";
@@ -68,7 +70,8 @@ namespace {
     tech_pvt->channels = channels;
     tech_pvt->id = ++idxCallCount;
 
-    tech_pvt->ws_audio_buffer_max_len = LWS_PRE + (FRAME_SIZE_8000 * (desiredSampling / 8000) * channels * (1000 / RTP_PACKETIZATION_PERIOD));  // 1 sec worth of audio
+    tech_pvt->ws_audio_buffer_max_len = LWS_PRE +
+      (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
     tech_pvt->ws_audio_buffer = (uint8_t *) malloc(tech_pvt->ws_audio_buffer_max_len);
     if (nullptr == tech_pvt->ws_audio_buffer) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error allocating audio buffer\n");
@@ -118,6 +121,7 @@ namespace {
     if (tech_pvt->ws_audio_buffer) {
       free(tech_pvt->ws_audio_buffer);
       tech_pvt->ws_audio_buffer = nullptr;
+      tech_pvt->ws_audio_buffer_max_len = tech_pvt->ws_audio_buffer_write_offset = 0;
     }
   }
 
@@ -502,7 +506,7 @@ namespace {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) (lwsthread) offset %lu\n", tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset);
 
         if (tech_pvt->ws_audio_buffer_write_offset > LWS_PRE) {
-          size_t datalen = tech_pvt->ws_audio_buffer_write_offset - LWS_PRE - 1;
+          size_t datalen = tech_pvt->ws_audio_buffer_write_offset - LWS_PRE;
           int sent = lws_write(wsi, (unsigned char *) tech_pvt->ws_audio_buffer + LWS_PRE, datalen, LWS_WRITE_BINARY);
           if (sent < datalen) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
