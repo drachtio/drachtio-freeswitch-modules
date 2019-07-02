@@ -8,14 +8,12 @@ COPY ./files /files
 COPY ./build.sh /build.sh
 RUN chmod +x /build.sh
 
+# We need this here so we can git fetch the ansible-roles repo with patches
+#  and templates that we symlink from /files. Misc other stuff that the ansible
+#  tasks we copied in build.sh depend on.
 RUN apt-get update && apt-get -y --quiet --force-yes upgrade \
-    && apt-get install -y --quiet --no-install-recommends wget git ca-certificates
-
-# We need this here so that the symlinks in /files point to patches
-#  and templates in this repo. There is almost certainly a better way
-#  to do this.
+    && apt-get install -y --quiet --no-install-recommends ca-certificates ed git wget
 RUN git clone https://github.com/davehorton/ansible-role-fsmrf.git
-RUN mkdir -p /usr/local/src/freeswitch /usr/local/freeswitch
 
 RUN /build.sh
 
