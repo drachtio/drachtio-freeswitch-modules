@@ -68,10 +68,10 @@ rm -rf /usr/local/freeswitch/conf/dialplan/public
 rm -rf /usr/local/freeswitch/conf/dialplan/skinny-patterns
 cp /files/mrf_dialplan.xml.j2 /usr/local/freeswitch/conf/dialplan/mrf.xml
 test -f /usr/local/freeswitch/conf/dialplan/mrf.xml || exit 1
-(echo 'g/rtp-start-port/s/.*/<param name="rtp-start-port" value="25000"\/>/'; echo w; echo q) | ed /usr/local/freeswitch/conf/autoload_configs/switch.conf.xml
+sed -i.bak 's/^.*rtp-start-port.*$/<param name="rtp-start-port" value="25000"\/>/' /usr/local/freeswitch/conf/autoload_configs/switch.conf.xml
 cp /files/mrf_sip_profile.xml.j2 /usr/local/freeswitch/conf/sip_profiles/mrf.xml
 test -f /usr/local/freeswitch/conf/sip_profiles/mrf.xml || exit 1
-(echo 'g/rtp-end-port/s/.*/<param name="rtp-end-port" value="39000"\/>/'; echo w; echo q) | ed /usr/local/freeswitch/conf/autoload_configs/switch.conf.xml
+sed -i.bak 's/^.*rtp-end-port.*$/<param name="rtp-end-port" value="39000"\/>/' /usr/local/freeswitch/conf/autoload_configs/switch.conf.xml
 cp /files/freeswitch_log_rotation.j2 /etc/cron.daily/freeswitch_log_rotation
 test -f /etc/cron.daily/freeswitch_log_rotation || exit 1
 chmod a+x /etc/cron.daily/freeswitch_log_rotation

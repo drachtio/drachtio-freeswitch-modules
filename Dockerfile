@@ -12,7 +12,7 @@ RUN chmod +x /build.sh
 #  and templates that we symlink from /files. Misc other stuff that the ansible
 #  tasks we copied in build.sh depend on.
 RUN apt-get update && apt-get -y --quiet --force-yes upgrade \
-    && apt-get install -y --quiet --no-install-recommends ca-certificates ed git wget
+    && apt-get install -y --quiet --no-install-recommends ca-certificates git wget
 RUN git clone https://github.com/davehorton/ansible-role-fsmrf.git
 
 RUN /build.sh
