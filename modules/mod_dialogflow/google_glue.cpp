@@ -248,6 +248,7 @@ extern "C" {
 		strncpy(cb->sessionId, switch_core_session_get_uuid(session), 256);
 		cb->responseHandler = responseHandler;
 		cb->completionHandler = completionHandler;
+		cb->errorHandler = errorHandler;
 		if (switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session)) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing mutex\n");
 			status = SWITCH_STATUS_FALSE;
