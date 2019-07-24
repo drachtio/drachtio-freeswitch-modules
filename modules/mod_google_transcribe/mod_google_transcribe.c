@@ -13,16 +13,33 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load);
 
 SWITCH_MODULE_DEFINITION(mod_google_transcribe, mod_transcribe_load, mod_transcribe_shutdown, NULL);
 
-static void responseHandler(switch_core_session_t* session, char * json) {
+static void responseHandler(switch_core_session_t* session, const char * json) {
 	switch_event_t *event;
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "json payload: %s.\n", json);
+	if (0 == strcmp("end_of_utterance", json)) {
+		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_END_OF_UTTERANCE);
+		switch_channel_event_set_data(channel, event);
+		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
+	}
+	else if (0 == strcmp("end_of_transcript", json)) {
+		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_END_OF_TRANSCRIPT);
+		switch_channel_event_set_data(channel, event);
+		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
+	}
+	else if (0 == strcmp("no_audio", json)) {
+		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_NO_AUDIO_DETECTED);
+		switch_channel_event_set_data(channel, event);
+		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
+	}
+	else {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "json payload: %s.\n", json);
 
-	switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_RESULTS);
-	switch_channel_event_set_data(channel, event);
-	switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
-	switch_event_add_body(event, "%s", json);
+		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_RESULTS);
+		switch_channel_event_set_data(channel, event);
+		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
+		switch_event_add_body(event, "%s", json);
+	}
 	switch_event_fire(&event);
 }
 
@@ -57,6 +74,22 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	return SWITCH_TRUE;
 }
 
+static switch_status_t do_stop(switch_core_session_t *session)
+{
+	switch_status_t status = SWITCH_STATUS_SUCCESS;
+
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
+
+	if (bug) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command to stop transcription.\n");
+		status = google_speech_session_cleanup(session);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "stopped transcription.\n");
+	}
+
+	return status;
+}
+
 static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, 
   char* lang, int interim, const char* base)
 {
@@ -67,8 +100,10 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	void *pUserData;
 
 	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Already Running.\n");
-		return SWITCH_STATUS_FALSE;
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
+		do_stop(session);
+		//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Already Running.\n");
+		//return SWITCH_STATUS_FALSE;
 	}
 
 	switch_core_session_get_read_impl(session, &read_impl);
@@ -88,22 +123,6 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
   switch_channel_set_private(channel, MY_BUG_NAME, bug);
 
 	return SWITCH_STATUS_SUCCESS;
-}
-
-static switch_status_t do_stop(switch_core_session_t *session)
-{
-	switch_status_t status = SWITCH_STATUS_SUCCESS;
-
-	switch_channel_t *channel = switch_core_session_get_channel(session);
-	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
-
-	if (bug) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command to stop transcription.\n");
-		status = google_speech_session_cleanup(session);
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "stopped transcription.\n");
-	}
-
-	return status;
 }
 
 #define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim]"
@@ -163,6 +182,10 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass %s!\n", TRANSCRIBE_EVENT_RESULTS);
 		return SWITCH_STATUS_TERM;
 	}
+	if (switch_event_reserve_subclass(TRANSCRIBE_EVENT_END_OF_UTTERANCE) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass %s!\n", TRANSCRIBE_EVENT_END_OF_UTTERANCE);
+		return SWITCH_STATUS_TERM;
+	}
 
 	/* connect my internal structure to the blank pointer passed to me */
 	*module_interface = switch_loadable_module_create_module_interface(pool, modname);
@@ -190,5 +213,6 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown)
 {
 	google_speech_cleanup();
 	switch_event_free_subclass(TRANSCRIBE_EVENT_RESULTS);
+	switch_event_free_subclass(TRANSCRIBE_EVENT_END_OF_UTTERANCE);
 	return SWITCH_STATUS_SUCCESS;
 }

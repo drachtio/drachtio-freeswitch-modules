@@ -8,6 +8,9 @@
 
 #define MY_BUG_NAME "google_transcribe"
 #define TRANSCRIBE_EVENT_RESULTS "google_transcribe::transcription"
+#define TRANSCRIBE_EVENT_END_OF_UTTERANCE "google_transcribe::end_of_utterance"
+#define TRANSCRIBE_EVENT_END_OF_TRANSCRIPT "google_transcribe::end_of_transcript"
+#define TRANSCRIBE_EVENT_NO_AUDIO_DETECTED "google_transcribe::no_audio_detected"
 
 
 // simply write a wave file
@@ -26,16 +29,17 @@ struct cap_cb {
 };
 #else
 /* per-channel data */
-typedef void (*responseHandler_t)(switch_core_session_t* session, char* json);
+typedef void (*responseHandler_t)(switch_core_session_t* session, const char* json);
 
 struct cap_cb {
 	switch_mutex_t *mutex;
-    switch_core_session_t *session;
+  switch_core_session_t *session;
 	char *base;
-    SpeexResamplerState *resampler;
+  SpeexResamplerState *resampler;
 	void* streamer;
 	responseHandler_t responseHandler;
 	switch_thread_t* thread;
+	int end_of_utterance;
 };
 #endif
 
