@@ -20,6 +20,23 @@ uuid_google_transcribe <uuid> stop
 ```
 Stop transcription on the channel.
 
+### Channel Variables
+Additional google speech options can be set through freeswitch channel variables listed below.
+
+| variable | Description |
+| --- | ----------- | --- |
+| GOOGLE_SPEECH_SINGLE_UTTERANCE | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.StreamingRecognitionConfig.FIELDS.bool.google.cloud.speech.v1.StreamingRecognitionConfig.single_utterance) |
+| GOOGLE_SPEECH_SEPARATE_RECOGNITION_PER_CHANNEL | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.bool.google.cloud.speech.v1.RecognitionConfig.enable_separate_recognition_per_channel) |
+| GOOGLE_SPEECH_MAX_ALTERNATIVES | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.int32.google.cloud.speech.v1.RecognitionConfig.max_alternatives) |
+| GOOGLE_SPEECH_PROFANITY_FILTER | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.bool.google.cloud.speech.v1.RecognitionConfig.profanity_filter) |
+| GOOGLE_SPEECH_ENABLE_WORD_TIME_OFFSETS | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.bool.google.cloud.speech.v1.RecognitionConfig.enable_word_time_offsets) |
+| GOOGLE_SPEECH_ENABLE_AUTOMATIC_PUNCTUATION | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.bool.google.cloud.speech.v1.RecognitionConfig.enable_automatic_punctuation) |
+| GOOGLE_SPEECH_MODEL | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.string.google.cloud.speech.v1.RecognitionConfig.model) |
+| GOOGLE_SPEECH_USE_ENHANCED | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.bool.google.cloud.speech.v1.RecognitionConfig.use_enhanced) |
+| GOOGLE_SPEECH_HINTS | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.SpeechContext.FIELDS.repeated.string.google.cloud.speech.v1.SpeechContext.phrases) |
+
+
+
 ### Events
 `google_transcribe::transcription` - returns an interim or final transcription.  The event contains a JSON body describing the transcription result:
 ```js
