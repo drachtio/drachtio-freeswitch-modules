@@ -24,7 +24,7 @@ Stop transcription on the channel.
 Additional google speech options can be set through freeswitch channel variables listed below.
 
 | variable | Description |
-| --- | ----------- | --- |
+| --- | ----------- |
 | GOOGLE_SPEECH_SINGLE_UTTERANCE | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.StreamingRecognitionConfig.FIELDS.bool.google.cloud.speech.v1.StreamingRecognitionConfig.single_utterance) |
 | GOOGLE_SPEECH_SEPARATE_RECOGNITION_PER_CHANNEL | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.bool.google.cloud.speech.v1.RecognitionConfig.enable_separate_recognition_per_channel) |
 | GOOGLE_SPEECH_MAX_ALTERNATIVES | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.int32.google.cloud.speech.v1.RecognitionConfig.max_alternatives) |
