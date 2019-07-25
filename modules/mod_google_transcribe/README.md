@@ -49,6 +49,13 @@ Additional google speech options can be set through freeswitch channel variables
 	}]
 }
 ```
+
+`google_transcribe::end_of_utterance` - returns an indication that an utterance has been detected.  This may be returned prior to a final transcription.  This event is only returned when GOOGLE_SPEECH_SINGLE_UTTERANCE is set to true.
+
+`google_transcribe::end_of_transcript` - returned when a transcription operation has completed. If a final transcription has not been returned by now, it won't be. This event is only returned when GOOGLE_SPEECH_SINGLE_UTTERANCE is set to true.
+
+`google_transcribe::no_audio_detected` - returned when google has returned an error indicating that no audio was received for a lengthy period of time.
+
 ## Usage
 When using [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), you can access this API command via the api method on the 'endpoint' object.
 ```js
