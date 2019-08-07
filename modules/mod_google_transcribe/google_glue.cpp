@@ -22,7 +22,8 @@ class GStreamer;
 
 class GStreamer {
 public:
-	GStreamer(switch_core_session_t *session, u_int16_t channels, char* lang, int interim) : m_session(session) {
+	GStreamer(switch_core_session_t *session, u_int16_t channels, char* lang, int interim) : 
+    m_session(session), m_writesDone(false) {
     const char* var;
     const char *hints;
     switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -137,7 +138,11 @@ public:
 	}
 
 	void writesDone() {
-		m_streamer->WritesDone();
+    // grpc crashes if we call this twice on a stream
+    if (!m_writesDone) {
+      m_streamer->WritesDone();
+      m_writesDone = true;
+    }
 	}
 
 protected:
@@ -150,6 +155,7 @@ private:
 	std::unique_ptr<Speech::Stub> 	m_stub;
 	std::unique_ptr< grpc::ClientReaderWriterInterface<StreamingRecognizeRequest, StreamingRecognizeResponse> > m_streamer;
 	StreamingRecognizeRequest m_request;
+  bool m_writesDone;
 };
 
 static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *obj) {
