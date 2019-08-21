@@ -18,6 +18,7 @@
 #define EVENT_KILL_AUDIO      "mod_audio_fork::kill_audio"
 #define EVENT_DISCONNECT      "mod_audio_fork::disconnect"
 #define EVENT_ERROR           "mod_audio_fork::error"
+#define EVENT_MAINTENANCE     "mod_audio_fork::maintenance"
 
 enum {
 	LWS_CLIENT_IDLE,
@@ -68,6 +69,7 @@ struct private_data {
   struct lws_per_vhost_data* vhd;
   int  channels;
   unsigned int id;
+  int buffer_overrun_notified:1;
 };
 
 typedef struct private_data private_t;
