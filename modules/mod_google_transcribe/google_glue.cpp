@@ -313,7 +313,7 @@ extern "C" {
 
         // close connection and get final responses
         GStreamer* streamer = (GStreamer *) cb->streamer;
-        if (!cb->end_of_utterance) streamer->writesDone();
+        streamer->writesDone();
 
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_speech_session_cleanup: waiting for read thread to complete\n");
         switch_status_t st;
