@@ -498,7 +498,7 @@ namespace {
           // there may be audio data, but only one write per writeable event
           // get it next time
           switch_mutex_unlock(tech_pvt->ws_send_mutex);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) LWS_CALLBACK_WRITEABLE sent text frame (%d bytes) wsi: %p\n", tech_pvt->id, n, wsi);
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_WRITEABLE sent text frame (%d bytes) wsi: %p\n", tech_pvt->id, n, wsi);
           lws_callback_on_writable(tech_pvt->wsi);
 
           return 0;
@@ -520,7 +520,7 @@ namespace {
           size_t datalen = tech_pvt->ws_audio_buffer_write_offset - LWS_PRE;
           int sent = lws_write(wsi, (unsigned char *) tech_pvt->ws_audio_buffer + LWS_PRE, datalen, LWS_WRITE_BINARY);
           if (sent < datalen) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
             "(%u)  LWS_CALLBACK_WRITEABLE wrote only %u of %lu bytes wsi: %p\n", 
               tech_pvt->id, sent, datalen, wsi);
           }
@@ -685,7 +685,7 @@ extern "C" {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
     if (!bug) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "fork_session_cleanup failed because no bug\n");
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "fork_session_cleanup: no bug - websocket conection already closed\n");
       return SWITCH_STATUS_FALSE;
     }
     private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
