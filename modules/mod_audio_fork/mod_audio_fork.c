@@ -20,7 +20,7 @@ static void responseHandler(const char* sessionId, const char * eventName, char 
   switch_core_session_t* session = switch_core_session_locate(sessionId);
   if (session) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    if (json) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "json payload: %s.\n", json);
+    if (json) switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "responseHandler: sening event payload: %s.\n", json);
     switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
     switch_channel_event_set_data(channel, event);
     if (json) switch_event_add_body(event, "%s", json);
@@ -39,7 +39,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 
 	case SWITCH_ABC_TYPE_CLOSE:
 		{
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Got SWITCH_ABC_TYPE_CLOSE.\n");
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_CLOSE.\n");
       fork_session_cleanup(session, NULL);
 		}
 		break;
@@ -74,25 +74,25 @@ static switch_status_t start_capture(switch_core_session_t *session,
 	void *pUserData = NULL;
   int channels = (flags & SMBF_STEREO) ? 2 : 1;
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, 
     "mod_audio_fork: streaming %d sampling to %s path %s port %d tls: %s.\n", 
     sampling, host, path, port, sslFlags ? "yes" : "no");
 
 	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_audio_fork: bug already attached!\n");
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_fork: bug already attached!\n");
 		return SWITCH_STATUS_FALSE;
 	}
 
 	read_codec = switch_core_session_get_read_codec(session);
 
 	if (switch_channel_pre_answer(channel) != SWITCH_STATUS_SUCCESS) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_audio_fork: channel must have reached pre-answer status before calling start!\n");
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_fork: channel must have reached pre-answer status before calling start!\n");
 		return SWITCH_STATUS_FALSE;
 	}
 
 	if (SWITCH_STATUS_FALSE == fork_session_init(session, responseHandler, read_codec->implementation->actual_samples_per_second, 
 		host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing mod_audio_fork session.\n");
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing mod_audio_fork session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
 	if ((status = switch_core_media_bug_add(session, MY_BUG_NAME, NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
@@ -100,7 +100,7 @@ static switch_status_t start_capture(switch_core_session_t *session,
 	}
 	switch_channel_set_private(channel, MY_BUG_NAME, bug);
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "exiting start_capture.\n");
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "exiting start_capture.\n");
 	return SWITCH_STATUS_SUCCESS;
 }
 
@@ -109,10 +109,10 @@ static switch_status_t do_stop(switch_core_session_t *session, char* text)
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
 	if (text) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: stop w/ final text %s\n", text);
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: stop w/ final text %s\n", text);
 	}
 	else {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: stop\n");
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: stop\n");
 	}
 	status = fork_session_cleanup(session, text);
 
@@ -126,11 +126,11 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
 	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
 
   if (bug) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "mod_audio_fork: sending text: %s.\n", text);
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: sending text: %s.\n", text);
     status = fork_session_send_text(session, text);
   }
   else {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_audio_fork: no bug, failed sending text: %s.\n", text);
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_fork: no bug, failed sending text: %s.\n", text);
   }
   return status;
 }

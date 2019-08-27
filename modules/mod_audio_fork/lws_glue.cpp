@@ -87,7 +87,7 @@ namespace {
     switch_thread_cond_create(&tech_pvt->cond, switch_core_session_get_pool(session));
 
     if (desiredSampling != sampling) {
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) resampling from %u to %u\n", tech_pvt->id, sampling, desiredSampling);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) resampling from %u to %u\n", tech_pvt->id, sampling, desiredSampling);
       tech_pvt->resampler = speex_resampler_init(channels, sampling, desiredSampling, SWITCH_RESAMPLE_QUALITY, &err);
       if (0 != err) {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing resampler: %s.\n", speex_resampler_strerror(err));
@@ -95,10 +95,10 @@ namespace {
       }
     }
     else {
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) no resampling needed for this call\n", tech_pvt->id);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) no resampling needed for this call\n", tech_pvt->id);
     }
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) fork_data_init\n", tech_pvt->id);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) fork_data_init\n", tech_pvt->id);
 
     return SWITCH_STATUS_SUCCESS;
   }
@@ -313,7 +313,11 @@ namespace {
     tech_pvt->ws_state = LWS_CLIENT_CONNECTING;
     tech_pvt->vhd = vhd;
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) calling lws_client_connect_via_info\n", tech_pvt->id);
+    switch_core_session_t* session = switch_core_session_locate(tech_pvt->sessionId);
+    if (session) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) calling lws_client_connect_via_info\n", tech_pvt->id);
+      switch_core_session_rwunlock(session);
+    }
 
     if (!lws_client_connect_via_info(&i)) {
       //tech_pvt->ws_state = LWS_CLIENT_IDLE;
@@ -380,7 +384,6 @@ namespace {
 
     /* --- client callbacks --- */
     case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_CLIENT_CONNECTION_ERROR wsi: %p\n", wsi);
       {
         private_t* tech_pvt = findAndRemovePendingConnect(wsi);
         if (!tech_pvt) {
@@ -388,6 +391,12 @@ namespace {
         }
         else {
           switch_mutex_lock(tech_pvt->mutex);
+          switch_core_session_t* session = switch_core_session_locate(tech_pvt->sessionId);
+          if (session) {
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_CLIENT_CONNECTION_ERROR wsi: %p: %s\n",
+              wsi, in ? (char *)in : "(null)");
+            switch_core_session_rwunlock(session);
+          }
           tech_pvt->ws_state = LWS_CLIENT_FAILED;
           switch_thread_cond_signal(tech_pvt->cond);
           switch_mutex_unlock(tech_pvt->mutex);
