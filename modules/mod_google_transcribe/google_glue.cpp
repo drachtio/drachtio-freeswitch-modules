@@ -232,7 +232,12 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
   }
   grpc::Status status = streamer->finish();
   if (11 == status.error_code()) {
-    cb->responseHandler(cb->session, "no_audio");
+    if (std::string::npos != status.error_message().find("Exceeded maximum allowed stream duration")) {
+      cb->responseHandler(cb->session, "max_duration_exceeded");
+    }
+    else {
+      cb->responseHandler(cb->session, "no_audio");
+    }
   }
   switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: finish() status %s (%d)\n", status.error_message().c_str(), status.error_code()) ;
 }
@@ -303,7 +308,7 @@ extern "C" {
       return SWITCH_STATUS_SUCCESS;
     }
 
-    switch_status_t google_speech_session_cleanup(switch_core_session_t *session) {
+    switch_status_t google_speech_session_cleanup(switch_core_session_t *session, int channelIsClosing) {
       switch_channel_t *channel = switch_core_session_get_channel(session);
       switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
 
@@ -326,9 +331,11 @@ extern "C" {
         switch_channel_set_private(channel, MY_BUG_NAME, NULL);
 			  switch_mutex_unlock(cb->mutex);
 
-        switch_core_media_bug_close(&bug, SWITCH_TRUE);
+        if (!channelIsClosing) {
+          switch_core_media_bug_remove(session, &bug);
+        }
 
-			  switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_speech_session_cleanup: Closed streamile\n");
+			  switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_speech_session_cleanup: Closed stream\n");
 
 			  return SWITCH_STATUS_SUCCESS;
       }

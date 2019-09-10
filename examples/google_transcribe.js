@@ -18,6 +18,8 @@ function run(ms) {
       .then(({endpoint, dialog}) => {
         dialog.on('destroy', () => endpoint.destroy());
         endpoint.addCustomEventListener('google_transcribe::transcription', onTranscription.bind(null, endpoint));
+        endpoint.addCustomEventListener('google_transcribe::no_audio_detected', restart.bind(null, endpoint));
+        endpoint.addCustomEventListener('google_transcribe::max_duration_exceeded', restart.bind(null, endpoint));
         doTts(dialog, endpoint);
       })
       .catch((err) => {
@@ -44,14 +46,6 @@ async function doTts(dlg, ep) {
 function onTranscription(ep, evt) {
   console.log(`received transcription: ${JSON.stringify(evt)}`);
   if (evt.is_final) {
-
-    // note: there appears to be a 60 sec limit on the duration of any single
-    // grpc streaming recognize request on the google cloud side - after this
-    // recognition simply fails (silently) to return recognition results
-    // as a workaround I am restarting the a new streaming recognize request here
-    ep.api('uuid_google_transcribe', [ep.uuid, 'stop'])
-    ep.api('uuid_google_transcribe', [ep.uuid, 'start', 'en-US']);  
-
     const confidence = Math.floor(evt.alternatives[0].confidence * 100) ;
     const text = `With ${confidence} percent confidence, I heard you say: ${evt.alternatives[0].transcript}`;
     ep.speak({
@@ -60,4 +54,9 @@ function onTranscription(ep, evt) {
       text
     });  
   }
+}
+
+function restart(ep) {
+  console.log('received no audio event, restart transcription');
+  ep.api('uuid_google_transcribe', [ep.uuid, 'start', 'en-US']);
 }
