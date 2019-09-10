@@ -40,7 +40,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	case SWITCH_ABC_TYPE_CLOSE:
 		{
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_CLOSE.\n");
-      fork_session_cleanup(session, NULL);
+      fork_session_cleanup(session, NULL, 1);
 		}
 		break;
 	
@@ -114,7 +114,7 @@ static switch_status_t do_stop(switch_core_session_t *session, char* text)
 	else {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: stop\n");
 	}
-	status = fork_session_cleanup(session, text);
+	status = fork_session_cleanup(session, text, 0);
 
 	return status;
 }

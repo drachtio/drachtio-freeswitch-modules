@@ -56,6 +56,8 @@ Additional google speech options can be set through freeswitch channel variables
 
 `google_transcribe::no_audio_detected` - returned when google has returned an error indicating that no audio was received for a lengthy period of time.
 
+`google_transcribe::max_duration_exceeded` - returned when google has returned an an indication that a long-running transcription has been stopped due to a max duration limit (305 seconds) on their side.  It is the applications responsibility to respond by starting a new transcription session, if desired.
+
 ## Usage
 When using [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), you can access this API command via the api method on the 'endpoint' object.
 ```js

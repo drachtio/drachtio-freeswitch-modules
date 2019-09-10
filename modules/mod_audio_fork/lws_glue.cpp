@@ -104,7 +104,7 @@ namespace {
   }
 
   void destroy_tech_pvt(private_t* tech_pvt) {
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) destroy_tech_pvt\n", tech_pvt->id);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s (%u) destroy_tech_pvt\n", tech_pvt->sessionId, tech_pvt->id);
     tech_pvt->ws_state = LWS_CLIENT_DISCONNECTED;
     if (tech_pvt->resampler) {
       speex_resampler_destroy(tech_pvt->resampler);
@@ -321,6 +321,7 @@ namespace {
 
     if (!lws_client_connect_via_info(&i)) {
       //tech_pvt->ws_state = LWS_CLIENT_IDLE;
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) lws_client_connect_via_info immediately returned failure\n", tech_pvt->id);
       return 0;
     }
 
@@ -431,17 +432,21 @@ namespace {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_CLOSED by us wsi: %p, context: %p, thread: %lu\n", 
             tech_pvt->id, wsi, vhd->context, switch_thread_self());
 
-          //destroy_tech_pvt(tech_pvt);
           switch_mutex_lock(tech_pvt->mutex);
           switch_thread_cond_signal(tech_pvt->cond);
           switch_mutex_unlock(tech_pvt->mutex);
         }
         else if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_CONNECTED) {
+          {
+            switch_mutex_lock(tech_pvt->mutex);
+            tech_pvt->ws_state = LWS_CLIENT_DISCONNECTED;
+            switch_mutex_unlock(tech_pvt->mutex);
+          }
+
           char *p = (char *) "{\"msg\": \"connection closed from far end\"}";
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_CLOSED from far end wsi: %p, context: %p, thread: %lu\n", 
-            tech_pvt->id, wsi, vhd->context, switch_thread_self());
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s (%u) LWS_CALLBACK_CLIENT_CLOSED from far end wsi: %p, context: %p, thread: %lu\n", 
+            tech_pvt->sessionId, tech_pvt->id, wsi, vhd->context, switch_thread_self());
           tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_MAINTENANCE, p);
-          destroy_tech_pvt(tech_pvt);
         }
       }
       break;
@@ -681,7 +686,7 @@ extern "C" {
     return SWITCH_STATUS_SUCCESS;
   }
 
-  switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text) {
+  switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text, int channelIsClosing) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
     if (!bug) {
@@ -697,9 +702,30 @@ extern "C" {
       
     switch_mutex_lock(tech_pvt->mutex);
 
+    // get the bug again, now that we are under lock
+    {
+      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+      if (bug) {
+        switch_channel_set_private(channel, MY_BUG_NAME, NULL);
+        if (!channelIsClosing) {
+          switch_core_media_bug_remove(session, &bug);
+        }
+      }
+    }
+
+    // delete any temp files
+    struct playout* playout = tech_pvt->playout;
+    while (playout) {
+      std::remove(playout->file);
+      free(playout->file);
+      struct playout *tmp = playout;
+      playout = playout->next;
+      free(tmp);
+    }
+
     if (tech_pvt->ws_state != LWS_CLIENT_CONNECTED) {
       switch_mutex_unlock(tech_pvt->mutex);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) fork_session_cleanup failed because ws state is %d\n", tech_pvt->id, tech_pvt->ws_state);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) fork_session_cleanup no need to close socket because ws state is %d\n", tech_pvt->id, tech_pvt->ws_state);
       return SWITCH_STATUS_FALSE;
     }
     else {
@@ -722,22 +748,6 @@ extern "C" {
       switch_mutex_unlock(tech_pvt->mutex);
       destroy_tech_pvt(tech_pvt);
 
-      // delete any temp files
-      struct playout* playout = tech_pvt->playout;
-      while (playout) {
-        std::remove(playout->file);
-        free(playout->file);
-        struct playout *tmp = playout;
-        playout = playout->next;
-        free(tmp);
-      }
-
-      switch_channel_t *channel = switch_core_session_get_channel(session);
-      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
-      if (bug) {
-        switch_channel_set_private(channel, MY_BUG_NAME, NULL);
-      }
-
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) fork_session_cleanup: connection closed\n", id);
     }
     return SWITCH_STATUS_SUCCESS;
@@ -757,7 +767,7 @@ extern "C" {
     switch_mutex_lock(tech_pvt->ws_send_mutex);
     if (tech_pvt->ws_state != LWS_CLIENT_CONNECTED) {
       switch_mutex_unlock(tech_pvt->ws_send_mutex);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) fork_session_send_text failed because ws state is %d\n", tech_pvt->id, tech_pvt->ws_state);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) fork_session_send_text failed because ws state is %d\n", tech_pvt->id, tech_pvt->ws_state);
       return SWITCH_STATUS_FALSE;
     }
     else {
