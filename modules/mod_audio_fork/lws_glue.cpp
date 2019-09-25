@@ -822,7 +822,7 @@ extern "C" {
           else {
             if (!tech_pvt->buffer_overrun_notified) {
               tech_pvt->buffer_overrun_notified = 1;
-              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropped packet! write offset %lu available %lu\n", 
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets! write offset %lu available %lu\n", 
                 tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
               tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_MAINTENANCE, p);
             }
@@ -858,7 +858,7 @@ extern "C" {
             if (available < tech_pvt->ws_audio_buffer_min_freespace) {
               if (!tech_pvt->buffer_overrun_notified) {
                 tech_pvt->buffer_overrun_notified = 1;
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packet! write offset %lu available %lu\n", 
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets! write offset %lu available %lu\n", 
                   tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
                 tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_MAINTENANCE, p);
               }
