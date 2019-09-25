@@ -33,7 +33,7 @@ static switch_status_t speech_open(switch_speech_handle_t *sh, const char *voice
 
 	sh->private_info = google;
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "speech_open - created file %s for name %s, rate %d\n", 
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "speech_open - created file %s for name %s, rate %d\n", 
 		google->file, google->voice_name, rate);
 
 	return google_speech_open(google);
@@ -45,12 +45,11 @@ static switch_status_t speech_close(switch_speech_handle_t *sh, switch_speech_fl
 	google_t *google = (google_t *) sh->private_info;
 	assert(google != NULL);
 
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "speech_close - closing file %s\n", google->file);
 	if (switch_test_flag(google->fh, SWITCH_FILE_OPEN)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "speech_close - closing file %s\n", google->file);
-
 		switch_core_file_close(google->fh);
-		unlink(google->file);
 	}
+	unlink(google->file);
 
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -59,7 +58,7 @@ static switch_status_t speech_feed_tts(switch_speech_handle_t *sh, char *text, s
 {
 	google_t *google = (google_t *) sh->private_info;
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "speech_feed_tts\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "speech_feed_tts\n");
 	if (SWITCH_STATUS_SUCCESS != google_speech_feed_tts(google, text)) {
 		return SWITCH_STATUS_FALSE;
 	}
@@ -79,19 +78,11 @@ static void speech_flush_tts(switch_speech_handle_t *sh)
 	google_t *google = (google_t *) sh->private_info;
 	assert(google != NULL);
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "speech_flush_tts\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "speech_flush_tts\n");
 
 	if (google->fh != NULL && google->fh->file_interface != NULL) {
 		switch_core_file_close(google->fh);
 	}
-	if (switch_file_exists(google->file, NULL) == SWITCH_STATUS_SUCCESS) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "speech_flush_tts - unlinking file %s\n", google->file);
-
-		//if (unlink(google->file) != 0) {
-		//	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Sound file [%s] delete failed\n", google->file);
-		//}
-	}
-
 }
 
 static switch_status_t speech_read_tts(switch_speech_handle_t *sh, void *data, size_t *datalen, switch_speech_flag_t *flags)
@@ -100,6 +91,12 @@ static switch_status_t speech_read_tts(switch_speech_handle_t *sh, void *data, s
 	size_t my_datalen = *datalen / 2;
 
 	assert(google != NULL);
+
+	if (google->fh->file_interface == (void *)0) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "file [%s] has already been closed\n", google->file);
+		unlink(google->file);
+		return SWITCH_STATUS_FALSE;
+	}
 
 	if (switch_core_file_read(google->fh, data, &my_datalen) != SWITCH_STATUS_SUCCESS) {
 		switch_core_file_close(google->fh);

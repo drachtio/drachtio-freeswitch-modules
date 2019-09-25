@@ -91,7 +91,12 @@ extern "C" {
 		memset(langCode, '\0', 6);
 		strncpy(langCode, google->voice_name, 5);
 
-		input->set_text(text);
+		if (strstr(text, "<speak>") == text) {
+			input_set_ssml(text);
+		}
+		else {
+			input->set_text(text);
+		}
 		voice->set_name(google->voice_name);
 		voice->set_language_code(langCode);
 		audio_config->set_audio_encoding(AudioEncoding::LINEAR16);
@@ -103,7 +108,9 @@ extern "C" {
 		grpc::Status status = stub->SynthesizeSpeech(&context, request, &response);
 		if (!status.ok()) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
-				"google_speech_feed_tts: error synthesizing speech: %s\n", status.error_message().c_str()); 
+				"google_speech_feed_tts: error synthesizing speech: %s: details: %s\n", 
+				status.error_message().c_str(), status.error_details().c_str()); 
+			return SWITCH_STATUS_FALSE;
 		}
 
 		std::ofstream outfile(google->file, std::ofstream::binary);
