@@ -397,7 +397,7 @@ namespace {
         }
         else if (tech_pvt->ws_state == LWS_CLIENT_CONNECT_TIMEOUT) {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "lws_callback LWS_CALLBACK_CLIENT_CONNECTION_ERROR for wsi but application already timed out, wsi: %p\n", wsi);
-          destroy_tech_pvt(tech_pvt);
+          tech_pvt->ws_state = LWS_CLIENT_DISCONNECTED;
         }
         else {
           switch_mutex_lock(tech_pvt->mutex);
@@ -465,7 +465,7 @@ namespace {
         else if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_CONNECT_TIMEOUT) {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) LWS_CALLBACK_CLIENT_CLOSED by us due to application timeout wsi: %p, context: %p, thread: %lu\n", 
             tech_pvt->id, wsi, vhd->context, switch_thread_self());
-          destroy_tech_pvt(tech_pvt);
+          tech_pvt->ws_state = LWS_CLIENT_DISCONNECTED;
         }
       }
       break;
