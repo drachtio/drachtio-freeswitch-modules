@@ -18,10 +18,15 @@
 #define WS_TIMEOUT_MS    50
 #define RTP_PACKETIZATION_PERIOD 20
 #define FRAME_SIZE_8000  320 /*which means each 20ms frame as 320 bytes at 8 khz (1 channel only)*/
-
 #define WS_AUDIO_BUFFER_SIZE (FRAME_SIZE_16000 * 2 * 50 + LWS_PRE)  /* 50 frames at 20 ms packetization = 1 sec of audio, allow for 2 channels */
 
+#define APR_INT64_C(val) INT64_C(val)
+#define APR_TIME_C(val) APR_INT64_C(val)
+#define APR_USEC_PER_SEC APR_TIME_C(1000000)
+
 namespace {
+  static const char *requestedConnectionTimeout = std::getenv("MOD_AUDIO_FORK_CONNECT_TIMEOUT_SECS");
+  static int nConnectTimeoutSecs = std::max(1, std::min(requestedConnectionTimeout ? ::atoi(requestedConnectionTimeout) : 3, 15));
   static const char *requestedBufferSecs = std::getenv("MOD_AUDIO_FORK_BUFFER_SECS");
   static int nAudioBufferSecs = std::max(1, std::min(requestedBufferSecs ? ::atoi(requestedBufferSecs) : 2, 5));
   static const char *requestedNumServiceThreads = std::getenv("MOD_AUDIO_FORK_SERVICE_THREADS");
@@ -390,6 +395,10 @@ namespace {
         if (!tech_pvt) {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS_CALLBACK_CLIENT_CONNECTION_ERROR unable to find pending connection for wsi: %p\n", wsi);
         }
+        else if (tech_pvt->ws_state == LWS_CLIENT_CONNECT_TIMEOUT) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "lws_callback LWS_CALLBACK_CLIENT_CONNECTION_ERROR for wsi but application already timed out, wsi: %p\n", wsi);
+          destroy_tech_pvt(tech_pvt);
+        }
         else {
           switch_mutex_lock(tech_pvt->mutex);
           switch_core_session_t* session = switch_core_session_locate(tech_pvt->sessionId);
@@ -413,6 +422,11 @@ namespace {
         private_t* tech_pvt = findAndRemovePendingConnect(wsi);
         if (!tech_pvt) {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "lws_callback LWS_CALLBACK_CLIENT_ESTABLISHED unable to find pending connection for wsi: %p\n", wsi);
+        }
+        else if (tech_pvt->ws_state == LWS_CLIENT_CONNECT_TIMEOUT) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "lws_callback LWS_CALLBACK_CLIENT_ESTABLISHED for wsi but application already timed out, closing: %p\n", wsi);
+          lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
+          return -1;
         }
         else {
           *pCb = tech_pvt;
@@ -447,6 +461,11 @@ namespace {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s (%u) LWS_CALLBACK_CLIENT_CLOSED from far end wsi: %p, context: %p, thread: %lu\n", 
             tech_pvt->sessionId, tech_pvt->id, wsi, vhd->context, switch_thread_self());
           tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_MAINTENANCE, p);
+        }
+        else if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_CONNECT_TIMEOUT) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) LWS_CALLBACK_CLIENT_CLOSED by us due to application timeout wsi: %p, context: %p, thread: %lu\n", 
+            tech_pvt->id, wsi, vhd->context, switch_thread_self());
+          destroy_tech_pvt(tech_pvt);
         }
       }
       break;
@@ -624,7 +643,11 @@ extern "C" {
   }
 
   switch_status_t fork_init() {
-  return SWITCH_STATUS_SUCCESS;
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: connection timeout:        %d secs\n", nConnectTimeoutSecs);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: audio buffer (in secs):    %d secs\n", nAudioBufferSecs);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: sub-protocol:              %s\n", mySubProtocolName);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: lws service threads:       %d\n", nServiceThreads);
+    return SWITCH_STATUS_SUCCESS;
   }
 
   switch_status_t fork_cleanup() {
@@ -657,33 +680,43 @@ extern "C" {
     }
 
     // now try to connect
+    switch_interval_time_t timeout = nConnectTimeoutSecs * APR_USEC_PER_SEC;
     unsigned int nSelectedServiceThread = tech_pvt->id % nServiceThreads;
     switch_mutex_lock(tech_pvt->mutex);
     addPendingConnect(tech_pvt);
     lws_cancel_service(context[nSelectedServiceThread]);
-    switch_thread_cond_wait(tech_pvt->cond, tech_pvt->mutex);
+    switch_status_t rv = switch_thread_cond_timedwait(tech_pvt->cond, tech_pvt->mutex, timeout);
 
-    if (tech_pvt->ws_state == LWS_CLIENT_FAILED) {
+    if (rv == SWITCH_STATUS_TIMEOUT) {
+      // cannot destroy_tech_pvt here because although we are timed out, the connection may later succeed
+      tech_pvt->ws_state = LWS_CLIENT_CONNECT_TIMEOUT;
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) timeout (%d secs) connecting to host %s\n",
+        tech_pvt->id, nConnectTimeoutSecs, host);
+      return SWITCH_STATUS_FALSE;
+    }
+    else if (tech_pvt->ws_state == LWS_CLIENT_FAILED) {
       switch_mutex_unlock(tech_pvt->mutex);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) failed connecting to host %s\n", tech_pvt->id, host);
       destroy_tech_pvt(tech_pvt);
       return SWITCH_STATUS_FALSE;
     }
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) successfully connected to host %s\n", tech_pvt->id, host);
+    else {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) successfully connected to host %s\n", tech_pvt->id, host);
 
-    // write initial metadata
-    if (metadata) {
-      tech_pvt->metadata_length = strlen(metadata) + 1 + LWS_PRE;
-      tech_pvt->metadata = new uint8_t[tech_pvt->metadata_length];
-      memset(tech_pvt->metadata, 0, tech_pvt->metadata_length);
-      memcpy(tech_pvt->metadata + LWS_PRE, metadata, strlen(metadata));
-      addPendingWrite(tech_pvt);
-      lws_cancel_service(tech_pvt->vhd->context);
+      // write initial metadata
+      if (metadata) {
+        tech_pvt->metadata_length = strlen(metadata) + 1 + LWS_PRE;
+        tech_pvt->metadata = new uint8_t[tech_pvt->metadata_length];
+        memset(tech_pvt->metadata, 0, tech_pvt->metadata_length);
+        memcpy(tech_pvt->metadata + LWS_PRE, metadata, strlen(metadata));
+        addPendingWrite(tech_pvt);
+        lws_cancel_service(tech_pvt->vhd->context);
+      }
+      switch_mutex_unlock(tech_pvt->mutex);
+
+      *ppUserData = tech_pvt;
+      return SWITCH_STATUS_SUCCESS;
     }
-    switch_mutex_unlock(tech_pvt->mutex);
-
-    *ppUserData = tech_pvt;
-    return SWITCH_STATUS_SUCCESS;
   }
 
   switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text, int channelIsClosing) {
@@ -884,6 +917,14 @@ extern "C" {
     info.port = CONTEXT_PORT_NO_LISTEN; 
     info.protocols = protocols;
     info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+
+    info.ka_time = 60;                    // tcp keep-alive timer
+    info.ka_probes = 3;                   // number of times to try ka before closing connection
+    info.ka_interval = 5;                 // time between ka's
+    info.timeout_secs = 5;                // doc says timeout for "various processes involving network roundtrips"
+    info.keepalive_timeout = 3;           // seconds to allow remote client to hold on to an idle HTTP/1.1 connection 
+    info.ws_ping_pong_interval = 20;      // interval in seconds between sending PINGs on idle websocket connections
+    info.timeout_secs_ah_idle = 10;       // secs to allow a client to hold an ah without using it
 
     context[nServiceThread] = lws_create_context(&info);
     if (!context[nServiceThread]) {
