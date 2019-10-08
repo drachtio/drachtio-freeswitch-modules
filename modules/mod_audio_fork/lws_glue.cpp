@@ -64,8 +64,7 @@ namespace {
     tech_pvt->ws_state = LWS_CLIENT_IDLE;
     strncpy(tech_pvt->host, host, MAX_WS_URL_LEN);
     tech_pvt->port = port;
-    strncpy(tech_pvt->path, path, MAX_PATH_LEN);
-    tech_pvt->sslFlags = sslFlags;
+    strncpy(tech_pvt->path, path, MAX_PATH_LEN);    
     tech_pvt->wsi = NULL;
     tech_pvt->vhd = NULL;
     tech_pvt->metadata = NULL;
@@ -75,6 +74,23 @@ namespace {
     tech_pvt->channels = channels;
     tech_pvt->id = ++idxCallCount;
     tech_pvt->buffer_overrun_notified = 0;
+    tech_pvt->sslFlags = 0;
+    if (sslFlags) {
+      int flags = 1;
+      switch_channel_t *channel = switch_core_session_get_channel(session);
+
+      if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_ALLOW_SELFSIGNED"))) {
+        flags |= LCCSCF_ALLOW_SELFSIGNED;
+      }
+      if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_SKIP_SERVER_CERT_HOSTNAME_CHECK"))) {
+        flags |= LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
+      }
+      if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_ALLOW_EXPIRED"))) {
+        flags |= LCCSCF_ALLOW_EXPIRED;
+      }
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "ssl flags: %d\n", flags);
+      tech_pvt->sslFlags = flags;
+    }
 
     tech_pvt->ws_audio_buffer_max_len = LWS_PRE +
       (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
