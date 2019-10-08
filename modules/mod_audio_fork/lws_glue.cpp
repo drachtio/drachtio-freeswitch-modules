@@ -153,14 +153,16 @@ namespace {
     std::lock_guard<std::mutex> guard(g_mutex_connects);
     tech_pvt->ws_state = LWS_CLIENT_IDLE;
     pendingConnects.push_back(tech_pvt);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) there are now %lu pending connections\n", tech_pvt->id, pendingConnects.size());
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) after adding wsi (%p) there are now %lu pending connections\n", 
+      tech_pvt->id, tech_pvt->wsi, pendingConnects.size());
   }
 
   void addPendingDisconnect(private_t* tech_pvt) {
     std::lock_guard<std::mutex> guard(g_mutex_disconnects);
     tech_pvt->ws_state = LWS_CLIENT_DISCONNECTING;
     pendingDisconnects.push_back(tech_pvt);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) there are now %lu pending disconnects\n", tech_pvt->id, pendingDisconnects.size());
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) removed wsi (%p) there are now %lu pending disconnects\n", 
+      tech_pvt->id, tech_pvt->wsi, pendingDisconnects.size());
   }
 
   void addPendingWrite(private_t* tech_pvt) {
@@ -178,7 +180,8 @@ namespace {
 
     if (tech_pvt) {
       pendingConnects.remove(tech_pvt);
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) after removing connection there are now %lu pending connections\n", tech_pvt->id, pendingConnects.size());
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) after removing wsi (%p) there are now %lu pending connections\n", 
+        tech_pvt->id, tech_pvt->wsi, pendingConnects.size());
     }
 
     return tech_pvt;
@@ -345,6 +348,7 @@ namespace {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) lws_client_connect_via_info immediately returned failure\n", tech_pvt->id);
       return 0;
     }
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) lws_client_connect_via_info returned ok wsi %p\n", tech_pvt->id, tech_pvt->wsi);
 
     return 1;
   }
@@ -458,6 +462,11 @@ namespace {
     case LWS_CALLBACK_CLIENT_CLOSED:
       {
         private_t* tech_pvt = *pCb;
+        if (!tech_pvt) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS_CALLBACK_CLIENT_CLOSED wsi (%p) without tech_pvt\n",
+            wsi); 
+          return 0;
+        }
         if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_DISCONNECTING) {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_CLOSED by us wsi: %p, context: %p, thread: %lu\n", 
             tech_pvt->id, wsi, vhd->context, switch_thread_self());
@@ -489,6 +498,12 @@ namespace {
     case LWS_CALLBACK_CLIENT_RECEIVE:
       {
         private_t* tech_pvt = *pCb;
+        if (!tech_pvt) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS_CALLBACK_CLIENT_RECEIVE wsi (%p) without tech_pvt\n",
+            wsi); 
+          return 0;
+        }
+
         switch_mutex_lock(tech_pvt->ws_recv_mutex);
 
         if (lws_is_first_fragment(wsi)) {
@@ -517,6 +532,11 @@ namespace {
     case LWS_CALLBACK_CLIENT_WRITEABLE:
       {
         private_t* tech_pvt = *pCb;
+        if (!tech_pvt) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS_CALLBACK_CLIENT_WRITEABLE wsi (%p) without tech_pvt\n",
+            wsi); 
+          return 0;
+        }
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_WRITEABLE\n", tech_pvt->id);
 
         switch_mutex_lock(tech_pvt->ws_send_mutex);
@@ -561,7 +581,7 @@ namespace {
           int sent = lws_write(wsi, (unsigned char *) tech_pvt->ws_audio_buffer + LWS_PRE, datalen, LWS_WRITE_BINARY);
           if (sent < datalen) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
-            "(%u)  LWS_CALLBACK_WRITEABLE wrote only %u of %lu bytes wsi: %p\n", 
+            "(%u) LWS_CALLBACK_WRITEABLE wrote only %u of %lu bytes wsi: %p\n", 
               tech_pvt->id, sent, datalen, wsi);
           }
           initAudioBuffer(tech_pvt);
