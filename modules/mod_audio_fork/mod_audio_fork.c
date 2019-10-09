@@ -166,6 +166,7 @@ SWITCH_STANDARD_API(fork_function)
         status = send_text(lsession, argv[2]);
       }
       else if (!strcasecmp(argv[1], "start")) {
+				switch_channel_t *channel = switch_core_session_get_channel(lsession);
         char host[MAX_WS_URL_LEN], path[MAX_PATH_LEN];
         unsigned int port;
         int sslFlags;
@@ -190,7 +191,7 @@ SWITCH_STANDARD_API(fork_function)
 				else {
 					sampling = atoi(argv[4]);
 				}
-        if (!parse_ws_uri(argv[2], &host[0], &path[0], &port, &sslFlags)) {
+        if (!parse_ws_uri(channel, argv[2], &host[0], &path[0], &port, &sslFlags)) {
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid websocket uri: %s\n", argv[2]);
         }
 				else if (sampling % 8000 != 0) {

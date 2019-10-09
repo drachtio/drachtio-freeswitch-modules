@@ -3,7 +3,7 @@
 
 #include "mod_audio_fork.h"
 
-int parse_ws_uri(const char* szServerUri, char* host, char *path, unsigned int* pPort, int* pSslFlags);
+int parse_ws_uri(switch_channel_t *channel, const char* szServerUri, char* host, char *path, unsigned int* pPort, int* pSslFlags);
 
 switch_status_t fork_init();
 switch_status_t fork_cleanup();

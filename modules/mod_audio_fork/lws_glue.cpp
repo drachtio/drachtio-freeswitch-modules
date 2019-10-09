@@ -74,23 +74,7 @@ namespace {
     tech_pvt->channels = channels;
     tech_pvt->id = ++idxCallCount;
     tech_pvt->buffer_overrun_notified = 0;
-    tech_pvt->sslFlags = 0;
-    if (sslFlags) {
-      int flags = 1;
-      switch_channel_t *channel = switch_core_session_get_channel(session);
-
-      if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_ALLOW_SELFSIGNED"))) {
-        flags |= LCCSCF_ALLOW_SELFSIGNED;
-      }
-      if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_SKIP_SERVER_CERT_HOSTNAME_CHECK"))) {
-        flags |= LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
-      }
-      if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_ALLOW_EXPIRED"))) {
-        flags |= LCCSCF_ALLOW_EXPIRED;
-      }
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "ssl flags: %d\n", flags);
-      tech_pvt->sslFlags = flags;
-    }
+    tech_pvt->sslFlags = sslFlags;
 
     tech_pvt->ws_audio_buffer_max_len = LWS_PRE +
       (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
@@ -175,7 +159,9 @@ namespace {
     std::lock_guard<std::mutex> guard(g_mutex_connects);
 
     for (auto it = pendingConnects.begin(); it != pendingConnects.end() && !tech_pvt; ++it) {
-      if ((*it)->ws_state == LWS_CLIENT_CONNECTING && (*it)->wsi == wsi) tech_pvt = *it;
+      int state = (*it)->ws_state;
+      if ((state == LWS_CLIENT_CONNECTING || state == LWS_CLIENT_CONNECT_TIMEOUT) &&
+        (*it)->wsi == wsi) tech_pvt = *it;
     }
 
     if (tech_pvt) {
@@ -627,20 +613,34 @@ namespace {
 }
 
 extern "C" {
-  int parse_ws_uri(const char* szServerUri, char* host, char *path, unsigned int* pPort, int* pSslFlags) {
+  int parse_ws_uri(switch_channel_t *channel, const char* szServerUri, char* host, char *path, unsigned int* pPort, int* pSslFlags) {
     int i = 0, offset;
     char server[MAX_WS_URL_LEN];
+    char *saveptr;
+    int flags = LCCSCF_USE_SSL;
     
+    if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_ALLOW_SELFSIGNED"))) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "parse_ws_uri - allowing self-signed certs\n");
+      flags |= LCCSCF_ALLOW_SELFSIGNED;
+    }
+    if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_SKIP_SERVER_CERT_HOSTNAME_CHECK"))) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "parse_ws_uri - skipping hostname check\n");
+      flags |= LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
+    }
+    if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_ALLOW_EXPIRED"))) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "parse_ws_uri - allowing expired certs\n");
+      flags |= LCCSCF_ALLOW_EXPIRED;
+    }
 
     // get the scheme
     strncpy(server, szServerUri, MAX_WS_URL_LEN);
     if (0 == strncmp(server, "https://", 8) || 0 == strncmp(server, "HTTPS://", 8)) {
-      *pSslFlags = LCCSCF_USE_SSL | LCCSCF_ALLOW_SELFSIGNED;
+      *pSslFlags = flags;
       offset = 8;
       *pPort = 443;
     }
     else if (0 == strncmp(server, "wss://", 6) || 0 == strncmp(server, "WSS://", 6)) {
-      *pSslFlags = LCCSCF_USE_SSL | LCCSCF_ALLOW_SELFSIGNED;
+      *pSslFlags = flags;
       offset = 6;
       *pPort = 443;
     }
@@ -662,7 +662,7 @@ extern "C" {
     // parse host, port and path
     strcpy(path, "/");
     char *p = server + offset;
-    char *pch = strtok(p, ":/");
+    char *pch = strtok_r(p, ":/", &saveptr);
     while (pch) {
       if (0 == i++) strncpy(host, pch, MAX_WS_URL_LEN);
       else {
@@ -672,7 +672,7 @@ extern "C" {
         if (isdigits) *pPort = atoi(pch);
         else strncpy(path + 1, pch, MAX_PATH_LEN);
       }
-      pch = strtok(NULL, ";/");
+      pch = strtok_r(NULL, ";/", &saveptr);
     }
 
     return 1;
@@ -873,8 +873,10 @@ extern "C" {
             tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
           tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_MAINTENANCE, p);
         }
+        tech_pvt->ws_audio_buffer_write_offset = 0;
+        available = tech_pvt->ws_audio_buffer_max_len;
       }
-      else if (NULL == tech_pvt->resampler) {
+      if (NULL == tech_pvt->resampler) {
         switch_frame_t frame = { 0 };
         frame.data = (char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset;
         frame.buflen = available;
@@ -979,7 +981,7 @@ extern "C" {
   }
 
   switch_status_t fork_service_threads(int *pRunning) {
-    int logs = LLL_ERR | LLL_WARN | LLL_NOTICE ;
+    int logs = LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_CLIENT  | LLL_LATENCY;
       //LLL_INFO | LLL_PARSER | LLL_HEADER | LLL_EXT | LLL_CLIENT  | LLL_LATENCY | LLL_DEBUG ;
     lws_set_log_level(logs, lws_logger);
 
