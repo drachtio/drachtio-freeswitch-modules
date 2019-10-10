@@ -866,38 +866,34 @@ extern "C" {
         switch_mutex_unlock(tech_pvt->mutex);
         return SWITCH_TRUE;
       }
-      else if (available < tech_pvt->ws_audio_buffer_min_freespace) {
-        if (!tech_pvt->buffer_overrun_notified) {
-          tech_pvt->buffer_overrun_notified = 1;
-          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets! write offset %lu available %lu\n", 
-            tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
-          tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_MAINTENANCE, p);
-        }
-        tech_pvt->ws_audio_buffer_write_offset = 0;
-        available = tech_pvt->ws_audio_buffer_max_len;
-      }
       if (NULL == tech_pvt->resampler) {
         switch_frame_t frame = { 0 };
         frame.data = (char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset;
         frame.buflen = available;
-        while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
+        while (true) {
+
+          // check if buffer would be overwritten; dump packets if so
+          if (available < tech_pvt->ws_audio_buffer_min_freespace) {
+            if (!tech_pvt->buffer_overrun_notified) {
+              tech_pvt->buffer_overrun_notified = 1;
+              tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_MAINTENANCE, p);
+            }
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets! write offset %lu available %lu\n", 
+              tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
+            tech_pvt->ws_audio_buffer_write_offset = 0;
+
+            frame.data = (char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset;
+            frame.buflen = available = tech_pvt->ws_audio_buffer_max_len;
+          }
+
+          switch_status_t rv = switch_core_media_bug_read(bug, &frame, SWITCH_TRUE);
+          if (rv != SWITCH_STATUS_SUCCESS) break;
           if (frame.datalen) {
             tech_pvt->ws_audio_buffer_write_offset += frame.datalen;
             available -= frame.datalen;
             frame.data = (char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset;
             frame.buflen = available;
             dirty = true;
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) (rtpthread) wrote %u bytes, write offset now %lu available %lu\n", 
-              tech_pvt->id, frame.datalen, tech_pvt->ws_audio_buffer_write_offset, available);
-          }
-          else {
-            if (!tech_pvt->buffer_overrun_notified) {
-              tech_pvt->buffer_overrun_notified = 1;
-              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets! write offset %lu available %lu\n", 
-                tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
-              tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_MAINTENANCE, p);
-            }
-            break;
           }
         }
       }
