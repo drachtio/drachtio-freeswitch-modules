@@ -334,6 +334,7 @@ extern "C" {
 					switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, 
 						"google_dialogflow_session_cleanup: removed audio file %s\n", filename.c_str());
 				}
+				audioFiles.erase(cb->sessionId);
 			}
 			killcb(cb);
 
