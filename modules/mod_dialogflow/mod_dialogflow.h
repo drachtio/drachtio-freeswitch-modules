@@ -34,7 +34,7 @@ struct cap_cb {
 	switch_thread_t* thread;
 	char lang[MAX_LANG];
 	char projectId[MAX_PROJECT_ID];
-	char audioFile[MAX_PATHLEN];
+
 };
 
 #endif

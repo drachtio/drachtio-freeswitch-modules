@@ -103,39 +103,39 @@ cJSON* GRPCParser::parse(const Value& value) {
     cJSON * json = NULL;
 
     switch (value.kind_case()) {
-        kNullValue: 
-			cJSON_CreateNull();
-       		break;
+      kNullValue: 
+				cJSON_CreateNull();
+      	break;
 
-        kNumberValue: 
-            json = cJSON_CreateNumber(value.number_value());
-            break;
+			kNumberValue: 
+				json = cJSON_CreateNumber(value.number_value());
+				break;
 
-        kStringValue:
-            json = cJSON_CreateString(value.string_value().c_str());
-            break;
+			kStringValue:
+				json = cJSON_CreateString(value.string_value().c_str());
+				break;
+
+			kBoolValue: 
+				json = cJSON_CreateBool(value.bool_value());
+				break;
+
+			kStructValue: 
+				json = parse(value.struct_value());
+				break;
 	
-        kBoolValue: 
-            json = cJSON_CreateBool(value.bool_value());
-            break;
+			kListValue:
+			{
+				const ListValue& list = value.list_value();
+				json = cJSON_CreateArray();
+				for (int i = 0; i < list.values_size(); i++) {
+					const Value& val = list.values(i);
+					cJSON_AddItemToArray(json, parse(val));
+				}
+			}
+      break;
 
-        kStructValue: 
-            json = parse(value.struct_value());
-			break;
-	
-        kListValue:
-		{
-            const ListValue& list = value.list_value();
-            json = cJSON_CreateArray();
-            for (int i = 0; i < list.values_size(); i++) {
-                const Value& val = list.values(i);
-                cJSON_AddItemToArray(json, parse(val));
-            }
-		}
+      default:
         break;
-
-        default:
-            break;
     }
 
     return json;
@@ -148,7 +148,8 @@ cJSON* GRPCParser::parse(const Struct& rpcStruct) {
     for ( StructIterator_t it = rpcStruct.fields().begin(); it != rpcStruct.fields().end(); it++) {
         const std::string& key = it->first;
         const Value& value = it->second;
-        cJSON_AddItemToObject(json, key.c_str(), parse(value));
+				cJSON * json =  parse(value);
+        if (json) cJSON_AddItemToObject(json, key.c_str(), json);
     }
     return json;
 }
@@ -539,20 +540,20 @@ cJSON* GRPCParser::parse(const QueryResult& qr) {
 
     cJSON_AddItemToObject(json, "query_text", cJSON_CreateString(qr.query_text().c_str()));
     cJSON_AddItemToObject(json, "language_code", cJSON_CreateString(qr.language_code().c_str()));
-	cJSON_AddItemToObject(json, "speech_recognition_confidence", cJSON_CreateNumber(qr.speech_recognition_confidence()));
+		cJSON_AddItemToObject(json, "speech_recognition_confidence", cJSON_CreateNumber(qr.speech_recognition_confidence()));
     cJSON_AddItemToObject(json, "action", cJSON_CreateString(qr.action().c_str()));
     cJSON_AddItemToObject(json, "parameters", parse(qr.parameters()));
     cJSON_AddItemToObject(json, "all_required_params_present", cJSON_CreateBool(qr.all_required_params_present()));
     cJSON_AddItemToObject(json, "fulfillment_text", cJSON_CreateString(qr.fulfillment_text().c_str()));
     cJSON_AddItemToObject(json, "fulfillment_messages", parseCollection(qr.fulfillment_messages()));
     cJSON_AddItemToObject(json, "webhook_source", cJSON_CreateString(qr.webhook_source().c_str()));
-	if (qr.has_webhook_payload()) cJSON_AddItemToObject(json, "webhook_payload", parse(qr.webhook_payload()));
+		if (qr.has_webhook_payload()) cJSON_AddItemToObject(json, "webhook_payload", parse(qr.webhook_payload()));
     cJSON_AddItemToObject(json, "output_contexts", parseCollection(qr.output_contexts()));
     cJSON_AddItemToObject(json, "intent", parse(qr.intent()));
     cJSON_AddItemToObject(json, "intent_detection_confidence", cJSON_CreateNumber(qr.intent_detection_confidence()));
-	if (qr.has_diagnostic_info()) cJSON_AddItemToObject(json, "diagnostic_info", parse(qr.diagnostic_info()));
-	cJSON_AddItemToObject(json, "sentiment_analysis_result", parse(qr.sentiment_analysis_result()));
-	cJSON_AddItemToObject(json, "knowledge_answers", parse(qr.knowledge_answers()));
+		if (qr.has_diagnostic_info()) cJSON_AddItemToObject(json, "diagnostic_info", parse(qr.diagnostic_info()));
+		cJSON_AddItemToObject(json, "sentiment_analysis_result", parse(qr.sentiment_analysis_result()));
+		cJSON_AddItemToObject(json, "knowledge_answers", parse(qr.knowledge_answers()));
 
     return json;
 }

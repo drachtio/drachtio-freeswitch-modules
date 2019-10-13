@@ -9,6 +9,8 @@
 
 #include <fstream>
 #include <string>
+#include <sstream>
+#include <map>
 
 #include "google/cloud/dialogflow/v2beta1/session.grpc.pb.h"
 
@@ -30,6 +32,7 @@ using google::rpc::Status;
 using google::protobuf::Struct;
 
 static uint64_t playCount = 0;
+static std::multimap<std::string, std::string> audioFiles;
 
 class GStreamer {
 public:
@@ -168,18 +171,35 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
 
 			// save audio
 			if (playAudio) {
+				std::ostringstream s;
+				s << SWITCH_GLOBAL_dirs.temp_dir << SWITCH_PATH_SEPARATOR <<
+					cb->sessionId << "_" <<  ++playCount;
 				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(psession), SWITCH_LOG_DEBUG, "grpc_read_thread: received audio to play\n");
 
-				// write audio to wave file
-				switch_snprintf(cb->audioFile, sizeof(cb->audioFile), "%s%s%s_%d.tmp.wav", SWITCH_GLOBAL_dirs.temp_dir, 
-					SWITCH_PATH_SEPARATOR, cb->sessionId, ++playCount);
-				std::ofstream f(cb->audioFile, std::ofstream::binary);
+				if (response.has_output_audio_config()) {
+					const OutputAudioConfig& cfg = response.output_audio_config();
+					switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(psession), SWITCH_LOG_DEBUG, "grpc_read_thread: encoding is %d\n", cfg.audio_encoding());
+					if (cfg.audio_encoding() == OutputAudioEncoding::OUTPUT_AUDIO_ENCODING_MP3) {
+						s << ".mp3";
+					}
+					else if (cfg.audio_encoding() == OutputAudioEncoding::OUTPUT_AUDIO_ENCODING_OGG_OPUS) {
+						s << ".ogg";
+					}
+					else {
+						s << ".wav";
+					}
+				}
+				std::ofstream f(s.str(), std::ofstream::binary);
 				f << audio;
 				f.close();
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(psession), SWITCH_LOG_DEBUG, "grpc_read_thread: wrote audio to %s\n", cb->audioFile);
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(psession), SWITCH_LOG_DEBUG, "grpc_read_thread: wrote audio to %s\n", s.str().c_str());
+
+				// add the file to the list of files played for this session, 
+				// we'll delete when session closes
+				audioFiles.insert(std::pair<std::string, std::string>(cb->sessionId, s.str()));
 
 				cJSON * jResponse = cJSON_CreateObject();
-				cJSON_AddItemToObject(jResponse, "path", cJSON_CreateString(cb->audioFile));
+				cJSON_AddItemToObject(jResponse, "path", cJSON_CreateString(s.str().c_str()));
 				char* json = cJSON_PrintUnformatted(jResponse);
 
 				cb->responseHandler(psession, DIALOGFLOW_EVENT_AUDIO_PROVIDED, json);
@@ -199,9 +219,15 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
 	if (psession) {
 		grpc::Status status = streamer->finish();
 		if (!status.ok()) {
+			std::ostringstream s;
+			s << "{\"msg\": \"" << status.error_message() << "\", \"code\": " << status.error_code();
+			if (status.error_details().length() > 0) {
+				s << ", \"details\": \"" << status.error_details() << "\"";
+			}
+			s << "}";
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "StreamingDetectIntentRequest finished with err %s (%d): %s\n", 
 				status.error_message().c_str(), status.error_code(), status.error_details().c_str());
-			cb->errorHandler(psession, status.error_message().c_str());
+			cb->errorHandler(psession, s.str().c_str());
 		}
 		cb->completionHandler(psession);
 
@@ -249,6 +275,7 @@ extern "C" {
 		cb->responseHandler = responseHandler;
 		cb->completionHandler = completionHandler;
 		cb->errorHandler = errorHandler;
+
 		if (switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session)) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing mutex\n");
 			status = SWITCH_STATUS_FALSE;
@@ -281,7 +308,7 @@ extern "C" {
 		return status;
 	}
 
-	switch_status_t google_dialogflow_session_stop(switch_core_session_t *session) {
+	switch_status_t google_dialogflow_session_stop(switch_core_session_t *session, int channelIsClosing) {
 		switch_channel_t *channel = switch_core_session_get_channel(session);
 		switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
 
@@ -297,12 +324,21 @@ extern "C" {
 				streamer->finish();
 			}
 
+			// delete any temp files
+			if (channelIsClosing) {
+				typedef std::multimap<std::string, std::string>::iterator MMAPIterator;
+				std::pair<MMAPIterator, MMAPIterator> result = audioFiles.equal_range(cb->sessionId);
+				for (MMAPIterator it = result.first; it != result.second; it++) {
+					std::string filename = it->second;
+					std::remove(filename.c_str());
+					switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, 
+						"google_dialogflow_session_cleanup: removed audio file %s\n", filename.c_str());
+				}
+			}
 			killcb(cb);
 
 			switch_channel_set_private(channel, MY_BUG_NAME, NULL);
-			//switch_core_media_bug_destroy(&bug);
-			switch_core_media_bug_close(&bug, SWITCH_FALSE);
-			//switch_core_media_bug_remove_all_function(session, "dialogflow");
+			if (!channelIsClosing) switch_core_media_bug_remove(session, &bug);
 			switch_mutex_unlock(cb->mutex);
 
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_dialogflow_session_cleanup: Closed google session\n");
