@@ -34,6 +34,25 @@ using google::protobuf::Struct;
 static uint64_t playCount = 0;
 static std::multimap<std::string, std::string> audioFiles;
 
+static switch_status_t hanguphook(switch_core_session_t *session) {
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	switch_channel_state_t state = switch_channel_get_state(channel);
+
+	if (state == CS_HANGUP || state == CS_ROUTING) {
+		char * sessionId = switch_core_session_get_uuid(session);
+		typedef std::multimap<std::string, std::string>::iterator MMAPIterator;
+		std::pair<MMAPIterator, MMAPIterator> result = audioFiles.equal_range(sessionId);
+		for (MMAPIterator it = result.first; it != result.second; it++) {
+			std::string filename = it->second;
+			std::remove(filename.c_str());
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, 
+				"google_dialogflow_session_cleanup: removed audio file %s\n", filename.c_str());
+		}
+		audioFiles.erase(sessionId);
+		switch_core_event_hook_remove_state_change(session, hanguphook);
+	}
+}
+
 class GStreamer {
 public:
 	GStreamer(switch_core_session_t *session, const char* lang, char* projectId, char* event) : 
@@ -293,6 +312,9 @@ extern "C" {
 			goto done;
 		}
 
+		// hangup hook to clear temp audio files
+		switch_core_event_hook_add_state_change(session, hanguphook);
+
 		// create the read thread
 		switch_threadattr_create(&thd_attr, pool);
 		switch_threadattr_detach_set(thd_attr, 1);
@@ -322,19 +344,6 @@ extern "C" {
 			if (streamer) {
 				streamer->writesDone();
 				streamer->finish();
-			}
-
-			// delete any temp files
-			if (channelIsClosing) {
-				typedef std::multimap<std::string, std::string>::iterator MMAPIterator;
-				std::pair<MMAPIterator, MMAPIterator> result = audioFiles.equal_range(cb->sessionId);
-				for (MMAPIterator it = result.first; it != result.second; it++) {
-					std::string filename = it->second;
-					std::remove(filename.c_str());
-					switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, 
-						"google_dialogflow_session_cleanup: removed audio file %s\n", filename.c_str());
-				}
-				audioFiles.erase(cb->sessionId);
 			}
 			killcb(cb);
 
