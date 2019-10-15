@@ -13,5 +13,6 @@
     "project": "my-project-id",
     "lang": "en-US",
     "event": "welcome"
-  }
+  },
+  "transferMethod": "INVITE"
 }

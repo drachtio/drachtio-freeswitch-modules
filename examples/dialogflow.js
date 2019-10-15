@@ -20,6 +20,10 @@ function run(ms) {
       .then(({endpoint, dialog}) => {
         dialog.on('destroy', () => endpoint.destroy());
         setHandlers(endpoint, dialog);
+        dialog.locals = {
+          callingNumber: req.callingNumber,
+          source_address: req.source_address
+        };
         endpoint.api('dialogflow_start', `${endpoint.uuid} ${projectId} ${lang} 30 ${startEvent}`);
       })
       .catch((err) => {
@@ -45,15 +49,20 @@ function onIntent(ep, dlg, evt) {
   if (responseId.length === 0) {
     console.log('no intent was detected, reprompt...');
     ep.api('dialogflow_start', `${ep.uuid} ${projectId} ${lang} 30 actions_intent_NO_INPUT`);
+    return;
   }
-  else {
-    if (evt.query_result.intent.end_interaction) {
-      this.hangupAfterPlayDone = true;
-      this.waitingForPlayStart = true;
-      setTimeout(() => {
-        if (this.waitingForPlayStart) dlg.destroy();
-      }, 1000);
-    }
+
+  const transferTo = checkIntentForCallTransfer(evt);
+  if (transferTo) {
+    console.log(`transfering call to ${transferTo} after prompt completes`);
+    ep.transferTo = transferTo;
+  }
+  if (evt.query_result.intent.end_interaction || transferTo) {
+    ep.hangupAfterPlayDone = !transferTo;
+    ep.waitingForPlayStart = true;
+    setTimeout(() => {
+      if (ep.waitingForPlayStart) dlg.destroy();
+    }, 1000);
   }
 }
 
@@ -71,7 +80,55 @@ async function onAudioProvided(ep, dlg, evt) {
   console.log(`got audio file to play: ${evt.path}`);
   ep.waitingForPlayStart = false;
   await ep.play(evt.path);
-  if (ep.hangupAfterPlayDone) dlg.destroy();
+  if (ep.hangupAfterPlayDone) {
+    console.log('hanging up since intent was marked end interaction');
+    dlg.destroy();
+  }
+  else if (ep.transferTo) {
+    const doRefer = config.has('transferMethod') && config.get('transferMethod') === 'REFER';
+    console.log(`transfering call to ${ep.transferTo} using ${doRefer ? 'REFER' : 'INVITE'}`);
+    if (doRefer) {
+      dlg.request({
+        method: 'REFER',
+        headers: {
+          'Refer-To': `<sip:${ep.transferTo}@${dlg.locals.source_address}>`,
+          'Referred-By': `<sip:${dlg.locals.callingNumber}@${dlg.locals.source_address}>`,
+          'Contact': '<sip:localhost>'
+        }
+      });
+      dlg.on('notify', (req, res) => {
+        res.send(200);
+        logger.info(`received NOTIFY with ${req.body}`);
+        if (req.get('Subscription-State').match(/terminated/)) {
+          logger.info('hanging up after transfer completes');
+          dlg.destroy();
+          ep.destroy();
+        }
+      });
+    }
+    else {
+      const srf = dlg.srf;
+      try {
+        const dlgB = await srf.createUAC(
+          `sip:${ep.transferTo}@${dlg.locals.source_address}`,
+          {
+            localSdp: dlg.remote.sdp,
+            callingNumber: dlg.locals.callingNumber
+          }
+        );
+        dlg.removeAllListeners('destroy');
+        ep.destroy();
+        dlg.other = dlgB;
+        dlgB.other = dlg;
+        [dlg, dlgB].forEach((d) => {
+          d.on('destroy', () => d.other.destroy());
+        });
+      }
+      catch (err) {
+        console.log(err, `Call transfer outdial failed with ${err.status}`);
+      }
+    }
+  }
   else ep.api('dialogflow_start', `${ep.uuid} ${projectId} ${lang} 30`);
 }
 
@@ -85,4 +142,16 @@ function onEndOfUtterance(evt) {
 //    action: just log it
 function onError(evt) {
   console.log(`got error: ${JSON.stringify(evt)}`);
+}
+
+function checkIntentForCallTransfer(intent) {
+  if (!intent.query_result || !intent.query_result.fulfillment_messages) return;
+  const telephonyPlatform = intent.query_result.fulfillment_messages.find((f) =>{
+    return f.platform === 'TELEPHONY' &&
+      f.telephony_transfer_call &&
+      f.telephony_transfer_call.phone_number;
+  });
+  if (telephonyPlatform) {
+    return telephonyPlatform.telephony_transfer_call.phone_number;
+  }
 }
