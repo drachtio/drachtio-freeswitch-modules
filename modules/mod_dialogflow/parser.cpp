@@ -100,30 +100,30 @@ cJSON* GRPCParser::parse(const google::rpc::Status& o) {
 }
 
 cJSON* GRPCParser::parse(const Value& value) {
-    cJSON * json = NULL;
+	cJSON* json = NULL;
 
-    switch (value.kind_case()) {
-      kNullValue: 
-				cJSON_CreateNull();
-      	break;
+	switch (value.kind_case()) {
+		case Value::KindCase::kNullValue:
+			json = cJSON_CreateNull();
+			break;
 
-			kNumberValue: 
-				json = cJSON_CreateNumber(value.number_value());
-				break;
+		case Value::KindCase::kNumberValue:
+			json = cJSON_CreateNumber(value.number_value());
+			break;
 
-			kStringValue:
-				json = cJSON_CreateString(value.string_value().c_str());
-				break;
+		case Value::KindCase::kStringValue:
+			json = cJSON_CreateString(value.string_value().c_str());
+			break;
 
-			kBoolValue: 
-				json = cJSON_CreateBool(value.bool_value());
-				break;
+		case Value::KindCase::kBoolValue:
+			json = cJSON_CreateBool(value.bool_value());
+			break;
 
-			kStructValue: 
-				json = parse(value.struct_value());
-				break;
-	
-			kListValue:
+		case Value::KindCase::kStructValue:
+			json = parse(value.struct_value());
+			break;
+
+		case Value::KindCase::kListValue: 
 			{
 				const ListValue& list = value.list_value();
 				json = cJSON_CreateArray();
@@ -131,27 +131,22 @@ cJSON* GRPCParser::parse(const Value& value) {
 					const Value& val = list.values(i);
 					cJSON_AddItemToArray(json, parse(val));
 				}
-			}
-      break;
+			} 
+			break;
+	}
 
-      default:
-        break;
-    }
-
-    return json;
+	return json;
 }
 
-
 cJSON* GRPCParser::parse(const Struct& rpcStruct) {
-    cJSON * json = cJSON_CreateObject();
+	cJSON* json = cJSON_CreateObject();
 
-    for ( StructIterator_t it = rpcStruct.fields().begin(); it != rpcStruct.fields().end(); it++) {
-        const std::string& key = it->first;
-        const Value& value = it->second;
-				cJSON * json =  parse(value);
-        if (json) cJSON_AddItemToObject(json, key.c_str(), json);
-    }
-    return json;
+	for (StructIterator_t it = rpcStruct.fields().begin(); it != rpcStruct.fields().end(); it++) {
+		const std::string& key = it->first;
+		const Value& value = it->second;
+		cJSON_AddItemToObject(json, key.c_str(), parse(value));
+	}
+	return json;
 }
 
 cJSON* GRPCParser::parse(const Intent_Message_SimpleResponse& o) {
