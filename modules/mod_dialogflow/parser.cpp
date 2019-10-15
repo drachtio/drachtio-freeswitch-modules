@@ -123,7 +123,7 @@ cJSON* GRPCParser::parse(const Value& value) {
 			json = parse(value.struct_value());
 			break;
 
-		case Value::KindCase::kListValue: 
+		case Value::KindCase::kListValue:
 			{
 				const ListValue& list = value.list_value();
 				json = cJSON_CreateArray();
