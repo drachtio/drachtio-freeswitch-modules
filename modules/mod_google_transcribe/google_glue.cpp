@@ -318,15 +318,18 @@ extern "C" {
 
         // close connection and get final responses
         GStreamer* streamer = (GStreamer *) cb->streamer;
-        streamer->writesDone();
+        if (streamer) {
+          streamer->writesDone();
 
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_speech_session_cleanup: waiting for read thread to complete\n");
-        switch_status_t st;
-        switch_thread_join(&st, cb->thread);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_speech_session_cleanup: read thread completed\n");
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_speech_session_cleanup: waiting for read thread to complete\n");
+          switch_status_t st;
+          switch_thread_join(&st, cb->thread);
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_speech_session_cleanup: read thread completed\n");
 
-        delete streamer;
-        cb->streamer = NULL;
+          delete streamer;
+          cb->streamer = NULL;
+        }
+
         speex_resampler_destroy(cb->resampler);
         switch_channel_set_private(channel, MY_BUG_NAME, NULL);
 			  switch_mutex_unlock(cb->mutex);
