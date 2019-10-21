@@ -515,7 +515,7 @@ extern "C" {
                 tech_pvt->buffer_overrun_notified = 1;
                 switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets!\n", 
                   tech_pvt->id);
-                tech_pvt->responseHandler(session, EVENT_BUFFER_OVERRUN);
+                tech_pvt->responseHandler(session, EVENT_BUFFER_OVERRUN, NULL);
               }
               break;
             }
