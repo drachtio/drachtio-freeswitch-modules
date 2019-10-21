@@ -6,7 +6,7 @@
 #include <thread>
 #include <list>
 #include <algorithm>
-#include <condition_variable>
+#include <functional>
 #include <cassert>
 #include <cstdlib>
 #include <fstream>
@@ -14,175 +14,26 @@
 #include "base64.hpp"
 #include "parser.hpp"
 #include "mod_audio_fork.h"
+#include "audio_pipe.hpp"
 
-#define WS_TIMEOUT_MS    50
 #define RTP_PACKETIZATION_PERIOD 20
 #define FRAME_SIZE_8000  320 /*which means each 20ms frame as 320 bytes at 8 khz (1 channel only)*/
-#define WS_AUDIO_BUFFER_SIZE (FRAME_SIZE_16000 * 2 * 50 + LWS_PRE)  /* 50 frames at 20 ms packetization = 1 sec of audio, allow for 2 channels */
-
-#define APR_INT64_C(val) INT64_C(val)
-#define APR_TIME_C(val) APR_INT64_C(val)
-#define APR_USEC_PER_SEC APR_TIME_C(1000000)
 
 namespace {
-  static const char *requestedConnectionTimeout = std::getenv("MOD_AUDIO_FORK_CONNECT_TIMEOUT_SECS");
-  static int nConnectTimeoutSecs = std::max(1, std::min(requestedConnectionTimeout ? ::atoi(requestedConnectionTimeout) : 3, 15));
   static const char *requestedBufferSecs = std::getenv("MOD_AUDIO_FORK_BUFFER_SECS");
   static int nAudioBufferSecs = std::max(1, std::min(requestedBufferSecs ? ::atoi(requestedBufferSecs) : 2, 5));
   static const char *requestedNumServiceThreads = std::getenv("MOD_AUDIO_FORK_SERVICE_THREADS");
   static const char* mySubProtocolName = std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") ?
     std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") : "audiostream.drachtio.org";
-  static int interrupted = 0;
   static unsigned int nServiceThreads = std::max(1, std::min(requestedNumServiceThreads ? ::atoi(requestedNumServiceThreads) : 1, 5));
-  static struct lws_context *context[5] = {NULL, NULL, NULL, NULL, NULL};
 
   static unsigned int idxCallCount = 0;
-  static std::list<private_t*> pendingConnects;
-  static std::list<private_t*> pendingDisconnects;
-  static std::list<private_t*> pendingWrites;
-  static std::mutex g_mutex_connects;
-  static std::mutex g_mutex_disconnects;
-  static std::mutex g_mutex_writes;
   static uint32_t playCount = 0;
 
-  void initAudioBuffer(private_t *tech_pvt) {
-    tech_pvt->ws_audio_buffer_write_offset = LWS_PRE;
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) reset write offset to start: %lu\n", 
-      tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset);
-  }
-
-  switch_status_t fork_data_init(private_t *tech_pvt, switch_core_session_t *session, char * host, 
-    unsigned int port, char* path, int sslFlags, int sampling, int desiredSampling, int channels, char* metadata, responseHandler_t responseHandler) {
-
-    int err;
-    switch_codec_implementation_t read_impl;
-    switch_core_session_get_read_impl(session, &read_impl);
-  
-    memset(tech_pvt, 0, sizeof(private_t));
-  
-    strncpy(tech_pvt->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
-    tech_pvt->ws_state = LWS_CLIENT_IDLE;
-    strncpy(tech_pvt->host, host, MAX_WS_URL_LEN);
-    tech_pvt->port = port;
-    strncpy(tech_pvt->path, path, MAX_PATH_LEN);    
-    tech_pvt->wsi = NULL;
-    tech_pvt->vhd = NULL;
-    tech_pvt->metadata = NULL;
-    tech_pvt->sampling = desiredSampling;
-    tech_pvt->responseHandler = responseHandler;
-    tech_pvt->playout = NULL;
-    tech_pvt->channels = channels;
-    tech_pvt->id = ++idxCallCount;
-    tech_pvt->buffer_overrun_notified = 0;
-    tech_pvt->sslFlags = sslFlags;
-
-    tech_pvt->ws_audio_buffer_max_len = LWS_PRE +
-      (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
-    tech_pvt->ws_audio_buffer = (uint8_t *) malloc(tech_pvt->ws_audio_buffer_max_len);
-    if (nullptr == tech_pvt->ws_audio_buffer) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error allocating audio buffer\n");
-      return SWITCH_STATUS_FALSE;
-    }
-    tech_pvt->ws_audio_buffer_min_freespace = read_impl.decoded_bytes_per_packet;
-    initAudioBuffer(tech_pvt);
-
-    switch_mutex_init(&tech_pvt->ws_send_mutex, SWITCH_MUTEX_DEFAULT, switch_core_session_get_pool(session));
-    switch_mutex_init(&tech_pvt->ws_recv_mutex, SWITCH_MUTEX_DEFAULT, switch_core_session_get_pool(session));
-    switch_mutex_init(&tech_pvt->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
-    switch_thread_cond_create(&tech_pvt->cond, switch_core_session_get_pool(session));
-
-    if (desiredSampling != sampling) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) resampling from %u to %u\n", tech_pvt->id, sampling, desiredSampling);
-      tech_pvt->resampler = speex_resampler_init(channels, sampling, desiredSampling, SWITCH_RESAMPLE_QUALITY, &err);
-      if (0 != err) {
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing resampler: %s.\n", speex_resampler_strerror(err));
-        return SWITCH_STATUS_FALSE;
-      }
-    }
-    else {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) no resampling needed for this call\n", tech_pvt->id);
-    }
-
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) fork_data_init\n", tech_pvt->id);
-
-    return SWITCH_STATUS_SUCCESS;
-  }
-
-  void destroy_tech_pvt(private_t* tech_pvt) {
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s (%u) destroy_tech_pvt\n", tech_pvt->sessionId, tech_pvt->id);
-    tech_pvt->ws_state = LWS_CLIENT_DISCONNECTED;
-    if (tech_pvt->resampler) {
-      speex_resampler_destroy(tech_pvt->resampler);
-      tech_pvt->resampler = nullptr;
-    }
-    if (tech_pvt->mutex) {
-      switch_mutex_destroy(tech_pvt->mutex);
-      tech_pvt->mutex = nullptr;
-    }
-    if (tech_pvt->cond) {
-      switch_thread_cond_destroy(tech_pvt->cond);
-      tech_pvt->cond = nullptr;
-    }
-    tech_pvt->wsi = nullptr;
-    if (tech_pvt->ws_audio_buffer) {
-      free(tech_pvt->ws_audio_buffer);
-      tech_pvt->ws_audio_buffer = nullptr;
-      tech_pvt->ws_audio_buffer_max_len = tech_pvt->ws_audio_buffer_write_offset = 0;
-    }
-  }
-
-	uint32_t bumpPlayCount(void) { return ++playCount; }
-
-  void addPendingConnect(private_t* tech_pvt) {
-    std::lock_guard<std::mutex> guard(g_mutex_connects);
-    tech_pvt->ws_state = LWS_CLIENT_IDLE;
-    pendingConnects.push_back(tech_pvt);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) after adding wsi (%p) there are now %lu pending connections\n", 
-      tech_pvt->id, tech_pvt->wsi, pendingConnects.size());
-  }
-
-  void addPendingDisconnect(private_t* tech_pvt) {
-    std::lock_guard<std::mutex> guard(g_mutex_disconnects);
-    tech_pvt->ws_state = LWS_CLIENT_DISCONNECTING;
-    pendingDisconnects.push_back(tech_pvt);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) removed wsi (%p) there are now %lu pending disconnects\n", 
-      tech_pvt->id, tech_pvt->wsi, pendingDisconnects.size());
-  }
-
-  void addPendingWrite(private_t* tech_pvt) {
-    std::lock_guard<std::mutex> guard(g_mutex_writes);
-    pendingWrites.push_back(tech_pvt);
-  }
-
-  private_t* findAndRemovePendingConnect(struct lws *wsi) {
-    private_t* tech_pvt = NULL;
-    std::lock_guard<std::mutex> guard(g_mutex_connects);
-
-    for (auto it = pendingConnects.begin(); it != pendingConnects.end() && !tech_pvt; ++it) {
-      int state = (*it)->ws_state;
-      if ((state == LWS_CLIENT_CONNECTING || state == LWS_CLIENT_CONNECT_TIMEOUT) &&
-        (*it)->wsi == wsi) tech_pvt = *it;
-    }
-
-    if (tech_pvt) {
-      pendingConnects.remove(tech_pvt);
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) after removing wsi (%p) there are now %lu pending connections\n", 
-        tech_pvt->id, tech_pvt->wsi, pendingConnects.size());
-    }
-
-    return tech_pvt;
-  }
-
-  void processIncomingMessage(private_t* tech_pvt, int isBinary) {
-    assert(tech_pvt->recv_buf);
+  void processIncomingMessage(private_t* tech_pvt, switch_core_session_t* session, const char* message) {
+    std::string msg = message;
     std::string type;
-
-    if (isBinary) {
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) processIncomingMessage - unexpected binary message, discarding..\n", tech_pvt->id);
-      return;
-    }
-    std::string msg((char *)tech_pvt->recv_buf, tech_pvt->recv_buf_ptr - tech_pvt->recv_buf);
-    cJSON* json = parse_json(tech_pvt->sessionId, msg, type) ;
+    cJSON* json = parse_json(session, msg, type) ;
     if (json) {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - received %s message\n", tech_pvt->id, type.c_str());
       cJSON* jsonData = cJSON_GetObjectItem(json, "data");
@@ -237,7 +88,7 @@ namespace {
 
             std::string rawAudio = drachtio::base64_decode(jsonAudio->valuestring);
             switch_snprintf(szFilePath, 256, "%s%s%s_%d.tmp%s", SWITCH_GLOBAL_dirs.temp_dir, 
-              SWITCH_PATH_SEPARATOR, tech_pvt->sessionId, bumpPlayCount(), fileType);
+              SWITCH_PATH_SEPARATOR, tech_pvt->sessionId, playCount++, fileType);
             std::ofstream f(szFilePath, std::ofstream::binary);
             f << rawAudio;
             f.close();
@@ -254,7 +105,7 @@ namespace {
           }
 
           char* jsonString = cJSON_PrintUnformatted(jsonData);
-          tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_PLAY_AUDIO, jsonString);
+          tech_pvt->responseHandler(session, EVENT_PLAY_AUDIO, jsonString);
           free(jsonString);
           if (jsonAudio) cJSON_Delete(jsonAudio);
         }
@@ -263,35 +114,30 @@ namespace {
         }
       }
       else if (0 == type.compare("killAudio")) {
-        tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_KILL_AUDIO, NULL);
+        tech_pvt->responseHandler(session, EVENT_KILL_AUDIO, NULL);
 
         // kill any current playback on the channel
-        switch_core_session_t* session = switch_core_session_locate(tech_pvt->sessionId);
-        if (session) {
-          switch_channel_t *channel = switch_core_session_get_channel(session);
-          switch_channel_set_flag_value(channel, CF_BREAK, 2);
-          switch_core_session_rwunlock(session);
-        }
-
+        switch_channel_t *channel = switch_core_session_get_channel(session);
+        switch_channel_set_flag_value(channel, CF_BREAK, 2);
       }
       else if (0 == type.compare("transcription")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_TRANSCRIPTION, jsonString);
+        tech_pvt->responseHandler(session, EVENT_TRANSCRIPTION, jsonString);
         free(jsonString);        
       }
       else if (0 == type.compare("transfer")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_TRANSFER, jsonString);
+        tech_pvt->responseHandler(session, EVENT_TRANSFER, jsonString);
         free(jsonString);                
       }
       else if (0 == type.compare("disconnect")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_DISCONNECT, jsonString);
+        tech_pvt->responseHandler(session, EVENT_DISCONNECT, jsonString);
         free(jsonString);        
       }
       else if (0 == type.compare("error")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
-        tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_ERROR, jsonString);
+        tech_pvt->responseHandler(session, EVENT_ERROR, jsonString);
         free(jsonString);        
       }
       else {
@@ -299,302 +145,105 @@ namespace {
       }
       cJSON_Delete(json);
     }
-
-    delete [] tech_pvt->recv_buf;
-    tech_pvt->recv_buf = NULL;
-    tech_pvt->recv_buf_ptr = NULL;
   }
 
-  int connect_client(private_t* tech_pvt, struct lws_per_vhost_data *vhd) {
-    struct lws_client_connect_info i;
-
-    memset(&i, 0, sizeof(i));
-
-    i.context = vhd->context;
-    i.port = tech_pvt->port;
-    i.address = tech_pvt->host;
-    i.path = tech_pvt->path;
-    i.host = i.address;
-    i.origin = i.address;
-    i.ssl_connection = tech_pvt->sslFlags;
-    i.protocol = mySubProtocolName;
-    i.pwsi = &(tech_pvt->wsi);
-
-    tech_pvt->ws_state = LWS_CLIENT_CONNECTING;
-    tech_pvt->vhd = vhd;
-
-    switch_core_session_t* session = switch_core_session_locate(tech_pvt->sessionId);
+  static void eventCallback(const char* sessionId, AudioPipe::NotifyEvent_t event, const char* message) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) eventCallback\n", sessionId);  
+    switch_core_session_t* session = switch_core_session_locate(sessionId);
     if (session) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) calling lws_client_connect_via_info\n", tech_pvt->id);
+      switch_channel_t *channel = switch_core_session_get_channel(session);
+      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+      if (bug) {
+        private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
+        if (tech_pvt) {
+          switch (event) {
+            case AudioPipe::CONNECT_SUCCESS:
+              tech_pvt->responseHandler(session, EVENT_CONNECT_SUCCESS, NULL);
+            break;
+            case AudioPipe::CONNECT_FAIL:
+              // first thing: we can no longer access the AudioPipe
+              tech_pvt->pAudioPipe = nullptr;
+              tech_pvt->responseHandler(session, EVENT_CONNECT_FAIL, NULL);
+            break;
+            case AudioPipe::CONNECTION_DROPPED:
+              // first thing: we can no longer access the AudioPipe
+              tech_pvt->pAudioPipe = nullptr;
+              tech_pvt->responseHandler(session, EVENT_DISCONNECT, NULL);
+            break;
+            case AudioPipe::CONNECTION_CLOSED_GRACEFULLY:
+              // first thing: we can no longer access the AudioPipe
+              tech_pvt->pAudioPipe = nullptr;
+            break;
+            case AudioPipe::MESSAGE:
+              processIncomingMessage(tech_pvt, session, message);
+            break;
+          }
+        }
+      }
       switch_core_session_rwunlock(session);
     }
-
-    if (!lws_client_connect_via_info(&i)) {
-      //tech_pvt->ws_state = LWS_CLIENT_IDLE;
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) lws_client_connect_via_info immediately returned failure\n", tech_pvt->id);
-      return 0;
-    }
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) lws_client_connect_via_info returned ok wsi %p\n", tech_pvt->id, tech_pvt->wsi);
-
-    return 1;
   }
+  switch_status_t fork_data_init(private_t *tech_pvt, switch_core_session_t *session, char * host, 
+    unsigned int port, char* path, int sslFlags, int sampling, int desiredSampling, int channels, char* metadata, responseHandler_t responseHandler) {
 
-  static int lws_callback(struct lws *wsi, 
-    enum lws_callback_reasons reason,
-    void *user, void *in, size_t len) {
+    int err;
+    switch_codec_implementation_t read_impl;
+    switch_core_session_get_read_impl(session, &read_impl);
+  
+    memset(tech_pvt, 0, sizeof(private_t));
+  
+    strncpy(tech_pvt->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
+    strncpy(tech_pvt->host, host, MAX_WS_URL_LEN);
+    tech_pvt->port = port;
+    strncpy(tech_pvt->path, path, MAX_PATH_LEN);    
+    tech_pvt->sampling = desiredSampling;
+    tech_pvt->responseHandler = responseHandler;
+    tech_pvt->playout = NULL;
+    tech_pvt->channels = channels;
+    tech_pvt->id = ++idxCallCount;
+    tech_pvt->buffer_overrun_notified = 0;
+    
+    size_t buflen = LWS_PRE + (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
 
-    struct lws_per_vhost_data *vhd = 
-      (struct lws_per_vhost_data *) lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
-
-    struct lws_vhost* vhost = lws_get_vhost(wsi);
-  	private_t ** pCb = (private_t **) user;
-
-    switch (reason) {
-
-    case LWS_CALLBACK_PROTOCOL_INIT:
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lws_callback LWS_CALLBACK_PROTOCOL_INIT wsi: %p\n", wsi);
-      vhd = (struct lws_per_vhost_data *) lws_protocol_vh_priv_zalloc(lws_get_vhost(wsi), lws_get_protocol(wsi), sizeof(struct lws_per_vhost_data));
-      vhd->context = lws_get_context(wsi);
-      vhd->protocol = lws_get_protocol(wsi);
-      vhd->vhost = lws_get_vhost(wsi);
-      break;
-
-    case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
-      {        
-        // check if we have any new connections requested
-        {
-          std::lock_guard<std::mutex> guard(g_mutex_connects);
-          for (auto it = pendingConnects.begin(); it != pendingConnects.end(); ++it) {
-            private_t* tech_pvt = *it;
-            if (tech_pvt->ws_state == LWS_CLIENT_IDLE) {
-              connect_client(tech_pvt, vhd);
-            }
-          }
-        }
-
-        // process writes
-        {
-          std::lock_guard<std::mutex> guard(g_mutex_writes);
-          for (auto it = pendingWrites.begin(); it != pendingWrites.end(); ++it) {
-            private_t* tech_pvt = *it;
-            if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_CONNECTED) lws_callback_on_writable(tech_pvt->wsi);
-          }
-          pendingWrites.clear();
-        }
-
-        // process disconnects
-        {
-          std::lock_guard<std::mutex> guard(g_mutex_disconnects);
-          for (auto it = pendingDisconnects.begin(); it != pendingDisconnects.end(); ++it) {
-            private_t* tech_pvt = *it;
-            if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_DISCONNECTING) lws_callback_on_writable(tech_pvt->wsi);
-          }
-          pendingDisconnects.clear();
-        }
-      }
-      break;
-
-    /* --- client callbacks --- */
-    case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-      {
-        private_t* tech_pvt = findAndRemovePendingConnect(wsi);
-        if (!tech_pvt) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS_CALLBACK_CLIENT_CONNECTION_ERROR unable to find pending connection for wsi: %p\n", wsi);
-        }
-        else if (tech_pvt->ws_state == LWS_CLIENT_CONNECT_TIMEOUT) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "lws_callback LWS_CALLBACK_CLIENT_CONNECTION_ERROR for wsi but application already timed out, wsi: %p\n", wsi);
-          tech_pvt->ws_state = LWS_CLIENT_DISCONNECTED;
-        }
-        else {
-          switch_mutex_lock(tech_pvt->mutex);
-          switch_core_session_t* session = switch_core_session_locate(tech_pvt->sessionId);
-          if (session) {
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "lws_callback LWS_CALLBACK_CLIENT_CONNECTION_ERROR wsi: %p: %s\n",
-              wsi, in ? (char *)in : "(null)");
-            switch_core_session_rwunlock(session);
-          }
-          tech_pvt->ws_state = LWS_CLIENT_FAILED;
-          switch_thread_cond_signal(tech_pvt->cond);
-          switch_mutex_unlock(tech_pvt->mutex);
-        }
-      }      
-      break;
-
-
-    case LWS_CALLBACK_CLIENT_ESTABLISHED:
-
-      // remove the associated cb from the pending list and allocate audio ring buffer
-      {
-        private_t* tech_pvt = findAndRemovePendingConnect(wsi);
-        if (!tech_pvt) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "lws_callback LWS_CALLBACK_CLIENT_ESTABLISHED unable to find pending connection for wsi: %p\n", wsi);
-        }
-        else if (tech_pvt->ws_state == LWS_CLIENT_CONNECT_TIMEOUT) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "lws_callback LWS_CALLBACK_CLIENT_ESTABLISHED for wsi but application already timed out, closing: %p\n", wsi);
-          lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
-          return -1;
-        }
-        else {
-          *pCb = tech_pvt;
-          switch_mutex_lock(tech_pvt->mutex);
-          tech_pvt->vhd = vhd;
-          tech_pvt->ws_state = LWS_CLIENT_CONNECTED;
-          switch_thread_cond_signal(tech_pvt->cond);
-          switch_mutex_unlock(tech_pvt->mutex);
-        }
-      }      
-      break;
-
-    case LWS_CALLBACK_CLIENT_CLOSED:
-      {
-        private_t* tech_pvt = *pCb;
-        if (!tech_pvt) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS_CALLBACK_CLIENT_CLOSED wsi (%p) without tech_pvt\n",
-            wsi); 
-          return 0;
-        }
-        if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_DISCONNECTING) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_CLOSED by us wsi: %p, context: %p, thread: %lu\n", 
-            tech_pvt->id, wsi, vhd->context, switch_thread_self());
-
-          switch_mutex_lock(tech_pvt->mutex);
-          switch_thread_cond_signal(tech_pvt->cond);
-          switch_mutex_unlock(tech_pvt->mutex);
-        }
-        else if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_CONNECTED) {
-          {
-            switch_mutex_lock(tech_pvt->mutex);
-            tech_pvt->ws_state = LWS_CLIENT_DISCONNECTED;
-            switch_mutex_unlock(tech_pvt->mutex);
-          }
-
-          char *p = (char *) "{\"msg\": \"connection closed from far end\"}";
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s (%u) LWS_CALLBACK_CLIENT_CLOSED from far end wsi: %p, context: %p, thread: %lu\n", 
-            tech_pvt->sessionId, tech_pvt->id, wsi, vhd->context, switch_thread_self());
-          tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_MAINTENANCE, p);
-        }
-        else if (tech_pvt && tech_pvt->ws_state == LWS_CLIENT_CONNECT_TIMEOUT) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) LWS_CALLBACK_CLIENT_CLOSED by us due to application timeout wsi: %p, context: %p, thread: %lu\n", 
-            tech_pvt->id, wsi, vhd->context, switch_thread_self());
-          tech_pvt->ws_state = LWS_CLIENT_DISCONNECTED;
-        }
-      }
-      break;
-
-    case LWS_CALLBACK_CLIENT_RECEIVE:
-      {
-        private_t* tech_pvt = *pCb;
-        if (!tech_pvt) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS_CALLBACK_CLIENT_RECEIVE wsi (%p) without tech_pvt\n",
-            wsi); 
-          return 0;
-        }
-
-        switch_mutex_lock(tech_pvt->ws_recv_mutex);
-
-        if (lws_is_first_fragment(wsi)) {
-          // allocate a buffer for the entire chunk of memory needed
-          assert(NULL == tech_pvt->recv_buf);
-          size_t bufLen = len + lws_remaining_packet_payload(wsi);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_RECEIVE allocating %lu bytes\n", tech_pvt->id, bufLen);
-          tech_pvt->recv_buf = new uint8_t[bufLen];
-          tech_pvt->recv_buf_ptr = tech_pvt->recv_buf;
-        }
-
-        assert(NULL != tech_pvt->recv_buf);
-        if (len > 0) {
-          // if we got any data, append it to the buffer
-          memcpy(tech_pvt->recv_buf_ptr, in, len);
-          tech_pvt->recv_buf_ptr += len;
-        }
-
-        if (lws_is_final_fragment(wsi)) {
-          processIncomingMessage(tech_pvt, lws_frame_is_binary(wsi));
-        }
-        switch_mutex_unlock(tech_pvt->ws_recv_mutex);
-      }
-      break;
-
-    case LWS_CALLBACK_CLIENT_WRITEABLE:
-      {
-        private_t* tech_pvt = *pCb;
-        if (!tech_pvt) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS_CALLBACK_CLIENT_WRITEABLE wsi (%p) without tech_pvt\n",
-            wsi); 
-          return 0;
-        }
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_CLIENT_WRITEABLE\n", tech_pvt->id);
-
-        switch_mutex_lock(tech_pvt->ws_send_mutex);
-
-        // check for text frames to send
-        if (tech_pvt->metadata) {          
-          int n = tech_pvt->metadata_length - LWS_PRE - 1;
-          int m = lws_write(wsi, tech_pvt->metadata + LWS_PRE, n, LWS_WRITE_TEXT);
-          delete[] tech_pvt->metadata;
-          tech_pvt->metadata = NULL;
-          tech_pvt->metadata_length = 0;
-          if (m < n) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) error writing metadata %d requested, %d written\n", tech_pvt->id, n, m);
-            switch_mutex_unlock(tech_pvt->ws_send_mutex);
-            return -1;
-          }
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) wrote %d bytes of text\n", tech_pvt->id, n);
-
-          // there may be audio data, but only one write per writeable event
-          // get it next time
-          switch_mutex_unlock(tech_pvt->ws_send_mutex);
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) LWS_CALLBACK_WRITEABLE sent text frame (%d bytes) wsi: %p\n", tech_pvt->id, n, wsi);
-          lws_callback_on_writable(tech_pvt->wsi);
-
-          return 0;
-        }
-        switch_mutex_unlock(tech_pvt->ws_send_mutex);
-
-        switch_mutex_lock(tech_pvt->mutex);
-        if (tech_pvt->ws_state == LWS_CLIENT_DISCONNECTING) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "(%u) lws_callback LWS_CALLBACK_WRITEABLE closing connection wsi: %p\n", tech_pvt->id, wsi);
-          lws_close_reason(wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
-          switch_mutex_unlock(tech_pvt->mutex);
-          return -1;
-        }
-
-        // check for audio packets
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) (lwsthread) offset %lu\n", tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset);
-
-        if (tech_pvt->ws_audio_buffer_write_offset > LWS_PRE) {
-          size_t datalen = tech_pvt->ws_audio_buffer_write_offset - LWS_PRE;
-          int sent = lws_write(wsi, (unsigned char *) tech_pvt->ws_audio_buffer + LWS_PRE, datalen, LWS_WRITE_BINARY);
-          if (sent < datalen) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
-            "(%u) LWS_CALLBACK_WRITEABLE wrote only %u of %lu bytes wsi: %p\n", 
-              tech_pvt->id, sent, datalen, wsi);
-          }
-          initAudioBuffer(tech_pvt);
-        }
-
-        switch_mutex_unlock(tech_pvt->mutex);
-
-        return 0;
-      }
-      break;
-
-    default:
-      break;
+    AudioPipe* ap = new AudioPipe(tech_pvt->sessionId, host, port, path, sslFlags, 
+      buflen, read_impl.decoded_bytes_per_packet, eventCallback);
+    if (!ap) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error allocating AudioPipe\n");
+      return SWITCH_STATUS_FALSE;
     }
 
-    return lws_callback_http_dummy(wsi, reason, user, in, len);
+    tech_pvt->pAudioPipe = static_cast<void *>(ap);
+
+    switch_mutex_init(&tech_pvt->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
+
+    if (desiredSampling != sampling) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) resampling from %u to %u\n", tech_pvt->id, sampling, desiredSampling);
+      tech_pvt->resampler = speex_resampler_init(channels, sampling, desiredSampling, SWITCH_RESAMPLE_QUALITY, &err);
+      if (0 != err) {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing resampler: %s.\n", speex_resampler_strerror(err));
+        return SWITCH_STATUS_FALSE;
+      }
+    }
+    else {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) no resampling needed for this call\n", tech_pvt->id);
+    }
+
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) fork_data_init\n", tech_pvt->id);
+
+    return SWITCH_STATUS_SUCCESS;
   }
 
-  static const struct lws_protocols protocols[] = {
-    {
-      mySubProtocolName,
-      lws_callback,
-      sizeof(void *),
-      1024,
-    },
-    { NULL, NULL, 0, 0 }
-  };
+  void destroy_tech_pvt(private_t* tech_pvt) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s (%u) destroy_tech_pvt\n", tech_pvt->sessionId, tech_pvt->id);
+    if (tech_pvt->resampler) {
+      speex_resampler_destroy(tech_pvt->resampler);
+      tech_pvt->resampler = nullptr;
+    }
+    if (tech_pvt->mutex) {
+      switch_mutex_destroy(tech_pvt->mutex);
+      tech_pvt->mutex = nullptr;
+    }
+  }
 
   void lws_logger(int level, const char *line) {
     switch_log_level_t llevel = SWITCH_LOG_DEBUG;
@@ -607,9 +256,7 @@ namespace {
       break;
     }
 	  switch_log_printf(SWITCH_CHANNEL_LOG, llevel, "%s\n", line);
-
   }
-
 }
 
 extern "C" {
@@ -679,15 +326,19 @@ extern "C" {
   }
 
   switch_status_t fork_init() {
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: connection timeout:        %d secs\n", nConnectTimeoutSecs);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: audio buffer (in secs):    %d secs\n", nAudioBufferSecs);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: sub-protocol:              %s\n", mySubProtocolName);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: lws service threads:       %d\n", nServiceThreads);
-    return SWITCH_STATUS_SUCCESS;
+ 
+    int logs = LLL_ERR | LLL_WARN | LLL_NOTICE ;
+     //LLL_INFO | LLL_PARSER | LLL_HEADER | LLL_EXT | LLL_CLIENT  | LLL_LATENCY | LLL_DEBUG ;
+    AudioPipe::initialize(mySubProtocolName, nServiceThreads, logs, lws_logger);
+   return SWITCH_STATUS_SUCCESS;
   }
 
   switch_status_t fork_cleanup() {
-      return SWITCH_STATUS_SUCCESS;
+    AudioPipe::deinitialize();
+    return SWITCH_STATUS_SUCCESS;
   }
 
   switch_status_t fork_session_init(switch_core_session_t *session, 
@@ -715,44 +366,12 @@ extern "C" {
       return SWITCH_STATUS_FALSE;
     }
 
-    // now try to connect
-    switch_interval_time_t timeout = nConnectTimeoutSecs * APR_USEC_PER_SEC;
-    unsigned int nSelectedServiceThread = tech_pvt->id % nServiceThreads;
-    switch_mutex_lock(tech_pvt->mutex);
-    addPendingConnect(tech_pvt);
-    lws_cancel_service(context[nSelectedServiceThread]);
-    switch_status_t rv = switch_thread_cond_timedwait(tech_pvt->cond, tech_pvt->mutex, timeout);
+    *ppUserData = tech_pvt;
 
-    if (rv == SWITCH_STATUS_TIMEOUT) {
-      // cannot destroy_tech_pvt here because although we are timed out, the connection may later succeed
-      tech_pvt->ws_state = LWS_CLIENT_CONNECT_TIMEOUT;
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) timeout (%d secs) connecting to host %s\n",
-        tech_pvt->id, nConnectTimeoutSecs, host);
-      return SWITCH_STATUS_FALSE;
-    }
-    else if (tech_pvt->ws_state == LWS_CLIENT_FAILED) {
-      switch_mutex_unlock(tech_pvt->mutex);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) failed connecting to host %s\n", tech_pvt->id, host);
-      destroy_tech_pvt(tech_pvt);
-      return SWITCH_STATUS_FALSE;
-    }
-    else {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) successfully connected to host %s\n", tech_pvt->id, host);
-
-      // write initial metadata
-      if (metadata) {
-        tech_pvt->metadata_length = strlen(metadata) + 1 + LWS_PRE;
-        tech_pvt->metadata = new uint8_t[tech_pvt->metadata_length];
-        memset(tech_pvt->metadata, 0, tech_pvt->metadata_length);
-        memcpy(tech_pvt->metadata + LWS_PRE, metadata, strlen(metadata));
-        addPendingWrite(tech_pvt);
-        lws_cancel_service(tech_pvt->vhd->context);
-      }
-      switch_mutex_unlock(tech_pvt->mutex);
-
-      *ppUserData = tech_pvt;
-      return SWITCH_STATUS_SUCCESS;
-    }
+    AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
+    if (metadata && strlen(metadata) > 0) pAudioPipe->bufferForSending(metadata);
+    pAudioPipe->connect();
+    return SWITCH_STATUS_SUCCESS;
   }
 
   switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text, int channelIsClosing) {
@@ -767,7 +386,8 @@ extern "C" {
 
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) fork_session_cleanup\n", id);
 
-    if (!tech_pvt || !tech_pvt->wsi) return SWITCH_STATUS_FALSE;
+    if (!tech_pvt) return SWITCH_STATUS_FALSE;
+    AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
       
     switch_mutex_lock(tech_pvt->mutex);
 
@@ -792,33 +412,11 @@ extern "C" {
       free(tmp);
     }
 
-    if (tech_pvt->ws_state != LWS_CLIENT_CONNECTED) {
-      switch_mutex_unlock(tech_pvt->mutex);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) fork_session_cleanup no need to close socket because ws state is %d\n", tech_pvt->id, tech_pvt->ws_state);
-      return SWITCH_STATUS_FALSE;
-    }
-    else {
-      if (text) {
-        tech_pvt->metadata_length = strlen(text) + 1 + LWS_PRE;
-        tech_pvt->metadata = new uint8_t[tech_pvt->metadata_length];
-        memset(tech_pvt->metadata, 0, tech_pvt->metadata_length);
-        memcpy(tech_pvt->metadata + LWS_PRE, text, strlen(text));
-        addPendingWrite(tech_pvt);
-      }
+    if (pAudioPipe && text) pAudioPipe->bufferForSending(text);
+    if (pAudioPipe) pAudioPipe->close();
 
-      addPendingDisconnect(tech_pvt);
-      lws_cancel_service(tech_pvt->vhd->context);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) waiting to complete ws teardown\n", id);
-
-      // wait for disconnect to complete
-      switch_thread_cond_wait(tech_pvt->cond, tech_pvt->mutex);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) teardown completed\n", id);
-
-      switch_mutex_unlock(tech_pvt->mutex);
-      destroy_tech_pvt(tech_pvt);
-
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) fork_session_cleanup: connection closed\n", id);
-    }
+    destroy_tech_pvt(tech_pvt);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) fork_session_cleanup: connection closed\n", id);
     return SWITCH_STATUS_SUCCESS;
   }
 
@@ -831,24 +429,10 @@ extern "C" {
     }
     private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
   
-    if (!tech_pvt || !tech_pvt->wsi) return SWITCH_STATUS_FALSE;
-      
-    switch_mutex_lock(tech_pvt->ws_send_mutex);
-    if (tech_pvt->ws_state != LWS_CLIENT_CONNECTED) {
-      switch_mutex_unlock(tech_pvt->ws_send_mutex);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) fork_session_send_text failed because ws state is %d\n", tech_pvt->id, tech_pvt->ws_state);
-      return SWITCH_STATUS_FALSE;
-    }
-    else {
-      tech_pvt->metadata_length = strlen(text) + 1 + LWS_PRE;
-      tech_pvt->metadata = new uint8_t[tech_pvt->metadata_length];
-      memset(tech_pvt->metadata, 0, tech_pvt->metadata_length);
-      memcpy(tech_pvt->metadata + LWS_PRE, text, strlen(text));
+    if (!tech_pvt) return SWITCH_STATUS_FALSE;
+    AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
+    if (pAudioPipe && text) pAudioPipe->bufferForSending(text);
 
-      addPendingWrite(tech_pvt);
-      lws_cancel_service(tech_pvt->vhd->context);
-      switch_mutex_unlock(tech_pvt->ws_send_mutex);
-    }
     return SWITCH_STATUS_SUCCESS;
   }
 
@@ -858,41 +442,47 @@ extern "C" {
     bool dirty = false;
     char *p = (char *) "{\"msg\": \"buffer overrun\"}";
 
-    if (!tech_pvt || !tech_pvt->wsi) return SWITCH_FALSE;
+    if (!tech_pvt) return SWITCH_TRUE;
     
     if (switch_mutex_trylock(tech_pvt->mutex) == SWITCH_STATUS_SUCCESS) {
-      size_t available = tech_pvt->ws_audio_buffer_max_len - tech_pvt->ws_audio_buffer_write_offset;
-      if (tech_pvt->ws_state != LWS_CLIENT_CONNECTED) {
+      if (!tech_pvt->pAudioPipe) {
         switch_mutex_unlock(tech_pvt->mutex);
         return SWITCH_TRUE;
       }
+      AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
+      if (pAudioPipe->getLwsState() != AudioPipe::LWS_CLIENT_CONNECTED) {
+        switch_mutex_unlock(tech_pvt->mutex);
+        return SWITCH_TRUE;
+      }
+
+      pAudioPipe->lockAudioBuffer();
+      size_t available = pAudioPipe->binarySpaceAvailable();
       if (NULL == tech_pvt->resampler) {
         switch_frame_t frame = { 0 };
-        frame.data = (char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset;
+        frame.data = pAudioPipe->binaryWritePtr();
         frame.buflen = available;
         while (true) {
 
           // check if buffer would be overwritten; dump packets if so
-          if (available < tech_pvt->ws_audio_buffer_min_freespace) {
+          if (available < pAudioPipe->binaryMinSpace()) {
             if (!tech_pvt->buffer_overrun_notified) {
               tech_pvt->buffer_overrun_notified = 1;
-              tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_MAINTENANCE, p);
+              tech_pvt->responseHandler(session, EVENT_BUFFER_OVERRUN, NULL);
             }
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets! write offset %lu available %lu\n", 
-              tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
-            tech_pvt->ws_audio_buffer_write_offset = 0;
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets!\n", 
+              tech_pvt->id);
+            pAudioPipe->binaryWritePtrResetToZero();
 
-            frame.data = (char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset;
-            frame.buflen = available = tech_pvt->ws_audio_buffer_max_len;
+            frame.data = pAudioPipe->binaryWritePtr();
+            frame.buflen = available = pAudioPipe->binarySpaceAvailable();
           }
 
           switch_status_t rv = switch_core_media_bug_read(bug, &frame, SWITCH_TRUE);
           if (rv != SWITCH_STATUS_SUCCESS) break;
           if (frame.datalen) {
-            tech_pvt->ws_audio_buffer_write_offset += frame.datalen;
-            available -= frame.datalen;
-            frame.data = (char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset;
-            frame.buflen = available;
+            pAudioPipe->binaryWritePtrAdd(frame.datalen);
+            frame.buflen = available = pAudioPipe->binarySpaceAvailable();
+            frame.data = pAudioPipe->binaryWritePtr();
             dirty = true;
           }
         }
@@ -910,24 +500,22 @@ extern "C" {
             speex_resampler_process_interleaved_int(tech_pvt->resampler, 
               (const spx_int16_t *) frame.data, 
               (spx_uint32_t *) &in_len, 
-              (spx_int16_t *) ((char *) tech_pvt->ws_audio_buffer + tech_pvt->ws_audio_buffer_write_offset),
+              (spx_int16_t *) ((char *) pAudioPipe->binaryWritePtr()),
               &out_len);
 
             if (out_len > 0) {
               // bytes written = num samples * 2 * num channels
               size_t bytes_written = out_len << tech_pvt->channels;
-              tech_pvt->ws_audio_buffer_write_offset += bytes_written ;
-              available -= bytes_written;
+              pAudioPipe->binaryWritePtrAdd(bytes_written);
+              available = pAudioPipe->binarySpaceAvailable();
               dirty = true;
-              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) (rtpthread) wrote %lu bytes, write offset now %lu available %lu\n", 
-                tech_pvt->id, bytes_written, tech_pvt->ws_audio_buffer_write_offset, available);
             }
-            if (available < tech_pvt->ws_audio_buffer_min_freespace) {
+            if (available < pAudioPipe->binaryMinSpace()) {
               if (!tech_pvt->buffer_overrun_notified) {
                 tech_pvt->buffer_overrun_notified = 1;
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets! write offset %lu available %lu\n", 
-                  tech_pvt->id, tech_pvt->ws_audio_buffer_write_offset, available);
-                tech_pvt->responseHandler(tech_pvt->sessionId, EVENT_MAINTENANCE, p);
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets!\n", 
+                  tech_pvt->id);
+                tech_pvt->responseHandler(session, EVENT_BUFFER_OVERRUN);
               }
               break;
             }
@@ -935,60 +523,10 @@ extern "C" {
         }
       }
 
-      if (dirty) {
-        addPendingWrite(tech_pvt);
-        lws_cancel_service(tech_pvt->vhd->context);
-      }
+      pAudioPipe->unlockAudioBuffer();
       switch_mutex_unlock(tech_pvt->mutex);
     }
     return SWITCH_TRUE;
-  }
-
-  void service_thread(unsigned int nServiceThread, int *pRunning) {
-    struct lws_context_creation_info info;
-
-    memset(&info, 0, sizeof info); 
-    info.port = CONTEXT_PORT_NO_LISTEN; 
-    info.protocols = protocols;
-    info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-
-    info.ka_time = 60;                    // tcp keep-alive timer
-    info.ka_probes = 3;                   // number of times to try ka before closing connection
-    info.ka_interval = 5;                 // time between ka's
-    info.timeout_secs = 5;                // doc says timeout for "various processes involving network roundtrips"
-    info.keepalive_timeout = 3;           // seconds to allow remote client to hold on to an idle HTTP/1.1 connection 
-    info.ws_ping_pong_interval = 20;      // interval in seconds between sending PINGs on idle websocket connections
-    info.timeout_secs_ah_idle = 10;       // secs to allow a client to hold an ah without using it
-
-    context[nServiceThread] = lws_create_context(&info);
-    if (!context[nServiceThread]) {
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_audio_fork: lws_create_context failed\n");
-      return;
-    }
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: successfully created lws context in thread %lu\n", 
-      switch_thread_self());
-
-    int n;
-    do {
-      n = lws_service(context[nServiceThread], WS_TIMEOUT_MS);
-    } while (n >= 0 && *pRunning);
-
-    lws_context_destroy(context[nServiceThread]);
-  }
-
-  switch_status_t fork_service_threads(int *pRunning) {
-    int logs = LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_CLIENT  | LLL_LATENCY;
-      //LLL_INFO | LLL_PARSER | LLL_HEADER | LLL_EXT | LLL_CLIENT  | LLL_LATENCY | LLL_DEBUG ;
-    lws_set_log_level(logs, lws_logger);
-
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork: starting %u service threads\n", nServiceThreads);
-    for (unsigned int i = 0; i < nServiceThreads; i++) {
-      std::thread t(service_thread, i, pRunning);
-      t.detach();
-    }
-
-
-    return SWITCH_STATUS_FALSE;
   }
 
 }

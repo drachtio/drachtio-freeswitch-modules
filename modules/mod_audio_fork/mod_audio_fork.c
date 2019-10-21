@@ -6,27 +6,23 @@
 #include "mod_audio_fork.h"
 #include "lws_glue.h"
 
-static int mod_running = 0;
+//static int mod_running = 0;
 
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown);
 SWITCH_MODULE_RUNTIME_FUNCTION(mod_audio_fork_runtime);
 SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load);
 
-SWITCH_MODULE_DEFINITION(mod_audio_fork, mod_audio_fork_load, mod_audio_fork_shutdown, mod_audio_fork_runtime);
+SWITCH_MODULE_DEFINITION(mod_audio_fork, mod_audio_fork_load, mod_audio_fork_shutdown, NULL /*mod_audio_fork_runtime*/);
 
-static void responseHandler(const char* sessionId, const char * eventName, char * json) {
+static void responseHandler(switch_core_session_t* session, const char * eventName, char * json) {
 	switch_event_t *event;
 
-  switch_core_session_t* session = switch_core_session_locate(sessionId);
-  if (session) {
-    switch_channel_t *channel = switch_core_session_get_channel(session);
-    if (json) switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "responseHandler: sening event payload: %s.\n", json);
-    switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
-    switch_channel_event_set_data(channel, event);
-    if (json) switch_event_add_body(event, "%s", json);
-    switch_event_fire(&event);
-    switch_core_session_rwunlock(session);
-  }
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	if (json) switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "responseHandler: sening event payload: %s.\n", json);
+	switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
+	switch_channel_event_set_data(channel, event);
+	if (json) switch_event_add_body(event, "%s", json);
+	switch_event_fire(&event);
 }
 
 static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type)
@@ -90,14 +86,17 @@ static switch_status_t start_capture(switch_core_session_t *session,
 		return SWITCH_STATUS_FALSE;
 	}
 
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "calling fork_session_init.\n");
 	if (SWITCH_STATUS_FALSE == fork_session_init(session, responseHandler, read_codec->implementation->actual_samples_per_second, 
 		host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing mod_audio_fork session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "adding bug.\n");
 	if ((status = switch_core_media_bug_add(session, MY_BUG_NAME, NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
 		return status;
 	}
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "setting bug private data.\n");
 	switch_channel_set_private(channel, MY_BUG_NAME, bug);
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "exiting start_capture.\n");
@@ -255,7 +254,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load)
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_audio_fork API successfully loaded\n");
 
 	/* indicate that the module should continue to be loaded */
-  mod_running = 1;
+  //mod_running = 1;
 	return SWITCH_STATUS_SUCCESS;
 }
 
@@ -265,7 +264,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load)
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown)
 {
 	fork_cleanup();
-  mod_running = 0;
+  //mod_running = 0;
 	switch_event_free_subclass(EVENT_TRANSCRIPTION);
 	switch_event_free_subclass(EVENT_TRANSFER);
 	switch_event_free_subclass(EVENT_PLAY_AUDIO);
@@ -281,9 +280,10 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown)
   If it returns anything but SWITCH_STATUS_TERM it will be called again automatically
   Macro expands to: switch_status_t mod_audio_fork_runtime()
 */
-
+/*
 SWITCH_MODULE_RUNTIME_FUNCTION(mod_audio_fork_runtime)
 {
   fork_service_threads(&mod_running);
 	return SWITCH_STATUS_TERM;
 }
+*/

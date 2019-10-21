@@ -4,6 +4,6 @@
 #include <string>
 #include <switch_json.h>
 
-cJSON* parse_json(const char* sessionId, const std::string& data, std::string& type) ;
+cJSON* parse_json(switch_core_session_t* session, const std::string& data, std::string& type) ;
 
 #endif
