@@ -12,22 +12,22 @@
 #include <sstream>
 #include <map>
 
-#include "google/cloud/dialogflow/v2beta1/session.grpc.pb.h"
+#include "google/cloud/dialogflow/v2/session.grpc.pb.h"
 
 #include "mod_dialogflow.h"
 #include "parser.h"
 
-using google::cloud::dialogflow::v2beta1::Sessions;
-using google::cloud::dialogflow::v2beta1::StreamingDetectIntentRequest;
-using google::cloud::dialogflow::v2beta1::StreamingDetectIntentResponse;
-using google::cloud::dialogflow::v2beta1::AudioEncoding;
-using google::cloud::dialogflow::v2beta1::InputAudioConfig;
-using google::cloud::dialogflow::v2beta1::OutputAudioConfig;
-using google::cloud::dialogflow::v2beta1::SynthesizeSpeechConfig;
-using google::cloud::dialogflow::v2beta1::QueryInput;
-using google::cloud::dialogflow::v2beta1::QueryResult;
-using google::cloud::dialogflow::v2beta1::StreamingRecognitionResult;
-using google::cloud::dialogflow::v2beta1::EventInput;
+using google::cloud::dialogflow::v2::Sessions;
+using google::cloud::dialogflow::v2::StreamingDetectIntentRequest;
+using google::cloud::dialogflow::v2::StreamingDetectIntentResponse;
+using google::cloud::dialogflow::v2::AudioEncoding;
+using google::cloud::dialogflow::v2::InputAudioConfig;
+using google::cloud::dialogflow::v2::OutputAudioConfig;
+using google::cloud::dialogflow::v2::SynthesizeSpeechConfig;
+using google::cloud::dialogflow::v2::QueryInput;
+using google::cloud::dialogflow::v2::QueryResult;
+using google::cloud::dialogflow::v2::StreamingRecognitionResult;
+using google::cloud::dialogflow::v2::EventInput;
 using google::rpc::Status;
 using google::protobuf::Struct;
 

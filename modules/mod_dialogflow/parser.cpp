@@ -35,7 +35,7 @@ cJSON* GRPCParser::parse(const StreamingDetectIntentResponse& response) {
     }
 
 	// alternative_query_results
-	cJSON_AddItemToObject(json, "alternative_query_results", parseCollection(response.alternative_query_results()));
+	//cJSON_AddItemToObject(json, "alternative_query_results", parseCollection(response.alternative_query_results()));
 
 	// webhook_status
 	cJSON_AddItemToObject(json, "webhook_status", parse(response.webhook_status()));
@@ -289,6 +289,7 @@ cJSON* GRPCParser::parse(const Intent_Message_ListSelect& o) {
 	return json;
 }
 
+/*
 cJSON* GRPCParser::parse(const Intent_Message_TelephonyPlayAudio& o) {
     cJSON * json = cJSON_CreateObject();
 
@@ -312,7 +313,7 @@ cJSON* GRPCParser::parse(const Intent_Message_TelephonyTransferCall& o) {
 
 	return json;
 }
-
+*/
 cJSON* GRPCParser::parse(const Intent_Message_QuickReplies& o) {
     cJSON * json = cJSON_CreateObject();
 
@@ -401,7 +402,7 @@ cJSON* GRPCParser::parse(const SentimentAnalysisResult& o) {
 	
 	return json;
 }
-
+/*
 cJSON* GRPCParser::parse(const KnowledgeAnswers_Answer_MatchConfidenceLevel& o) {
 	return cJSON_CreateString(KnowledgeAnswers_Answer_MatchConfidenceLevel_Name(o).c_str());
 }
@@ -425,6 +426,7 @@ cJSON* GRPCParser::parse(const KnowledgeAnswers& o) {
 	
 	return json;
 }
+*/
 
 cJSON* GRPCParser::parse(const Intent& o) {
     cJSON * json = cJSON_CreateObject();
@@ -435,7 +437,7 @@ cJSON* GRPCParser::parse(const Intent& o) {
 	cJSON_AddItemToObject(json, "priority", cJSON_CreateNumber(o.priority()));
 	cJSON_AddItemToObject(json, "is_fallback", cJSON_CreateBool(o.is_fallback()));
 	cJSON_AddItemToObject(json, "ml_disabled", cJSON_CreateBool(o.ml_disabled()));
-	cJSON_AddItemToObject(json, "end_interaction", cJSON_CreateBool(o.end_interaction()));
+	//cJSON_AddItemToObject(json, "end_interaction", cJSON_CreateBool(o.end_interaction()));
 	cJSON_AddItemToObject(json, "input_context_names", parseCollection(o.input_context_names()));
 	cJSON_AddItemToObject(json, "events", parseCollection(o.events()));
 	cJSON_AddItemToObject(json, "training_phrases", parseCollection(o.training_phrases()));
@@ -457,7 +459,7 @@ cJSON* GRPCParser::parse(const Intent& o) {
 	return json;
 }
 
-cJSON* GRPCParser::parse(const google::cloud::dialogflow::v2beta1::Context& o) {
+cJSON* GRPCParser::parse(const google::cloud::dialogflow::v2::Context& o) {
     cJSON * json = cJSON_CreateObject();
 
 	cJSON_AddItemToObject(json, "name", cJSON_CreateString(o.name().c_str()));
@@ -498,7 +500,7 @@ cJSON* GRPCParser::parse(const Intent_Message& msg) {
 	}
 
 	if (msg.has_basic_card()) {
-		cJSON_AddItemToObject(json, "card", parse(msg.card()));
+		cJSON_AddItemToObject(json, "basic_card", parse(msg.card()));
 	}
 
 	if (msg.has_suggestions()) {
@@ -513,7 +515,7 @@ cJSON* GRPCParser::parse(const Intent_Message& msg) {
 		cJSON_AddItemToObject(json, "list_select", parse(msg.list_select()));
 	}
 
-
+/*
 	if (msg.has_telephony_play_audio()) {
 		cJSON_AddItemToObject(json, "telephony_play_audio", parse(msg.telephony_play_audio()));
 	}
@@ -525,7 +527,7 @@ cJSON* GRPCParser::parse(const Intent_Message& msg) {
 	if (msg.has_telephony_transfer_call()) {
 		cJSON_AddItemToObject(json, "telephony_transfer_call", parse(msg.telephony_transfer_call()));
 	}
-
+*/
     return json;
 }
 
@@ -548,7 +550,7 @@ cJSON* GRPCParser::parse(const QueryResult& qr) {
     cJSON_AddItemToObject(json, "intent_detection_confidence", cJSON_CreateNumber(qr.intent_detection_confidence()));
 		if (qr.has_diagnostic_info()) cJSON_AddItemToObject(json, "diagnostic_info", parse(qr.diagnostic_info()));
 		cJSON_AddItemToObject(json, "sentiment_analysis_result", parse(qr.sentiment_analysis_result()));
-		cJSON_AddItemToObject(json, "knowledge_answers", parse(qr.knowledge_answers()));
+		//cJSON_AddItemToObject(json, "knowledge_answers", parse(qr.knowledge_answers()));
 
     return json;
 }
