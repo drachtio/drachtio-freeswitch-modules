@@ -22,36 +22,9 @@ int AudioPipe::lws_callback(struct lws *wsi,
       break;
 
     case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
-      {        
-        // check if we have any new connections requested
-        {
-          std::lock_guard<std::mutex> guard(AudioPipe::mutex_connects);
-          for (auto it = pendingConnects.begin(); it != pendingConnects.end(); ++it) {
-            AudioPipe* ap = *it;
-            if (ap->m_state == LWS_CLIENT_IDLE) ap->connect_client(vhd);
-          }
-        }
-
-        // process writes
-        {
-          std::lock_guard<std::mutex> guard(mutex_writes);
-          for (auto it = pendingWrites.begin(); it != pendingWrites.end(); ++it) {
-            AudioPipe* ap = *it;
-            if (ap && ap->m_state == LWS_CLIENT_CONNECTED) lws_callback_on_writable(ap->m_wsi);
-          }
-          pendingWrites.clear();
-        }
-
-        // process disconnects
-        {
-          std::lock_guard<std::mutex> guard(mutex_disconnects);
-          for (auto it = pendingDisconnects.begin(); it != pendingDisconnects.end(); ++it) {
-            AudioPipe* ap = *it;
-            if (ap && ap->m_state == LWS_CLIENT_DISCONNECTING) lws_callback_on_writable(ap->m_wsi);
-          }
-          pendingDisconnects.clear();
-        }
-      }
+      processPendingConnects(vhd);
+      processPendingDisconnects(vhd);
+      processPendingWrites();
       break;
     case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
       {
@@ -221,6 +194,49 @@ std::list<AudioPipe*> AudioPipe::pendingConnects;
 std::list<AudioPipe*> AudioPipe::pendingDisconnects;
 std::list<AudioPipe*> AudioPipe::pendingWrites;
 AudioPipe::log_emit_function AudioPipe::logger;
+
+void AudioPipe::processPendingConnects(lws_per_vhost_data *vhd) {
+  std::list<AudioPipe*> connects;
+  {
+    std::lock_guard<std::mutex> guard(mutex_connects);
+    for (auto it = pendingConnects.begin(); it != pendingConnects.end(); ++it) {
+      if ((*it)->m_state == LWS_CLIENT_IDLE) {
+        connects.push_back(*it);
+        (*it)->m_state = LWS_CLIENT_CONNECTING;
+      }
+    }
+  }
+  for (auto it = connects.begin(); it != connects.end(); ++it) {
+    AudioPipe* ap = *it;
+    if (ap->m_state == LWS_CLIENT_IDLE) ap->connect_client(vhd);   
+  }
+}
+
+void AudioPipe::processPendingDisconnects(lws_per_vhost_data *vhd) {
+  std::list<AudioPipe*> disconnects;
+  {
+    std::lock_guard<std::mutex> guard(mutex_disconnects);
+    disconnects.assign(pendingDisconnects.begin(), pendingDisconnects.end());
+    pendingDisconnects.clear();
+  }
+  for (auto it = disconnects.begin(); it != disconnects.end(); ++it) {
+    AudioPipe* ap = *it;
+    if (ap && ap->m_state == LWS_CLIENT_DISCONNECTING) lws_callback_on_writable(ap->m_wsi); 
+  }
+}
+
+void AudioPipe::processPendingWrites() {
+  std::list<AudioPipe*> writes;
+  {
+    std::lock_guard<std::mutex> guard(mutex_writes);
+    writes.assign(pendingWrites.begin(), pendingWrites.end());
+    pendingWrites.clear();
+  }
+  for (auto it = writes.begin(); it != writes.end(); ++it) {
+    AudioPipe* ap = *it;
+    if (ap && ap->m_state == LWS_CLIENT_CONNECTED) lws_callback_on_writable(ap->m_wsi);
+  }
+}
 
 AudioPipe* AudioPipe::findAndRemovePendingConnect(struct lws *wsi) {
   AudioPipe* ap = NULL;

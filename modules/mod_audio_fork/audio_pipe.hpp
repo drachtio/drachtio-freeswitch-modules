@@ -93,7 +93,10 @@ private:
   static void addPendingConnect(AudioPipe* ap);
   static void addPendingDisconnect(AudioPipe* ap);
   static void addPendingWrite(AudioPipe* ap);
-
+  static void processPendingConnects(lws_per_vhost_data *vhd);
+  static void processPendingDisconnects(lws_per_vhost_data *vhd);
+  static void processPendingWrites(void);
+  
   bool connect_client(struct lws_per_vhost_data *vhd);
 
   LwsState_t m_state;
