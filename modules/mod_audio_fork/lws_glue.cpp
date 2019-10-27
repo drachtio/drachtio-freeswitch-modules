@@ -148,7 +148,6 @@ namespace {
   }
 
   static void eventCallback(const char* sessionId, AudioPipe::NotifyEvent_t event, const char* message) {
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) eventCallback\n", sessionId);  
     switch_core_session_t* session = switch_core_session_locate(sessionId);
     if (session) {
       switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -159,20 +158,24 @@ namespace {
           switch (event) {
             case AudioPipe::CONNECT_SUCCESS:
               tech_pvt->responseHandler(session, EVENT_CONNECT_SUCCESS, NULL);
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "connection successful\n");
             break;
             case AudioPipe::CONNECT_FAIL:
               // first thing: we can no longer access the AudioPipe
               tech_pvt->pAudioPipe = nullptr;
               tech_pvt->responseHandler(session, EVENT_CONNECT_FAIL, NULL);
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "connection failed: %s\n", message);
             break;
             case AudioPipe::CONNECTION_DROPPED:
               // first thing: we can no longer access the AudioPipe
               tech_pvt->pAudioPipe = nullptr;
               tech_pvt->responseHandler(session, EVENT_DISCONNECT, NULL);
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "connection dropped from far end\n");
             break;
             case AudioPipe::CONNECTION_CLOSED_GRACEFULLY:
               // first thing: we can no longer access the AudioPipe
               tech_pvt->pAudioPipe = nullptr;
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection closed gracefully\n");
             break;
             case AudioPipe::MESSAGE:
               processIncomingMessage(tech_pvt, session, message);
