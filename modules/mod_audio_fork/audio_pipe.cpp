@@ -208,7 +208,7 @@ void AudioPipe::processPendingConnects(lws_per_vhost_data *vhd) {
   }
   for (auto it = connects.begin(); it != connects.end(); ++it) {
     AudioPipe* ap = *it;
-    if (ap->m_state == LWS_CLIENT_IDLE) ap->connect_client(vhd);   
+    ap->connect_client(vhd);   
   }
 }
 

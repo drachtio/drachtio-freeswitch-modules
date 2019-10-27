@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <fstream>
+#include <sstream>
 
 #include "base64.hpp"
 #include "parser.hpp"
@@ -161,10 +162,14 @@ namespace {
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "connection successful\n");
             break;
             case AudioPipe::CONNECT_FAIL:
+            {
               // first thing: we can no longer access the AudioPipe
+              std::stringstream json;
+              json << "{\"reason\":\"" << message << "\"}";
               tech_pvt->pAudioPipe = nullptr;
-              tech_pvt->responseHandler(session, EVENT_CONNECT_FAIL, NULL);
+              tech_pvt->responseHandler(session, EVENT_CONNECT_FAIL, (char *) json.str().c_str());
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "connection failed: %s\n", message);
+            }
             break;
             case AudioPipe::CONNECTION_DROPPED:
               // first thing: we can no longer access the AudioPipe
