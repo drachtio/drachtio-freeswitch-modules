@@ -264,24 +264,28 @@ extern "C" {
       return SWITCH_STATUS_SUCCESS;
     }
     switch_status_t google_speech_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
-		  uint32_t samples_per_second, uint32_t channels, char* lang, int interim, void **ppUserData) {
-    	
-		  switch_channel_t *channel = switch_core_session_get_channel(session);
-    	struct cap_cb *cb;
+          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, void **ppUserData) {
+
+      switch_channel_t *channel = switch_core_session_get_channel(session);
+      struct cap_cb *cb;
       int err;
 
-    	cb =(struct cap_cb *) switch_core_session_alloc(session, sizeof(*cb));
-    	cb->base = switch_core_session_strdup(session, "mod_google_transcribe");
+      cb =(struct cap_cb *) switch_core_session_alloc(session, sizeof(*cb));
+      cb->base = switch_core_session_strdup(session, "mod_google_transcribe");
       cb->session = session;
       cb->end_of_utterance = 0;
 
-	    switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
+      switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
 
-      cb->resampler = speex_resampler_init(channels, 8000, 16000, SWITCH_RESAMPLE_QUALITY, &err);
-      if (0 != err) {
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n", 
-          switch_channel_get_name(channel), speex_resampler_strerror(err));
-        return SWITCH_STATUS_FALSE;
+      if (samples_per_second != 16000) {
+          cb->resampler = speex_resampler_init(channels, samples_per_second, 16000, SWITCH_RESAMPLE_QUALITY, &err);
+        if (0 != err) {
+           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n",
+                    +            switch_channel_get_name(channel), speex_resampler_strerror(err));
+          return SWITCH_STATUS_FALSE;
+        }
+      } else {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s: no resampling needed for this call\n", switch_channel_get_name(channel));
       }
 
       GStreamer *streamer = NULL;
