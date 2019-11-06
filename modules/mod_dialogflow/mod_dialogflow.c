@@ -36,21 +36,16 @@ static void errorHandler(switch_core_session_t* session, const char * json) {
 
 	switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, DIALOGFLOW_EVENT_ERROR);
 	switch_channel_event_set_data(channel, event);
-	//switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Dialogflow-Error", reason);
 	switch_event_add_body(event, "%s", json);
 
 	switch_event_fire(&event);
 
 	do_stop(session);
 }
-static void completionHandler(switch_core_session_t* session) {
-	do_stop(session);
-}
 
 static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type)
 {
 	switch_core_session_t *session = switch_core_media_bug_get_session(bug);
-	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got type %d.\n", type);
 
 	switch (type) {
 	case SWITCH_ABC_TYPE_INIT:
@@ -79,8 +74,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	return SWITCH_TRUE;
 }
 
-static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, char* lang, char*projectId, char* event, 
-	uint32_t timeoutSecs, const char* base)
+static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, char* lang, char*projectId, char* event)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
@@ -89,9 +83,8 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
 	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "a dialogflow is already running on this channel.\n");
-		status = SWITCH_STATUS_FALSE;
-		goto done;
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "a dialogflow is already running on this channel, we will stop it.\n");
+		do_stop(session);
 	}
 
 	if (switch_channel_pre_answer(channel) != SWITCH_STATUS_SUCCESS) {
@@ -100,11 +93,11 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 		goto done;
 	}
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "starting dialogflow with project %s, language %s, timeout: %d, event %s.\n", 
-		projectId, lang, timeoutSecs, event);
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "starting dialogflow with project %s, language %s, event %s.\n", 
+		projectId, lang, event);
 
 	switch_core_session_get_read_impl(session, &read_impl);
-	if (SWITCH_STATUS_FALSE == google_dialogflow_session_init(session, responseHandler, errorHandler, completionHandler, 
+	if (SWITCH_STATUS_FALSE == google_dialogflow_session_init(session, responseHandler, errorHandler, 
 		read_impl.samples_per_second, lang, projectId, event, &cb)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google dialogflow session.\n");
 		status = SWITCH_STATUS_FALSE;
@@ -142,12 +135,11 @@ static switch_status_t do_stop(switch_core_session_t *session)
 	return status;
 }
 
-#define DIALOGFLOW_API_START_SYNTAX "<uuid> project-id lang-code [timeout-secs] [event]"
+#define DIALOGFLOW_API_START_SYNTAX "<uuid> project-id lang-code [event]"
 SWITCH_STANDARD_API(dialogflow_api_start_function)
 {
 	char *mycmd = NULL, *argv[10] = { 0 };
 	int argc = 0;
-	uint32_t timeoutSecs = DEFAULT_INTENT_TIMEOUT_SECS;
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_media_bug_flag_t flags = SMBF_READ_STREAM | SMBF_READ_STREAM | SMBF_READ_PING;
 
@@ -167,9 +159,8 @@ SWITCH_STANDARD_API(dialogflow_api_start_function)
 			char *event = NULL;
 			char *projectId = argv[1];
 			char *lang = argv[2];
-			if (argc > 3) timeoutSecs = atoi(argv[3]);
-			if (argc > 4) event = argv[4];
-			status = start_capture(lsession, flags, lang, projectId, event, timeoutSecs, "mod_dialogflow");
+			if (argc > 3) event = argv[3];
+			status = start_capture(lsession, flags, lang, projectId, event);
 			switch_core_session_rwunlock(lsession);
 		}
 	}
@@ -183,7 +174,7 @@ SWITCH_STANDARD_API(dialogflow_api_start_function)
   done:
 
 	switch_safe_free(mycmd);
-	return SWITCH_STATUS_SUCCESS;
+	return SWITCH_STATUS_SUCCESS;	
 }
 
 #define DIALOGFLOW_API_STOP_SYNTAX "<uuid>"

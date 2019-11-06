@@ -101,7 +101,6 @@ public:
 		m_request->clear_query_params();
 		m_request->set_input_audio(data, datalen);
 
-		//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::write wrote audio..%p\n", this);
 		m_packets++;
     return m_streamer->Write(*m_request);
 
@@ -120,6 +119,10 @@ public:
 	}
 	void writesDone() {
 		m_streamer->WritesDone();
+	}
+
+	bool isFinished() {
+		return m_finished;
 	}
 
 private:
@@ -248,7 +251,6 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
 				status.error_message().c_str(), status.error_code(), status.error_details().c_str());
 			cb->errorHandler(psession, s.str().c_str());
 		}
-		cb->completionHandler(psession);
 
 		switch_core_session_rwunlock(psession);
 	}
@@ -275,7 +277,6 @@ extern "C" {
 		switch_core_session_t *session, 
 		responseHandler_t responseHandler, 
 		errorHandler_t errorHandler, 
-		completionHandler_t completionHandler, 
 		uint32_t samples_per_second, 
 		char* lang, 
 		char* projectId, 
@@ -289,13 +290,11 @@ extern "C" {
 		switch_memory_pool_t *pool = switch_core_session_get_pool(session);
 
 		struct cap_cb* cb = (struct cap_cb *) switch_core_session_alloc(session, sizeof(*cb));
-		cb->base = switch_core_session_strdup(session, "mod_dialogflow");
 		strncpy(cb->sessionId, switch_core_session_get_uuid(session), 256);
 		cb->responseHandler = responseHandler;
-		cb->completionHandler = completionHandler;
 		cb->errorHandler = errorHandler;
 
-		if (switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session)) != SWITCH_STATUS_SUCCESS) {
+		if (switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, pool) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing mutex\n");
 			status = SWITCH_STATUS_FALSE;
 			goto done; 
@@ -317,7 +316,7 @@ extern "C" {
 
 		// create the read thread
 		switch_threadattr_create(&thd_attr, pool);
-		switch_threadattr_detach_set(thd_attr, 1);
+		//switch_threadattr_detach_set(thd_attr, 1);
 		switch_threadattr_stacksize_set(thd_attr, SWITCH_THREAD_STACKSIZE);
 		switch_thread_create(&cb->thread, thd_attr, grpc_read_thread, cb, pool);
 
@@ -339,18 +338,28 @@ extern "C" {
 			switch_status_t st;
 
 			// close connection and get final responses
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "google_dialogflow_session_cleanup: acquiring lock\n");
 			switch_mutex_lock(cb->mutex);
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "google_dialogflow_session_cleanup: acquired lock\n");
 			GStreamer* streamer = (GStreamer *) cb->streamer;
 			if (streamer) {
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "google_dialogflow_session_cleanup: sending writesDone..\n");
 				streamer->writesDone();
 				streamer->finish();
+			}
+			if (cb->thread) {
+				switch_status_t retval;
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_dialogflow_session_cleanup: waiting for read thread to complete\n");
+				switch_thread_join(&retval, cb->thread);
+				cb->thread = NULL;
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_dialogflow_session_cleanup: read thread completed\n");
 			}
 			killcb(cb);
 
 			switch_channel_set_private(channel, MY_BUG_NAME, NULL);
 			if (!channelIsClosing) switch_core_media_bug_remove(session, &bug);
-			switch_mutex_unlock(cb->mutex);
 
+			switch_mutex_unlock(cb->mutex);
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_dialogflow_session_cleanup: Closed google session\n");
 
 			return SWITCH_STATUS_SUCCESS;
@@ -371,7 +380,7 @@ extern "C" {
 
 		if (switch_mutex_trylock(cb->mutex) == SWITCH_STATUS_SUCCESS) {
 			GStreamer* streamer = (GStreamer *) cb->streamer;
-			if (streamer) {
+			if (streamer && !streamer->isFinished()) {
 				while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
 					if (frame.datalen) {
 						spx_int16_t out[SWITCH_RECOMMENDED_BUFFER_SIZE];
@@ -386,14 +395,14 @@ extern "C" {
 				}
 			}
 			else {
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, 
-					"google_dialogflow_frame: not sending audio because google channel has been closed\n");
+				//switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, 
+				//	"google_dialogflow_frame: not sending audio because google channel has been closed\n");
 			}
 			switch_mutex_unlock(cb->mutex);
 		}
 		else {
-			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, 
-				"google_dialogflow_frame: not sending audio since failed to get lock on mutex\n");
+			//switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, 
+			//	"google_dialogflow_frame: not sending audio since failed to get lock on mutex\n");
 		}
 		return SWITCH_TRUE;
 	}

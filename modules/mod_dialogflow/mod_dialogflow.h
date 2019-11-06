@@ -20,17 +20,14 @@
 /* per-channel data */
 typedef void (*responseHandler_t)(switch_core_session_t* session, const char * type, char* json);
 typedef void (*errorHandler_t)(switch_core_session_t* session, const char * reason);
-typedef void (*completionHandler_t)(switch_core_session_t* session);
 
 struct cap_cb {
 	switch_mutex_t *mutex;
 	char sessionId[256];
-	char *base;
   SpeexResamplerState *resampler;
 	void* streamer;
 	responseHandler_t responseHandler;
 	errorHandler_t errorHandler;
-	completionHandler_t completionHandler;
 	switch_thread_t* thread;
 	char lang[MAX_LANG];
 	char projectId[MAX_PROJECT_ID];
