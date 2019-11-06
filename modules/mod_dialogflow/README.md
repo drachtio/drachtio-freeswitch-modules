@@ -14,13 +14,12 @@ This allows the application whether to decide to play the returned audio clip (v
 The freeswitch module exposes the following API commands:
 
 ```
-dialogflow_start <uuid> <project-id> <lang-code> [<timeout-secs>] [<event>]
+dialogflow_start <uuid> <project-id> <lang-code> [<event>]
 ```
 Attaches media bug to channel and performs streaming recognize request.
 - `uuid` - unique identifier of Freeswitch channel
 - `project-id` - the identifier of the dialogflow project to execute
 - `lang-code` - a valid dialogflow [language tag](https://dialogflow.com/docs/reference/language) to use for speech recognition
-- `timeout-secs` - number of seconds to wait for an intent to be returned; default 30 secs. (Note: timeout behavior is currently not implemented)
 - `event` - name of an initial event to send to dialogflow; e.g. to trigger an initial prompt
 
 ```
@@ -37,7 +36,7 @@ Stop dialogflow on the channel.
 ## Usage
 When using [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), you can access this API command via the api method on the 'endpoint' object.
 ```js
-ep.api('dialogflow_start', `${ep.uuid} my-project-id en-US 30 welcome`); 
+ep.api('dialogflow_start', `${ep.uuid} my-project-id en-US welcome`); 
 ```
 ## Examples
-[dialogflow.js](../../examples/dialogflow.js)
+[drachtio-dialogflow-phone-gateway](https://github.com/davehorton/drachtio-dialogflow-phone-gateway)
