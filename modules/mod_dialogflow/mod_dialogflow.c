@@ -74,7 +74,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	return SWITCH_TRUE;
 }
 
-static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, char* lang, char*projectId, char* event)
+static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, char* lang, char*projectId, char* event, char* text)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
@@ -93,12 +93,12 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 		goto done;
 	}
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "starting dialogflow with project %s, language %s, event %s.\n", 
-		projectId, lang, event);
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "starting dialogflow with project %s, language %s, event %s, text %s.\n", 
+		projectId, lang, event, text);
 
 	switch_core_session_get_read_impl(session, &read_impl);
 	if (SWITCH_STATUS_FALSE == google_dialogflow_session_init(session, responseHandler, errorHandler, 
-		read_impl.samples_per_second, lang, projectId, event, &cb)) {
+		read_impl.samples_per_second, lang, projectId, event, text, &cb)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google dialogflow session.\n");
 		status = SWITCH_STATUS_FALSE;
 		goto done;
@@ -157,10 +157,19 @@ SWITCH_STANDARD_API(dialogflow_api_start_function)
 
 		if ((lsession = switch_core_session_locate(argv[0]))) {
 			char *event = NULL;
+			char *text = NULL;
 			char *projectId = argv[1];
 			char *lang = argv[2];
-			if (argc > 3) event = argv[3];
-			status = start_capture(lsession, flags, lang, projectId, event);
+			if (argc > 3) {
+				event = argv[3];
+			}
+			if (argc > 4) {
+				if (0 == strcmp("none", event)) {
+					event = NULL;
+				}
+				text = argv[4];
+			}
+			status = start_capture(lsession, flags, lang, projectId, event, text);
 			switch_core_session_rwunlock(lsession);
 		}
 	}

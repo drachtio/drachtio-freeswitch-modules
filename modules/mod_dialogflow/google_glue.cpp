@@ -55,37 +55,44 @@ static switch_status_t hanguphook(switch_core_session_t *session) {
 
 class GStreamer {
 public:
-	GStreamer(switch_core_session_t *session, const char* lang, char* projectId, char* event) : 
+	GStreamer(switch_core_session_t *session, const char* lang, char* projectId, char* event, char* text) : 
 	m_lang(lang), m_projectId(projectId), m_sessionId(switch_core_session_get_uuid(session)), m_finished(false), m_packets(0),
 	m_creds(grpc::GoogleDefaultCredentials()), m_channel(grpc::CreateChannel("dialogflow.googleapis.com", m_creds))
  {
-		startStream(session, event);
+		startStream(session, event, text);
 	}
 
 	~GStreamer() {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::~GStreamer wrote %ld packets %p\n", m_packets, this);		
 	}
 
-	void startStream(switch_core_session_t *session, const char* event) {
+	void startStream(switch_core_session_t *session, const char* event, const char* text) {
 		char szSession[256];
 		m_request = std::make_shared<StreamingDetectIntentRequest>();
 		m_context= std::make_shared<grpc::ClientContext>();
 		m_stub = Sessions::NewStub(m_channel);
 		snprintf(szSession, 256, "projects/%s/agent/sessions/%s", m_projectId.c_str(), m_sessionId.c_str());
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::startStream set event %s, %p\n", event, this);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::startStream set event %s, text %s %p\n", event, text, this);
 
 		m_request->set_session(szSession);
 		m_request->set_single_utterance(true);
 		auto* queryInput = m_request->mutable_query_input();
-		auto* audio_config = queryInput->mutable_audio_config();
-		audio_config->set_sample_rate_hertz(16000);
-		audio_config->set_audio_encoding(AudioEncoding::AUDIO_ENCODING_LINEAR_16);
-		audio_config->set_language_code(m_lang.c_str());
 		if (event) {
 			auto* eventInput = queryInput->mutable_event();
 			eventInput->set_name(event);
 			eventInput->set_language_code(m_lang.c_str());
+		}
+		else if (text) {
+			auto* textInput = queryInput->mutable_text();
+			textInput->set_text(text);
+			textInput->set_language_code(m_lang.c_str());
+		}
+		else {
+			auto* audio_config = queryInput->mutable_audio_config();
+			audio_config->set_sample_rate_hertz(16000);
+			audio_config->set_audio_encoding(AudioEncoding::AUDIO_ENCODING_LINEAR_16);
+			audio_config->set_language_code(m_lang.c_str());
 		}
 
   	m_streamer = m_stub->StreamingDetectIntent(m_context.get());
@@ -281,6 +288,7 @@ extern "C" {
 		char* lang, 
 		char* projectId, 
 		char* event, 
+		char* text,
 		struct cap_cb **ppUserData
 	) {
 		switch_status_t status = SWITCH_STATUS_SUCCESS;
@@ -302,7 +310,7 @@ extern "C" {
 
 		strncpy(cb->lang, lang, MAX_LANG);
 		strncpy(cb->projectId, lang, MAX_PROJECT_ID);
-		cb->streamer = new GStreamer(session, lang, projectId, event);
+		cb->streamer = new GStreamer(session, lang, projectId, event, text);
 		cb->resampler = speex_resampler_init(1, 8000, 16000, SWITCH_RESAMPLE_QUALITY, &err);
 		if (0 != err) {
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n", 
