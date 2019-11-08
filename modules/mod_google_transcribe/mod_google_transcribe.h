@@ -6,6 +6,8 @@
 
 #include <unistd.h>
 
+#define MAX_SESSION_ID (256)
+
 #define MY_BUG_NAME "google_transcribe"
 #define TRANSCRIBE_EVENT_RESULTS "google_transcribe::transcription"
 #define TRANSCRIBE_EVENT_END_OF_UTTERANCE "google_transcribe::end_of_utterance"
@@ -34,7 +36,7 @@ typedef void (*responseHandler_t)(switch_core_session_t* session, const char* js
 
 struct cap_cb {
 	switch_mutex_t *mutex;
-  switch_core_session_t *session;
+	char sessionId[MAX_SESSION_ID];
 	char *base;
   SpeexResamplerState *resampler;
 	void* streamer;

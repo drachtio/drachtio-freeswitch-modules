@@ -170,6 +170,11 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       Status status = response.error();
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: error %s (%d)\n", status.message().c_str(), status.code()) ;
     }
+    switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
+    if (!session) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: session %s is gone!\n", cb->sessionId) ;
+      continue;
+    }
 
     for (int r = 0; r < response.results_size(); ++r) {
       auto result = response.results(r);
@@ -211,7 +216,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       }
 
       char* json = cJSON_PrintUnformatted(jResult);
-      cb->responseHandler(cb->session, (const char *) json);
+      cb->responseHandler(session, (const char *) json);
       free(json);
 
       cJSON_Delete(jResult);
@@ -220,26 +225,33 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     if (speech_event_type == StreamingRecognizeResponse_SpeechEventType_END_OF_SINGLE_UTTERANCE) {
       // we only get this when we have requested it, and recognition stops after we get this
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: got end_of_utterance\n") ;
-      cb->responseHandler(cb->session, "end_of_utterance");
+      cb->responseHandler(session, "end_of_utterance");
       cb->end_of_utterance = 1;
       streamer->writesDone();
     }
+    switch_core_session_rwunlock(session);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: got %d responses\n", response.results_size());
+  }
 
-  }
-  if (1 == cb->end_of_utterance) {
-    cb->responseHandler(cb->session, "end_of_transcript");
-  }
-  grpc::Status status = streamer->finish();
-  if (11 == status.error_code()) {
-    if (std::string::npos != status.error_message().find("Exceeded maximum allowed stream duration")) {
-      cb->responseHandler(cb->session, "max_duration_exceeded");
+  {
+    switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
+    if (session) {
+      if (1 == cb->end_of_utterance) {
+        cb->responseHandler(session, "end_of_transcript");
+      }
+      grpc::Status status = streamer->finish();
+      if (11 == status.error_code()) {
+        if (std::string::npos != status.error_message().find("Exceeded maximum allowed stream duration")) {
+          cb->responseHandler(session, "max_duration_exceeded");
+        }
+        else {
+          cb->responseHandler(session, "no_audio");
+        }
+      }
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: finish() status %s (%d)\n", status.error_message().c_str(), status.error_code()) ;
+      switch_core_session_rwunlock(session);
     }
-    else {
-      cb->responseHandler(cb->session, "no_audio");
-    }
   }
-  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: finish() status %s (%d)\n", status.error_message().c_str(), status.error_code()) ;
 }
 
 extern "C" {
@@ -271,8 +283,7 @@ extern "C" {
       int err;
 
       cb =(struct cap_cb *) switch_core_session_alloc(session, sizeof(*cb));
-      cb->base = switch_core_session_strdup(session, "mod_google_transcribe");
-      cb->session = session;
+      strncpy(cb->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
       cb->end_of_utterance = 0;
 
       switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
