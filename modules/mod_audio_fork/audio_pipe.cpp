@@ -232,7 +232,7 @@ void AudioPipe::processPendingWrites() {
   {
     std::lock_guard<std::mutex> guard(mutex_writes);
     for (auto it = pendingWrites.begin(); it != pendingWrites.end(); ++it) {
-       if ((*it)->m_state == LWS_CLIENT_CONNECTED) pendingWrites.push_back(*it);
+       if ((*it)->m_state == LWS_CLIENT_CONNECTED) writes.push_back(*it);
     }  
     pendingWrites.clear();
   }
