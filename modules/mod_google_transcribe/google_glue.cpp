@@ -292,7 +292,7 @@ extern "C" {
           cb->resampler = speex_resampler_init(channels, samples_per_second, 16000, SWITCH_RESAMPLE_QUALITY, &err);
         if (0 != err) {
            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n",
-                    +            switch_channel_get_name(channel), speex_resampler_strerror(err));
+                                 switch_channel_get_name(channel), speex_resampler_strerror(err));
           return SWITCH_STATUS_FALSE;
         }
       } else {
