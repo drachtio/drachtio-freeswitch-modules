@@ -33,6 +33,7 @@ using google::protobuf::Struct;
 
 static uint64_t playCount = 0;
 static std::multimap<std::string, std::string> audioFiles;
+static bool hasDefaultCredentials = false;
 
 static switch_status_t hanguphook(switch_core_session_t *session) {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -56,9 +57,21 @@ static switch_status_t hanguphook(switch_core_session_t *session) {
 class GStreamer {
 public:
 	GStreamer(switch_core_session_t *session, const char* lang, char* projectId, char* event, char* text) : 
-	m_lang(lang), m_projectId(projectId), m_sessionId(switch_core_session_get_uuid(session)), m_finished(false), m_packets(0),
-	m_creds(grpc::GoogleDefaultCredentials()), m_channel(grpc::CreateChannel("dialogflow.googleapis.com", m_creds))
- {
+	m_lang(lang), m_projectId(projectId), m_sessionId(switch_core_session_get_uuid(session)), m_finished(false), m_packets(0)
+	{
+		const char* var;
+		switch_channel_t* channel = switch_core_session_get_channel(session);
+
+		if (var = switch_channel_get_variable(channel, "GOOGLE_APPLICATION_CREDENTIALS")) {
+			auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
+			auto callCreds = grpc::ServiceAccountJWTAccessCredentials(var);
+			auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
+			m_channel = grpc::CreateChannel("dialogflow.googleapis.com", creds);
+		}
+		else {
+			auto creds = grpc::GoogleDefaultCredentials();
+			m_channel = grpc::CreateChannel("dialogflow.googleapis.com", creds);
+		}
 		startStream(session, event, text);
 	}
 
@@ -135,7 +148,6 @@ public:
 private:
 	std::string m_sessionId;
 	std::shared_ptr<grpc::ClientContext> m_context;
-	std::shared_ptr<grpc::ChannelCredentials> m_creds;
 	std::shared_ptr<grpc::Channel> m_channel;
 	std::unique_ptr<Sessions::Stub> 	m_stub;
 	std::unique_ptr< grpc::ClientReaderWriterInterface<StreamingDetectIntentRequest, StreamingDetectIntentResponse> > m_streamer;
@@ -268,9 +280,11 @@ extern "C" {
 	switch_status_t google_dialogflow_init() {
 		const char* gcsServiceKeyFile = std::getenv("GOOGLE_APPLICATION_CREDENTIALS");
 		if (NULL == gcsServiceKeyFile) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, 
-				"Error: \"GOOGLE_APPLICATION_CREDENTIALS\" environment variable must be set to path of the file containing service account json key\n");
-			return SWITCH_STATUS_FALSE;     
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, 
+				"\"GOOGLE_APPLICATION_CREDENTIALS\" environment variable is not set; authentication will use \"GOOGLE_APPLICATION_CREDENTIALS\" channel variable\n");
+		}
+		else {
+			hasDefaultCredentials = true;
 		}
 		return SWITCH_STATUS_SUCCESS;
 	}
@@ -296,8 +310,15 @@ extern "C" {
 		int err;
 		switch_threadattr_t *thd_attr = NULL;
 		switch_memory_pool_t *pool = switch_core_session_get_pool(session);
-
 		struct cap_cb* cb = (struct cap_cb *) switch_core_session_alloc(session, sizeof(*cb));
+
+		if (!hasDefaultCredentials && !switch_channel_get_variable(channel, "GOOGLE_APPLICATION_CREDENTIALS")) {
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, 
+				"missing credentials: GOOGLE_APPLICATION_CREDENTIALS must be suuplied either as an env variable (path to file) or a channel variable (json string)\n");
+			status = SWITCH_STATUS_FALSE;
+			goto done; 
+		}
+
 		strncpy(cb->sessionId, switch_core_session_get_uuid(session), 256);
 		cb->responseHandler = responseHandler;
 		cb->errorHandler = errorHandler;
