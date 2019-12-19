@@ -345,7 +345,9 @@ extern "C" {
           cb->streamer = NULL;
         }
 
-        speex_resampler_destroy(cb->resampler);
+        if (cb->resampler) {
+          speex_resampler_destroy(cb->resampler);
+        }
         switch_channel_set_private(channel, MY_BUG_NAME, NULL);
 			  switch_mutex_unlock(cb->mutex);
 
@@ -375,18 +377,25 @@ extern "C" {
         if (switch_mutex_trylock(cb->mutex) == SWITCH_STATUS_SUCCESS) {
           while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
             if (frame.datalen) {
-              spx_int16_t out[SWITCH_RECOMMENDED_BUFFER_SIZE];
-              spx_uint32_t out_len = SWITCH_RECOMMENDED_BUFFER_SIZE;
-              spx_uint32_t in_len = frame.samples;
-              size_t written;
-              
-              speex_resampler_process_interleaved_int(cb->resampler, 
-                (const spx_int16_t *) frame.data, 
-                (spx_uint32_t *) &in_len, 
-                &out[0], 
-                &out_len);
-                          
-              streamer->write( &out[0], sizeof(spx_int16_t) * out_len);
+
+              if (cb->resampler) {
+                spx_int16_t out[SWITCH_RECOMMENDED_BUFFER_SIZE];
+                spx_uint32_t out_len = SWITCH_RECOMMENDED_BUFFER_SIZE;
+                spx_uint32_t in_len = frame.samples;
+                size_t written;
+
+                speex_resampler_process_interleaved_int(cb->resampler,
+                  (const spx_int16_t *) frame.data,
+                  (spx_uint32_t *) &in_len,
+                  &out[0],
+                  &out_len);
+
+                streamer->write( &out[0], sizeof(spx_int16_t) * out_len);
+              }
+
+              else {
+                streamer->write( frame.data, sizeof(spx_int16_t) * frame.samples);
+              }
             }
           }
           switch_mutex_unlock(cb->mutex);
