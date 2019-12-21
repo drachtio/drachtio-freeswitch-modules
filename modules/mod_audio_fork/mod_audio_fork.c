@@ -187,6 +187,9 @@ SWITCH_STANDARD_API(fork_function)
         if (0 == strcmp(argv[4], "16k")) {
           sampling = 16000;
         }
+        else if (0 == strcmp(argv[4], "8k")) {
+          sampling = 8000;
+        }
 				else {
 					sampling = atoi(argv[4]);
 				}
