@@ -2,6 +2,32 @@
 
 #include <thread>
 #include <cassert>
+#include <iostream>
+
+namespace {
+  static const char* basicAuthUser = std::getenv("MOD_AUDIO_FORK_HTTP_AUTH_USER");
+  static const char* basicAuthPassword = std::getenv("MOD_AUDIO_FORK_HTTP_AUTH_PASSWORD");
+}
+
+// remove once we update to lws with this helper
+static int dch_lws_http_basic_auth_gen(const char *user, const char *pw, char *buf, size_t len) {
+	size_t n = strlen(user), m = strlen(pw);
+	char b[128];
+
+	if (len < 6 + ((4 * (n + m + 1)) / 3) + 1)
+		return 1;
+
+	memcpy(buf, "Basic ", 6);
+
+	n = lws_snprintf(b, sizeof(b), "%s:%s", user, pw);
+	if (n >= sizeof(b) - 2)
+		return 2;
+
+	lws_b64_encode_string(b, n, buf + 6, len - 6);
+	buf[len - 1] = '\0';
+
+	return 0;
+}
 
 int AudioPipe::lws_callback(struct lws *wsi, 
   enum lws_callback_reasons reason,
@@ -21,6 +47,16 @@ int AudioPipe::lws_callback(struct lws *wsi,
       vhd->vhost = lws_get_vhost(wsi);
       break;
 
+    case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER:
+      lwsl_notice("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER auth %s:%s\n", basicAuthUser, basicAuthPassword); 
+      if (basicAuthUser && basicAuthPassword) {
+        unsigned char **p = (unsigned char **)in, *end = (*p) + len;
+        char b[128];
+        if (dch_lws_http_basic_auth_gen(basicAuthUser, basicAuthPassword, b, sizeof(b))) break;
+        if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_AUTHORIZATION, (unsigned char *)b, strlen(b), p, end)) return -1;
+      }
+      break;
+
     case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
       processPendingConnects(vhd);
       processPendingDisconnects(vhd);
@@ -34,8 +70,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
           ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_FAIL, (char *) in);
         }
         else {
-          lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_CONNECTION_ERROR %s unable to find wsi %p..\n", 
-            ap->m_uuid.c_str(), wsi); 
+          lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_CONNECTION_ERROR unable to find wsi %p..\n", wsi); 
         }
       }      
       break;

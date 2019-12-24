@@ -18,7 +18,7 @@ static void responseHandler(switch_core_session_t* session, const char * eventNa
 	switch_event_t *event;
 
 	switch_channel_t *channel = switch_core_session_get_channel(session);
-	if (json) switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "responseHandler: sening event payload: %s.\n", json);
+	if (json) switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "responseHandler: sending event payload: %s.\n", json);
 	switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
 	switch_channel_event_set_data(channel, event);
 	if (json) switch_event_add_body(event, "%s", json);

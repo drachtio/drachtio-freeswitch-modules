@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#include <regex>
 
 #include "base64.hpp"
 #include "parser.hpp"
@@ -27,7 +28,6 @@ namespace {
   static const char* mySubProtocolName = std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") ?
     std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") : "audiostream.drachtio.org";
   static unsigned int nServiceThreads = std::max(1, std::min(requestedNumServiceThreads ? ::atoi(requestedNumServiceThreads) : 1, 5));
-
   static unsigned int idxCallCount = 0;
   static uint32_t playCount = 0;
 
@@ -140,6 +140,11 @@ namespace {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
         tech_pvt->responseHandler(session, EVENT_ERROR, jsonString);
         free(jsonString);        
+      }
+      else if (0 == type.compare("json")) {
+        char* jsonString = cJSON_PrintUnformatted(json);
+        tech_pvt->responseHandler(session, EVENT_JSON, jsonString);
+        free(jsonString);
       }
       else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) processIncomingMessage - unsupported msg type %s\n", tech_pvt->id, type.c_str());  
@@ -314,21 +319,30 @@ extern "C" {
       return 0;
     }
 
-    // parse host, port and path
-    strcpy(path, "/");
-    char *p = server + offset;
-    char *pch = strtok_r(p, ":/", &saveptr);
-    while (pch) {
-      if (0 == i++) strncpy(host, pch, MAX_WS_URL_LEN);
-      else {
-        bool isdigits = true;
-        int idx = 0;
-        while (*(pch+idx) && isdigits) isdigits = isdigit(pch[idx++]);
-        if (isdigits) *pPort = atoi(pch);
-        else strncpy(path + 1, pch, MAX_PATH_LEN);
+    std::string strHost(server + offset);
+    std::regex re("^(.+?):?(\\d+)?(/.*)?$");
+    std::smatch matches;
+    if(std::regex_search(strHost, matches, re)) {
+      /*
+      for (int i = 0; i < matches.length(); i++) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "parse_ws_uri - %d: %s\n", i, matches[i].str().c_str());
       }
-      pch = strtok_r(NULL, ";/", &saveptr);
+      */
+      strncpy(host, matches[1].str().c_str(), MAX_WS_URL_LEN);
+      if (matches[2].str().length() > 0) {
+        *pPort = atoi(matches[2].str().c_str());
+      }
+      if (matches[3].str().length() > 0) {
+        strncpy(path, matches[3].str().c_str(), MAX_PATH_LEN);
+      }
+      else {
+        strcpy(path, "/");
+      }
+    } else {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "parse_ws_uri - invalid format %s\n", strHost.c_str());
+      return 0;
     }
+    //switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "parse_ws_uri - path %s\n", path);
 
     return 1;
   }

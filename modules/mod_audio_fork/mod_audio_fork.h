@@ -21,6 +21,7 @@
 #define EVENT_CONNECT_SUCCESS "mod_audio_fork::connect"
 #define EVENT_CONNECT_FAIL    "mod_audio_fork::connect_failed"
 #define EVENT_BUFFER_OVERRUN  "mod_audio_fork::buffer_overrun"
+#define EVENT_JSON            "mod_audio_fork::json"
 
 
 struct playout {
