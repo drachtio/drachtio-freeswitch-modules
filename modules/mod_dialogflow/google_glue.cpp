@@ -224,7 +224,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
 						s << ".mp3";
 					}
 					else if (cfg.audio_encoding() == OutputAudioEncoding::OUTPUT_AUDIO_ENCODING_OGG_OPUS) {
-						s << ".ogg";
+						s << ".opus";
 					}
 					else {
 						s << ".wav";
