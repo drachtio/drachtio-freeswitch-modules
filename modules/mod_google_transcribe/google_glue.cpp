@@ -28,8 +28,17 @@ public:
     const char *hints;
     switch_channel_t *channel = switch_core_session_get_channel(session);
 
-		m_creds = grpc::GoogleDefaultCredentials();
-  	m_channel = grpc::CreateChannel("speech.googleapis.com", m_creds);
+		if (var = switch_channel_get_variable(channel, "GOOGLE_APPLICATION_CREDENTIALS")) {
+			auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
+			auto callCreds = grpc::ServiceAccountJWTAccessCredentials(var);
+			auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
+			m_channel = grpc::CreateChannel("speech.googleapis.com", creds);
+		}
+		else {
+			auto creds = grpc::GoogleDefaultCredentials();
+			m_channel = grpc::CreateChannel("speech.googleapis.com", creds);
+		}
+
   	m_stub = Speech::NewStub(m_channel);
   		
 		auto* streaming_config = m_request.mutable_streaming_config();
@@ -150,7 +159,6 @@ protected:
 private:
 	switch_core_session_t* m_session;
   grpc::ClientContext m_context;
-	std::shared_ptr<grpc::ChannelCredentials> m_creds;
 	std::shared_ptr<grpc::Channel> m_channel;
 	std::unique_ptr<Speech::Stub> 	m_stub;
 	std::unique_ptr< grpc::ClientReaderWriterInterface<StreamingRecognizeRequest, StreamingRecognizeResponse> > m_streamer;
@@ -257,17 +265,14 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
 extern "C" {
     switch_status_t google_speech_init() {
       const char* gcsServiceKeyFile = std::getenv("GOOGLE_APPLICATION_CREDENTIALS");
-      if (NULL == gcsServiceKeyFile) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, 
-          "Error: \"GOOGLE_APPLICATION_CREDENTIALS\" environment variable must be set to path of the file containing service account json key\n");
-        return SWITCH_STATUS_FALSE;     
-      }
-      try {
-        auto creds = grpc::GoogleDefaultCredentials();
-      } catch (const std::exception& e) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, 
-          "Error initializing google api with provided credentials in %s: %s\n", gcsServiceKeyFile, e.what());
-        return SWITCH_STATUS_FALSE;
+      if (gcsServiceKeyFile) {
+        try {
+          auto creds = grpc::GoogleDefaultCredentials();
+        } catch (const std::exception& e) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, 
+            "Error initializing google api with provided credentials in %s: %s\n", gcsServiceKeyFile, e.what());
+          return SWITCH_STATUS_FALSE;
+        }
       }
       return SWITCH_STATUS_SUCCESS;
     }
