@@ -163,8 +163,13 @@ namespace {
         if (tech_pvt) {
           switch (event) {
             case AudioPipe::CONNECT_SUCCESS:
-              tech_pvt->responseHandler(session, EVENT_CONNECT_SUCCESS, NULL);
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "connection successful\n");
+              tech_pvt->responseHandler(session, EVENT_CONNECT_SUCCESS, NULL);
+              if (strlen(tech_pvt->initialMetadata) > 0) {
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "sending initial metadata %s\n", tech_pvt->initialMetadata);
+                AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
+                pAudioPipe->bufferForSending(tech_pvt->initialMetadata);
+              }
             break;
             case AudioPipe::CONNECT_FAIL:
             {
@@ -215,6 +220,7 @@ namespace {
     tech_pvt->channels = channels;
     tech_pvt->id = ++idxCallCount;
     tech_pvt->buffer_overrun_notified = 0;
+    if (metadata) strncpy(tech_pvt->initialMetadata, metadata, MAX_METADATA_LEN);
     
     size_t buflen = LWS_PRE + (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
 
@@ -391,7 +397,6 @@ extern "C" {
     *ppUserData = tech_pvt;
 
     AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
-    if (metadata && strlen(metadata) > 0) pAudioPipe->bufferForSending(metadata);
     pAudioPipe->connect();
     return SWITCH_STATUS_SUCCESS;
   }

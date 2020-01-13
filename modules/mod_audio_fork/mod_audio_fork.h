@@ -23,6 +23,7 @@
 #define EVENT_BUFFER_OVERRUN  "mod_audio_fork::buffer_overrun"
 #define EVENT_JSON            "mod_audio_fork::json"
 
+#define MAX_METADATA_LEN (8192)
 
 struct playout {
   char *file;
@@ -46,6 +47,7 @@ struct private_data {
   int  channels;
   unsigned int id;
   int buffer_overrun_notified:1;
+  char initialMetadata[8192];
 };
 
 typedef struct private_data private_t;
