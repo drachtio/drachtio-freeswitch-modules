@@ -48,12 +48,18 @@ int AudioPipe::lws_callback(struct lws *wsi,
       break;
 
     case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER:
-      lwsl_notice("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER auth %s:%s\n", basicAuthUser, basicAuthPassword); 
-      if (basicAuthUser && basicAuthPassword) {
-        unsigned char **p = (unsigned char **)in, *end = (*p) + len;
-        char b[128];
-        if (dch_lws_http_basic_auth_gen(basicAuthUser, basicAuthPassword, b, sizeof(b))) break;
-        if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_AUTHORIZATION, (unsigned char *)b, strlen(b), p, end)) return -1;
+      {
+        AudioPipe* ap = findPendingConnect(wsi);
+        if (ap && ap->hasBasicAuth()) {
+          unsigned char **p = (unsigned char **)in, *end = (*p) + len;
+          char b[128];
+          std::string username, password;
+
+          ap->getBasicAuth(username, password);
+          lwsl_notice("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER username: %s, password: xxxxxx\n", username.c_str());
+          if (dch_lws_http_basic_auth_gen(username.c_str(), password.c_str(), b, sizeof(b))) break;
+          if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_AUTHORIZATION, (unsigned char *)b, strlen(b), p, end)) return -1;
+        }
       }
       break;
 
@@ -123,6 +129,11 @@ int AudioPipe::lws_callback(struct lws *wsi,
           return 0;
         }
 
+        if (lws_frame_is_binary(wsi)) {
+          lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_RECEIVE received binary frame, discarding.\n");
+          return 0;
+        }
+
         if (lws_is_first_fragment(wsi)) {
           // allocate a buffer for the entire chunk of memory needed
           assert(nullptr == ap->m_recv_buf);
@@ -139,15 +150,10 @@ int AudioPipe::lws_callback(struct lws *wsi,
         }
 
         if (lws_is_final_fragment(wsi)) {
-          if (lws_frame_is_binary(wsi)) {
-            lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_RECEIVE received binary frame, discarding.\n"); 
-          }
-          else {
-            std::string msg((char *)ap->m_recv_buf, ap->m_recv_buf_ptr - ap->m_recv_buf);
-            ap->m_callback(ap->m_uuid.c_str(), AudioPipe::MESSAGE, msg.c_str());
-            delete [] ap->m_recv_buf;
-            ap->m_recv_buf = ap->m_recv_buf_ptr = nullptr;
-          }
+          std::string msg((char *)ap->m_recv_buf, ap->m_recv_buf_ptr - ap->m_recv_buf);
+          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::MESSAGE, msg.c_str());
+          delete [] ap->m_recv_buf;
+          ap->m_recv_buf = ap->m_recv_buf_ptr = nullptr;
         }
       }
       break;
@@ -387,11 +393,16 @@ void AudioPipe::deinitialize() {
 
 // instance members
 AudioPipe::AudioPipe(const char* uuid, const char* host, unsigned int port, const char* path,
-  int sslFlags, size_t bufLen, size_t minFreespace, notifyHandler_t callback) :
+  int sslFlags, size_t bufLen, size_t minFreespace, const char* username, const char* password, notifyHandler_t callback) :
   m_uuid(uuid), m_host(host), m_port(port), m_path(path), m_sslFlags(sslFlags),
   m_audio_buffer_min_freespace(minFreespace), m_audio_buffer_max_len(bufLen), 
   m_audio_buffer_write_offset(LWS_PRE), m_recv_buf(nullptr), m_recv_buf_ptr(nullptr), 
   m_state(LWS_CLIENT_IDLE), m_wsi(nullptr), m_vhd(nullptr), m_callback(callback) {
+
+  if (username && password) {
+    m_username.assign(username);
+    m_password.assign(password);
+  }
 
   m_audio_buffer = new uint8_t[m_audio_buffer_max_len];
 }

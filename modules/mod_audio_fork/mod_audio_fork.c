@@ -134,7 +134,7 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
   return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop | send_text] [wss-url | path] [mono | mixed | stereo] [8k | 16k] [metadata]"
+#define FORK_API_SYNTAX "<uuid> [start | stop | send_text] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
 	char *mycmd = NULL, *argv[6] = { 0 };

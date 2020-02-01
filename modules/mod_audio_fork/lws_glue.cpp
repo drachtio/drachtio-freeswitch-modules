@@ -204,10 +204,18 @@ namespace {
   switch_status_t fork_data_init(private_t *tech_pvt, switch_core_session_t *session, char * host, 
     unsigned int port, char* path, int sslFlags, int sampling, int desiredSampling, int channels, char* metadata, responseHandler_t responseHandler) {
 
+    const char* username = nullptr;
+    const char* password = nullptr;
     int err;
     switch_codec_implementation_t read_impl;
+    switch_channel_t *channel = switch_core_session_get_channel(session);
+
     switch_core_session_get_read_impl(session, &read_impl);
   
+    if (username = switch_channel_get_variable(channel, "MOD_AUDIO_BASIC_AUTH_USERNAME")) {
+      password = switch_channel_get_variable(channel, "MOD_AUDIO_BASIC_AUTH_PASSWORD");
+    }
+
     memset(tech_pvt, 0, sizeof(private_t));
   
     strncpy(tech_pvt->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
@@ -225,7 +233,7 @@ namespace {
     size_t buflen = LWS_PRE + (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
 
     AudioPipe* ap = new AudioPipe(tech_pvt->sessionId, host, port, path, sslFlags, 
-      buflen, read_impl.decoded_bytes_per_packet, eventCallback);
+      buflen, read_impl.decoded_bytes_per_packet, username, password, eventCallback);
     if (!ap) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error allocating AudioPipe\n");
       return SWITCH_STATUS_FALSE;
