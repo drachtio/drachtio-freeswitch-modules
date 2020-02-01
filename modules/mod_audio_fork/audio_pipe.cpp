@@ -251,7 +251,7 @@ void AudioPipe::processPendingDisconnects(lws_per_vhost_data *vhd) {
   std::list<AudioPipe*> disconnects;
   {
     std::lock_guard<std::mutex> guard(mutex_disconnects);
-    for (auto it = pendingConnects.begin(); it != pendingConnects.end(); ++it) {
+    for (auto it = pendingDisconnects.begin(); it != pendingDisconnects.end(); ++it) {
       if ((*it)->m_state == LWS_CLIENT_DISCONNECTING) disconnects.push_back(*it);
     }
     pendingDisconnects.clear();
