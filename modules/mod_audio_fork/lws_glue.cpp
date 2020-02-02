@@ -471,13 +471,28 @@ extern "C" {
     return SWITCH_STATUS_SUCCESS;
   }
 
+  switch_status_t fork_session_pauseresume(switch_core_session_t *session, int pause) {
+    switch_channel_t *channel = switch_core_session_get_channel(session);
+    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+    if (!bug) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "fork_session_pauseresume failed because no bug\n");
+      return SWITCH_STATUS_FALSE;
+    }
+    private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
+  
+    if (!tech_pvt) return SWITCH_STATUS_FALSE;
+    tech_pvt->audio_paused = pause;
+
+    return SWITCH_STATUS_SUCCESS;
+  }
+
   switch_bool_t fork_frame(switch_core_session_t *session, switch_media_bug_t *bug) {
     private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
     size_t inuse = 0;
     bool dirty = false;
     char *p = (char *) "{\"msg\": \"buffer overrun\"}";
 
-    if (!tech_pvt) return SWITCH_TRUE;
+    if (!tech_pvt || tech_pvt->audio_paused) return SWITCH_TRUE;
     
     if (switch_mutex_trylock(tech_pvt->mutex) == SWITCH_STATUS_SUCCESS) {
       if (!tech_pvt->pAudioPipe) {

@@ -300,6 +300,18 @@ AudioPipe* AudioPipe::findAndRemovePendingConnect(struct lws *wsi) {
   return ap;
 }
 
+AudioPipe* AudioPipe::findPendingConnect(struct lws *wsi) {
+  AudioPipe* ap = NULL;
+  std::lock_guard<std::mutex> guard(mutex_connects);
+
+  for (auto it = pendingConnects.begin(); it != pendingConnects.end() && !ap; ++it) {
+    int state = (*it)->m_state;
+    if ((state == LWS_CLIENT_CONNECTING) &&
+      (*it)->m_wsi == wsi) ap = *it;
+  }
+  return ap;
+}
+
 void AudioPipe::addPendingConnect(AudioPipe* ap) {
   {
     std::lock_guard<std::mutex> guard(mutex_connects);
@@ -346,15 +358,18 @@ bool AudioPipe::lws_service_thread(unsigned int nServiceThread) {
   info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 
   info.ka_time = 60;                    // tcp keep-alive timer
-  info.ka_probes = 3;                   // number of times to try ka before closing connection
+  info.ka_probes = 4;                   // number of times to try ka before closing connection
   info.ka_interval = 5;                 // time between ka's
-  info.timeout_secs = 5;                // doc says timeout for "various processes involving network roundtrips"
-  info.keepalive_timeout = 3;           // seconds to allow remote client to hold on to an idle HTTP/1.1 connection 
+  info.timeout_secs = 10;                // doc says timeout for "various processes involving network roundtrips"
+  info.keepalive_timeout = 5;           // seconds to allow remote client to hold on to an idle HTTP/1.1 connection 
   info.ws_ping_pong_interval = 20;      // interval in seconds between sending PINGs on idle websocket connections
   info.timeout_secs_ah_idle = 10;       // secs to allow a client to hold an ah without using it
 
+  lwsl_notice("AudioPipe::lws_service_thread creating context in service thread %d..\n", nServiceThread); 
+
   contexts[nServiceThread] = lws_create_context(&info);
   if (!contexts[nServiceThread]) {
+    lwsl_err("AudioPipe::lws_service_thread failed creating context in service thread %d..\n", nServiceThread); 
     return false;
   }
 
@@ -363,7 +378,7 @@ bool AudioPipe::lws_service_thread(unsigned int nServiceThread) {
     n = lws_service(contexts[nServiceThread], 50);
   } while (n >= 0 && !lws_stopping);
 
-  lwsl_notice("AudioPipe::lws_service_thread ending..\n"); 
+  lwsl_notice("AudioPipe::lws_service_thread ending in service thread %d\n", nServiceThread); 
   lws_context_destroy(contexts[nServiceThread]);
   return true;
 }

@@ -47,6 +47,7 @@ struct private_data {
   int  channels;
   unsigned int id;
   int buffer_overrun_notified:1;
+  int audio_paused:1;
   char initialMetadata[8192];
 };
 

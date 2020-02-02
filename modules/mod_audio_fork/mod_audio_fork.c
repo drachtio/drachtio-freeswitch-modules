@@ -118,6 +118,16 @@ static switch_status_t do_stop(switch_core_session_t *session, char* text)
 	return status;
 }
 
+static switch_status_t do_pauseresume(switch_core_session_t *session, int pause)
+{
+	switch_status_t status = SWITCH_STATUS_SUCCESS;
+
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: %s\n", pause ? "pause" : "resume");
+	status = fork_session_pauseresume(session, pause);
+
+	return status;
+}
+
 static switch_status_t send_text(switch_core_session_t *session, char* text) {
 	switch_status_t status = SWITCH_STATUS_FALSE;
 
@@ -134,7 +144,7 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
   return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop | send_text] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [metadata]"
+#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
 	char *mycmd = NULL, *argv[6] = { 0 };
@@ -155,6 +165,12 @@ SWITCH_STANDARD_API(fork_function)
 		if ((lsession = switch_core_session_locate(argv[0]))) {
 			if (!strcasecmp(argv[1], "stop")) {
 				status = do_stop(lsession, argc > 2 ? argv[2] : NULL);
+      }
+			else if (!strcasecmp(argv[1], "pause")) {
+				status = do_pauseresume(lsession, 1);
+      }
+			else if (!strcasecmp(argv[1], "resume")) {
+				status = do_pauseresume(lsession, 0);
       }
       else if (!strcasecmp(argv[1], "send_text")) {
         if (argc < 3) {
