@@ -26,7 +26,7 @@ namespace {
   static int nAudioBufferSecs = std::max(1, std::min(requestedBufferSecs ? ::atoi(requestedBufferSecs) : 2, 5));
   static const char *requestedNumServiceThreads = std::getenv("MOD_AUDIO_FORK_SERVICE_THREADS");
   static const char* mySubProtocolName = std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") ?
-    std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") : "audiostream.drachtio.org";
+    std::getenv("MOD_AUDIO_FORK_SUBPROTOCOL_NAME") : "audio.drachtio.org";
   static unsigned int nServiceThreads = std::max(1, std::min(requestedNumServiceThreads ? ::atoi(requestedNumServiceThreads) : 1, 5));
   static unsigned int idxCallCount = 0;
   static uint32_t playCount = 0;
@@ -492,9 +492,22 @@ extern "C" {
     bool dirty = false;
     char *p = (char *) "{\"msg\": \"buffer overrun\"}";
 
-    if (!tech_pvt || tech_pvt->audio_paused) return SWITCH_TRUE;
+    if (!tech_pvt) return SWITCH_TRUE;
     
     if (switch_mutex_trylock(tech_pvt->mutex) == SWITCH_STATUS_SUCCESS) {
+      // if paused read and discard
+      if (tech_pvt->audio_paused) {
+        uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
+			  switch_frame_t frame = { 0 };
+
+			  frame.data = data;
+			  frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
+				while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
+          ; // no-op
+				}
+				switch_mutex_unlock(tech_pvt->mutex);
+        return SWITCH_TRUE;
+      }
       if (!tech_pvt->pAudioPipe) {
         switch_mutex_unlock(tech_pvt->mutex);
         return SWITCH_TRUE;
