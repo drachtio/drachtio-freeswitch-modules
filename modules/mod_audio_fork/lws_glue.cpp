@@ -481,8 +481,9 @@ extern "C" {
     private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
   
     if (!tech_pvt) return SWITCH_STATUS_FALSE;
-    tech_pvt->audio_paused = pause;
 
+    switch_core_media_bug_flush(bug);
+    tech_pvt->audio_paused = pause;
     return SWITCH_STATUS_SUCCESS;
   }
 
@@ -492,22 +493,9 @@ extern "C" {
     bool dirty = false;
     char *p = (char *) "{\"msg\": \"buffer overrun\"}";
 
-    if (!tech_pvt) return SWITCH_TRUE;
+    if (!tech_pvt || tech_pvt->audio_paused) return SWITCH_TRUE;
     
     if (switch_mutex_trylock(tech_pvt->mutex) == SWITCH_STATUS_SUCCESS) {
-      // if paused read and discard
-      if (tech_pvt->audio_paused) {
-        uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
-			  switch_frame_t frame = { 0 };
-
-			  frame.data = data;
-			  frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
-				while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
-          ; // no-op
-				}
-				switch_mutex_unlock(tech_pvt->mutex);
-        return SWITCH_TRUE;
-      }
       if (!tech_pvt->pAudioPipe) {
         switch_mutex_unlock(tech_pvt->mutex);
         return SWITCH_TRUE;
