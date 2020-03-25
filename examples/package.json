@@ -12,7 +12,7 @@
     "config": "^3.0.1",
     "drachtio-fsmrf": "^1.4.4",
     "drachtio-srf": "^4.4.10",
-    "minimist": "^1.2.0",
+    "minimist": "^1.2.2",
     "ws": "^6.1.2"
   }
 }
