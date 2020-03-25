@@ -73,6 +73,11 @@ public:
     password = m_password;
   }
 
+  void do_graceful_shutdown();
+  bool isGracefulShutdown(void) {
+    return m_gracefulShutdown;
+  }
+
   void close() ;
 
   // no default constructor or copying
@@ -129,6 +134,7 @@ private:
   log_emit_function m_logger;
   std::string m_username;
   std::string m_password;
+  bool m_gracefulShutdown;
 
 };
 

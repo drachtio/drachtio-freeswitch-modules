@@ -48,6 +48,7 @@ struct private_data {
   unsigned int id;
   int buffer_overrun_notified:1;
   int audio_paused:1;
+  int graceful_shutdown:1;
   char initialMetadata[8192];
 };
 

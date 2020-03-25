@@ -166,6 +166,14 @@ int AudioPipe::lws_callback(struct lws *wsi,
           return 0;
         }
 
+        // check for graceful close - send a zero length binary frame
+        if (ap->isGracefulShutdown()) {
+          lwsl_notice("%s graceful shutdown - sending zero length binary frame to flush any final responses\n", ap->m_uuid.c_str());
+          std::lock_guard<std::mutex> lk(ap->m_audio_mutex);
+          int sent = lws_write(wsi, (unsigned char *) ap->m_audio_buffer + LWS_PRE, 0, LWS_WRITE_BINARY);
+          return 0;
+        }
+
         // check for text frames to send
         {
           std::lock_guard<std::mutex> lk(ap->m_text_mutex);
@@ -410,7 +418,7 @@ void AudioPipe::deinitialize() {
 AudioPipe::AudioPipe(const char* uuid, const char* host, unsigned int port, const char* path,
   int sslFlags, size_t bufLen, size_t minFreespace, const char* username, const char* password, notifyHandler_t callback) :
   m_uuid(uuid), m_host(host), m_port(port), m_path(path), m_sslFlags(sslFlags),
-  m_audio_buffer_min_freespace(minFreespace), m_audio_buffer_max_len(bufLen), 
+  m_audio_buffer_min_freespace(minFreespace), m_audio_buffer_max_len(bufLen), m_gracefulShutdown(false),
   m_audio_buffer_write_offset(LWS_PRE), m_recv_buf(nullptr), m_recv_buf_ptr(nullptr), 
   m_state(LWS_CLIENT_IDLE), m_wsi(nullptr), m_vhd(nullptr), m_callback(callback) {
 
@@ -473,4 +481,9 @@ void AudioPipe::unlockAudioBuffer() {
 void AudioPipe::close() {
   if (m_state != LWS_CLIENT_CONNECTED) return;
   addPendingDisconnect(this);
+}
+
+void AudioPipe::do_graceful_shutdown() {
+  m_gracefulShutdown = true;
+  addPendingWrite(this);
 }

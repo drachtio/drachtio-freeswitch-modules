@@ -128,6 +128,15 @@ static switch_status_t do_pauseresume(switch_core_session_t *session, int pause)
 	return status;
 }
 
+static switch_status_t do_graceful_shutdown(switch_core_session_t *session)
+{
+	switch_status_t status = SWITCH_STATUS_SUCCESS;
+
+	status = fork_session_graceful_shutdown(session);
+
+	return status;
+}
+
 static switch_status_t send_text(switch_core_session_t *session, char* text) {
 	switch_status_t status = SWITCH_STATUS_FALSE;
 
@@ -144,7 +153,7 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
   return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [metadata]"
+#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume | graceful-shutdown ] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
 	char *mycmd = NULL, *argv[6] = { 0 };
@@ -154,8 +163,12 @@ SWITCH_STANDARD_API(fork_function)
 	if (!zstr(cmd) && (mycmd = strdup(cmd))) {
 		argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
 	}
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "mod_audio_fork cmd: %s\n", cmd);
 
-	if (zstr(cmd) || argc < 2  || (!strcmp(argv[1], "start") && argc < 4)) {
+
+	if (zstr(cmd) || argc < 2 ||
+		(0 == strcmp(argv[1], "start") && argc < 4)) {
+
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s %s.\n", cmd, argv[0], argv[1]);
 		stream->write_function(stream, "-USAGE: %s\n", FORK_API_SYNTAX);
 		goto done;
@@ -171,6 +184,9 @@ SWITCH_STANDARD_API(fork_function)
       }
 			else if (!strcasecmp(argv[1], "resume")) {
 				status = do_pauseresume(lsession, 0);
+      }
+			else if (!strcasecmp(argv[1], "graceful-shutdown")) {
+				status = do_graceful_shutdown(lsession);
       }
       else if (!strcasecmp(argv[1], "send_text")) {
         if (argc < 3) {
