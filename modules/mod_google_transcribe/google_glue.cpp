@@ -181,7 +181,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
     if (!session) {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: session %s is gone!\n", cb->sessionId) ;
-      return;
+      return nullptr;
     }
 
     for (int r = 0; r < response.results_size(); ++r) {
@@ -260,6 +260,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       switch_core_session_rwunlock(session);
     }
   }
+  return nullptr;
 }
 
 extern "C" {
