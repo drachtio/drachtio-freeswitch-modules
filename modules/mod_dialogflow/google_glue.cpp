@@ -30,6 +30,8 @@ using google::cloud::dialogflow::v2beta1::StreamingRecognitionResult;
 using google::cloud::dialogflow::v2beta1::EventInput;
 using google::rpc::Status;
 using google::protobuf::Struct;
+using google::protobuf::Value;
+using google::protobuf::MapPair;
 
 static uint64_t playCount = 0;
 static std::multimap<std::string, std::string> audioFiles;
@@ -52,6 +54,39 @@ static switch_status_t hanguphook(switch_core_session_t *session) {
 		audioFiles.erase(sessionId);
 		switch_core_event_hook_remove_state_change(session, hanguphook);
 	}
+}
+
+static  void parseEventParams(Struct* grpcParams, cJSON* json) {
+	auto* map = grpcParams->mutable_fields();
+	int count = cJSON_GetArraySize(json);
+	for (int i = 0; i < count; i++) {
+		cJSON* prop = cJSON_GetArrayItem(json, i);
+		if (prop) {
+			google::protobuf::Value v;
+			switch (prop->type) {
+				case cJSON_False:
+				case cJSON_True:
+					v.set_bool_value(prop->type == cJSON_True);
+					break;
+
+				case cJSON_Number:
+					v.set_number_value(prop->valuedouble);
+					break;
+
+				case cJSON_String:
+					v.set_string_value(prop->valuestring);
+					break;
+
+				case cJSON_Array:
+				case cJSON_Object:
+				case cJSON_Raw:
+				case cJSON_NULL:
+					continue;
+			}
+			map->insert(MapPair<std::string, Value>(prop->string, v));
+		}
+	}
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "parseEventParams: added %d event params\n", map->size());
 }
 
 class GStreamer {
@@ -95,6 +130,18 @@ public:
 			auto* eventInput = queryInput->mutable_event();
 			eventInput->set_name(event);
 			eventInput->set_language_code(m_lang.c_str());
+			if (text) {
+				cJSON* json = cJSON_Parse(text);
+				if (!json) {
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "GStreamer::startStream ignoring event params since it is not json %s\n", text);
+				}
+				else {
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::startStream adding event params (JSON) %s\n", text);
+					auto* eventParams = eventInput->mutable_parameters();
+					parseEventParams(eventParams, json);
+					cJSON_Delete(json);
+				}
+			}
 		}
 		else if (text) {
 			auto* textInput = queryInput->mutable_text();
