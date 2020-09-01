@@ -308,7 +308,7 @@ extern "C" {
 		return SWITCH_STATUS_SUCCESS;
 	}
 
-	// start lex on a channel
+	// start transcribe on a channel
 	switch_status_t aws_transcribe_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
           uint32_t samples_per_second, char* lang, int interim, void **ppUserData
 	) {
@@ -387,20 +387,18 @@ extern "C" {
 			switch_status_t st;
 
 			// close connection and get final responses
-			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_lex_session_cleanup: acquiring lock\n");
 			switch_mutex_lock(cb->mutex);
-			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_lex_session_cleanup: acquired lock\n");
 			GStreamer* streamer = (GStreamer *) cb->streamer;
 			if (streamer) {
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_lex_session_cleanup: sending writesDone..\n");
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "aws_transcribe_session_stop: finish..\n");
 				streamer->finish();
 			}
 			if (cb->thread) {
 				switch_status_t retval;
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "aws_lex_session_cleanup: waiting for read thread to complete\n");
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: waiting for read thread to complete\n");
 				switch_thread_join(&retval, cb->thread);
 				cb->thread = NULL;
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "aws_lex_session_cleanup: read thread completed\n");
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: read thread completed\n");
 			}
 			killcb(cb);
 
@@ -408,7 +406,7 @@ extern "C" {
 			if (!channelIsClosing) switch_core_media_bug_remove(session, &bug);
 
 			switch_mutex_unlock(cb->mutex);
-			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "aws_lex_session_cleanup: Closed aws session\n");
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: Closed aws session\n");
 
 			return SWITCH_STATUS_SUCCESS;
 		}

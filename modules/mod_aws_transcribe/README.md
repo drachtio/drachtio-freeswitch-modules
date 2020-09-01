@@ -48,7 +48,11 @@ The names of the channel variables and environment variables are:
 ## Usage
 When using [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), you can access this API command via the api method on the 'endpoint' object.
 ```js
-ep.api('uuid_aws_transcribe', `${ep.uuid} start en-US`);  
+ep.api('uuid_aws_transcribe', `${ep.uuid} start en-US interim`);  
 ```
+
+## Building
+You will need to build the AWS C++ SDK.  You can use [this ansible role](https://github.com/davehorton/ansible-role-fsmrf), or refer to the specific steps [here](https://github.com/davehorton/ansible-role-fsmrf/blob/a1947cc24e89dee7d6b42053c53295f9198340c1/tasks/grpc.yml#L28).
+
 ## Examples
-TODO
+[aws_transcribe.js](../../examples/aws_transcribe.js)
