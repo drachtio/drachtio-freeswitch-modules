@@ -7,12 +7,12 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
-    "config": "^3.0.1",
-    "drachtio-fsmrf": "^1.4.4",
-    "drachtio-srf": "^4.4.10",
-    "minimist": "^1.2.2",
-    "ws": "^6.1.2"
+    "config": "^3.3.1",
+    "drachtio-fsmrf": "^2.0.1",
+    "drachtio-srf": "^4.4.37",
+    "minimist": "^1.2.5",
+    "ws": "^7.3.1"
   }
 }
