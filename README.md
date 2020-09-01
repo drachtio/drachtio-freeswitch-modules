@@ -13,6 +13,10 @@ Adds a Freeswitch API call to start (or stop) real-time transcription on a Frees
 #### [mod_dialogflow](modules/mod_dialogflow/README.md)
 Adds a Freeswitch API to start a Google Dialogflow agent on a Freeswitch channel.
 
+#### [mod_aws_transcribe](modules/mod_aws_transcribe/README.md)
+Adds a Freeswitch API call to start (or stop) real-time transcription on a Freeswitch channel using AWS streaming transcription (HTTP/2 based).
+
+
 # Installation
 
 These modules have dependencies that require a custom version of freeswitch to be built that has support for [grpc](https://github.com/grpc/grpc) (if any of the google modules are built) and [libwebsockets](libwebsockets.org). Specifically, mod_google_tts, mod_google_transcribe and mod_dialogflow require grpc, and mod_audio_fork requires libwebsockets.
@@ -24,7 +28,7 @@ These modules have dependencies that require a custom version of freeswitch to b
 
 #### Using docker
 
-coming...
+`docker pull drachtio/drachtio-freeswitch-mrf:v1.10.1-full` to get a docker image containing all of the above modules with the exception of mod_aws_transcribe.
 
 ## Configuring
 
