@@ -48,7 +48,7 @@ The names of the channel variables and environment variables are:
 ## Usage
 When using [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), you can access this API command via the api method on the 'endpoint' object.
 ```js
-ep.api('uuid_aws_transcribe', `${ep.uuid} start en-US interim`);  
+ep.api('aws_transcribe', `${ep.uuid} start en-US interim`);  
 ```
 
 ## Building
