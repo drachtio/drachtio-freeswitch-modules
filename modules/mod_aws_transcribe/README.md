@@ -8,7 +8,7 @@ A Freeswitch module that generates real-time transcriptions on a Freeswitch chan
 The freeswitch module exposes the following API commands:
 
 ```
-uuid_aws_transcribe <uuid> start <lang-code> [interim]
+aws_transcribe <uuid> start <lang-code> [interim]
 ```
 Attaches media bug to channel and performs streaming recognize request.
 - `uuid` - unique identifier of Freeswitch channel
@@ -16,7 +16,7 @@ Attaches media bug to channel and performs streaming recognize request.
 - `interim` - If the 'interim' keyword is present then both interim and final transcription results will be returned; otherwise only final transcriptions will be returned
 
 ```
-uuid_aws_transcribe <uuid> stop
+aws_transcribe <uuid> stop
 ```
 Stop transcription on the channel.
 

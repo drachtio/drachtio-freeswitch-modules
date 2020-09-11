@@ -34,7 +34,7 @@ async function doTts(dlg, ep) {
       voice: 'en-GB-Wavenet-A',
       text
     });
-    ep.api('uuid_aws_transcribe', [ep.uuid, 'start', 'en-US', 'interim']);  
+    ep.api('aws_transcribe', [ep.uuid, 'start', 'en-US', 'interim']);  
   }
   catch (err) {
     console.log(err, 'Error starting transcription');
