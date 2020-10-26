@@ -387,7 +387,6 @@ bool AudioPipe::lws_service_thread(unsigned int nServiceThread) {
   } while (n >= 0 && !lws_stopping);
 
   lwsl_notice("AudioPipe::lws_service_thread ending in service thread %d\n", nServiceThread); 
-  lws_context_destroy(contexts[nServiceThread]);
   return true;
 }
 
@@ -412,6 +411,16 @@ void AudioPipe::deinitialize() {
   lwsl_notice("AudioPipe::deinitialize\n"); 
   lws_stopping = true;
   lws_initialized = false;
+  do
+  {
+    lwsl_notice("waiting for disconnects to complete\n");
+  } while (pendingDisconnects.size() > 0);
+
+  for (unsigned int i = 0; i < numContexts; i)
+  {
+    lwsl_notice("AudioPipe::deinitialize destroying context %d of %d\n", i + 1, numContexts);
+    lws_context_destroy(contexts[i]);
+  }
 }
 
 // instance members
