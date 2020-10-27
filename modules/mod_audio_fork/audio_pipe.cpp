@@ -373,7 +373,7 @@ bool AudioPipe::lws_service_thread(unsigned int nServiceThread) {
   info.ws_ping_pong_interval = 20;      // interval in seconds between sending PINGs on idle websocket connections
   info.timeout_secs_ah_idle = 10;       // secs to allow a client to hold an ah without using it
 
-  lwsl_notice("AudioPipe::lws_service_thread creating context in service thread %d..\n", nServiceThread); 
+  lwsl_notice("AudioPipe::lws_service_thread creating context in service thread %d.\n", nServiceThread);
 
   contexts[nServiceThread] = lws_create_context(&info);
   if (!contexts[nServiceThread]) {
@@ -406,7 +406,7 @@ void AudioPipe::initialize(const char* protocol, unsigned int nThreads, int logl
   lws_initialized = true;
 }
 
-void AudioPipe::deinitialize() {
+bool AudioPipe::deinitialize() {
   assert(lws_initialized);
   lwsl_notice("AudioPipe::deinitialize\n"); 
   lws_stopping = true;
@@ -416,11 +416,12 @@ void AudioPipe::deinitialize() {
     lwsl_notice("waiting for disconnects to complete\n");
   } while (pendingDisconnects.size() > 0);
 
-  for (unsigned int i = 0; i < numContexts; i)
+  for (unsigned int i = 0; i < numContexts; i++)
   {
     lwsl_notice("AudioPipe::deinitialize destroying context %d of %d\n", i + 1, numContexts);
     lws_context_destroy(contexts[i]);
   }
+  return true;
 }
 
 // instance members

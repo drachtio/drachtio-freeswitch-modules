@@ -375,8 +375,12 @@ extern "C" {
   }
 
   switch_status_t fork_cleanup() {
-    AudioPipe::deinitialize();
-    return SWITCH_STATUS_SUCCESS;
+    bool cleanup = false;
+    cleanup = AudioPipe::deinitialize();
+    if (cleanup == true) {
+        return SWITCH_STATUS_SUCCESS;
+    }
+    return SWITCH_STATUS_FALSE;
   }
 
   switch_status_t fork_session_init(switch_core_session_t *session, 

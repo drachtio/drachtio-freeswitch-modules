@@ -34,7 +34,7 @@ public:
   };
 
   static void initialize(const char* protocolName, unsigned int nThreads, int loglevel, log_emit_function logger);
-  static void deinitialize();
+  static bool deinitialize();
   static bool lws_service_thread(unsigned int nServiceThread);
 
   // constructor
