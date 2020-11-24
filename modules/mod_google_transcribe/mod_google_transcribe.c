@@ -104,7 +104,7 @@ static switch_status_t do_stop(switch_core_session_t *session)
 }
 
 static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, 
-  char* lang, int interim)
+  char* lang, int interim, int utterence)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
@@ -138,10 +138,11 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	return SWITCH_STATUS_SUCCESS;
 }
 
-#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim]"
+// #define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim] [single-utterence] [seperate recognition] [max-alternatives] [profinity-filter] [word-time] [punctuation] [model] [enhanced] [hints]"
+#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim] [single-utterence] 
 SWITCH_STANDARD_API(transcribe_function)
 {
-	char *mycmd = NULL, *argv[5] = { 0 };
+	char *mycmd = NULL, *argv[10] = { 0 }, *;
 	int argc = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_media_bug_flag_t flags = SMBF_READ_STREAM /* | SMBF_WRITE_STREAM | SMBF_READ_PING */;
@@ -167,8 +168,9 @@ SWITCH_STANDARD_API(transcribe_function)
 			} else if (!strcasecmp(argv[1], "start")) {
         char* lang = argv[2];
         int interim = argc > 3 && !strcmp(argv[3], "interim");
+		int utterence = argc > 4 && !strcmp(argv[4], "single-utterence");
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
-				status = start_capture(lsession, flags, lang, interim);
+				status = start_capture(lsession, flags, lang, interim,utterence);
 			}
 			switch_core_session_rwunlock(lsession);
 		}

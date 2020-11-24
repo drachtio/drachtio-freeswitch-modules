@@ -22,7 +22,7 @@ class GStreamer;
 
 class GStreamer {
 public:
-	GStreamer(switch_core_session_t *session, u_int16_t channels, char* lang, int interim) : 
+	GStreamer(switch_core_session_t *session, u_int16_t channels, char* lang, int interim, int utterence) : 
     m_session(session), m_writesDone(false) {
     const char* var;
     const char *hints;
@@ -45,7 +45,7 @@ public:
 		RecognitionConfig* config = streaming_config->mutable_config();
 
     streaming_config->set_interim_results(interim);
-    if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_SINGLE_UTTERANCE"))) {
+    if (utterence == 1) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "single_utterance\n");
       streaming_config->set_single_utterance(true);
     }
@@ -303,7 +303,7 @@ extern "C" {
       return SWITCH_STATUS_SUCCESS;
     }
     switch_status_t google_speech_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
-          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, void **ppUserData) {
+          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, int utterence, void **ppUserData) {
 
       switch_channel_t *channel = switch_core_session_get_channel(session);
       struct cap_cb *cb;
@@ -328,7 +328,7 @@ extern "C" {
 
       GStreamer *streamer = NULL;
       try {
-        streamer = new GStreamer(session, channels, lang, interim);
+        streamer = new GStreamer(session, channels, lang, interim,utterence );
         cb->streamer = streamer;
       } catch (std::exception& e) {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing gstreamer: %s.\n", 
