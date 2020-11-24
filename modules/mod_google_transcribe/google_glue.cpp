@@ -120,6 +120,20 @@ public:
 
   	// Write the first request, containing the config only.
   	m_streamer->Write(m_request);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_NOTICE, "------------ Transcribe Config------------ \n");
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "interim_results %d \n", interim);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "single_utterance %d \n", streaming_config->single_utterance());
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "sample_rate_hertz %d \n", config->sample_rate_hertz());
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "audio_channel_count %d \n", config->audio_channel_count());
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_separate_recognition_per_channel %d \n", config->enable_separate_recognition_per_channel());
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "language_code %s \n", lang);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "max_alternatives %d \n", config->max_alternatives());
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "profanity_filter %d \n", config->profanity_filter());
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_word_time_offsets %d \n", config->enable_word_time_offsets());
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_automatic_punctuation %d \n", config->enable_automatic_punctuation());
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "model %s \n", config->model());
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "use_enhanced %d \n", config->use_enhanced());
+
 	}
 
 	~GStreamer() {
@@ -167,13 +181,20 @@ private:
 };
 
 static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *obj) {
+  static int count;
 	struct cap_cb *cb = (struct cap_cb *) obj;
 	GStreamer* streamer = (GStreamer *) cb->streamer;
 
   // Read responses.
   StreamingRecognizeResponse response;
   while (streamer->read(&response)) {  // Returns false when no more to read.
+    count++;
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "response counter:  %d\n",count) ;̥
     auto speech_event_type = response.speech_event_type();
+    Status st = response.error();
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "-----------Response-----------" );
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "speech_event_type: %d \n", response.speech_event_type()) ;
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: error %s code: (%d)\n", st.message().c_str(), st.code()) ;
     if (response.has_error()) {
       Status status = response.error();
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: error %s (%d)\n", status.message().c_str(), status.code()) ;
