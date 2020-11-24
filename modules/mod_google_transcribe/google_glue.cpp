@@ -189,7 +189,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
   StreamingRecognizeResponse response;
   while (streamer->read(&response)) {  // Returns false when no more to read.
     count++;
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "response counter:  %d\n",count) ;̥
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "response counter:  %d\n",count) ;
     auto speech_event_type = response.speech_event_type();
     Status st = response.error();
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "-----------Response-----------" );
