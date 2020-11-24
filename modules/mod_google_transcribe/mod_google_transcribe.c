@@ -29,6 +29,11 @@ static void responseHandler(switch_core_session_t* session, const char * json) {
 		switch_channel_event_set_data(channel, event);
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
 	}
+	else if (0 == strcmp("start_of_transcript", json)) {
+		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_START_OF_TRANSCRIPT);
+		switch_channel_event_set_data(channel, event);
+		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
+	}
 	else if (0 == strcmp("max_duration_exceeded", json)) {
 		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_MAX_DURATION_EXCEEDED);
 		switch_channel_event_set_data(channel, event);
@@ -57,12 +62,13 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	switch (type) {
 	case SWITCH_ABC_TYPE_INIT:
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_INIT.\n");
+			responseHandler(session, "start_of_transcript");
 		break;
 
 	case SWITCH_ABC_TYPE_CLOSE:
 		{
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_CLOSE.\n");
-
+			responseHandler(session, "end_of_transcript");
 			google_speech_session_cleanup(session, 1);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Finished SWITCH_ABC_TYPE_CLOSE.\n");
 		}
