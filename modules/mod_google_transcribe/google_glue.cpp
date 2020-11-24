@@ -51,7 +51,7 @@ public:
     }
 
 		config->set_language_code(lang);
-  	config->set_sample_rate_hertz(16000);
+  	config->set_sample_rate_hertz(8000);
 		config->set_encoding(RecognitionConfig::LINEAR16);
 
     // the rest of config comes from channel vars
@@ -294,8 +294,8 @@ extern "C" {
 
       switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
 
-      if (samples_per_second != 16000) {
-          cb->resampler = speex_resampler_init(channels, samples_per_second, 16000, SWITCH_RESAMPLE_QUALITY, &err);
+      if (samples_per_second != 8000) {
+          cb->resampler = speex_resampler_init(channels, samples_per_second, 8000, SWITCH_RESAMPLE_QUALITY, &err);
         if (0 != err) {
            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n",
                                  switch_channel_get_name(channel), speex_resampler_strerror(err));
