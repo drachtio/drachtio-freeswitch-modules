@@ -22,7 +22,10 @@ class GStreamer;
 
 class GStreamer {
 public:
-	GStreamer(switch_core_session_t *session, u_int16_t channels, char* lang, int interim, int utterence) : 
+	GStreamer(switch_core_session_t *session, u_int16_t channels, char* lang, int interim, int single_utterence, int sepreate_recognition,
+		int max_alternatives, int profinity_filter, int word_time_offset, int punctuation, char* model, int enhanced, 
+		char* hints) : 
+
     m_session(session), m_writesDone(false) {
     const char* var;
     const char *hints;
@@ -45,7 +48,7 @@ public:
 		RecognitionConfig* config = streaming_config->mutable_config();
 
     streaming_config->set_interim_results(interim);
-    if (utterence == 1) {
+    if (single_utterence == 1) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "single_utterance\n");
       streaming_config->set_single_utterance(true);
     }
@@ -62,50 +65,50 @@ public:
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "audio_channel_count %d\n", channels);
 
       // transcribe each separately?
-      if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_SEPARATE_RECOGNITION_PER_CHANNEL"))) {
+      if (sepreate_recognition == 1) {
         config->set_enable_separate_recognition_per_channel(true);
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_separate_recognition_per_channel on\n");
       }
     }
 
     // max alternatives
-    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_MAX_ALTERNATIVES")) {
-      config->set_max_alternatives(atoi(var));
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "max_alternatives %d\n", atoi(var));
+    if (max_alternatives > 1) {
+      config->set_max_alternatives(max_alternatives);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "max_alternatives %d\n", max_alternatives;
     }
 
     // profanity filter
-    if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_PROFANITY_FILTER"))) {
+    if (profinity_filter == 1) {
       config->set_profanity_filter(true);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "profanity_filter\n");
     }
 
     // enable word offsets
-    if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_ENABLE_WORD_TIME_OFFSETS"))) {
+    if (word_time_offset == 1) {
       config->set_enable_word_time_offsets(true);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_word_time_offsets\n");
     }
 
     // enable automatic punctuation
-    if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_ENABLE_AUTOMATIC_PUNCTUATION"))) {
+    if (punctuation == 1)) {
       config->set_enable_automatic_punctuation(true);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_automatic_punctuation\n");
     }
 
     // speech model
-    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_MODEL")) {
-      config->set_model(var);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "speech model %s\n", var);
+    if (!strcmp(model, "")) {
+      config->set_model(model);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "speech model %s\n", model);
     }
 
     // use enhanced model
-    if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_USE_ENHANCED"))) {
+    if (enhanced == 1) {
       config->set_use_enhanced(true);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "use_enhanced\n");
     }
 
     // hints  
-    if (hints = switch_channel_get_variable_dup(channel, "GOOGLE_SPEECH_HINTS", SWITCH_TRUE, -1)) {
+    if (!strcmp(hints, "")) {
       char *phrases[500] = { 0 };
       auto *context = config->add_speech_contexts();
       int argc = switch_separate_string((char *) hints, ',', phrases, 500);
@@ -120,20 +123,6 @@ public:
 
   	// Write the first request, containing the config only.
   	m_streamer->Write(m_request);
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_NOTICE, "------------ Transcribe Config------------ \n");
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "interim_results %d \n", interim);
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "single_utterance %d \n", streaming_config->single_utterance());
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "sample_rate_hertz %d \n", config->sample_rate_hertz());
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "audio_channel_count %d \n", config->audio_channel_count());
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_separate_recognition_per_channel %d \n", config->enable_separate_recognition_per_channel());
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "language_code %s \n", lang);
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "max_alternatives %d \n", config->max_alternatives());
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "profanity_filter %d \n", config->profanity_filter());
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_word_time_offsets %d \n", config->enable_word_time_offsets());
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_automatic_punctuation %d \n", config->enable_automatic_punctuation());
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "model %s \n", config->model());
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "use_enhanced %d \n", config->use_enhanced());
-
 	}
 
 	~GStreamer() {
@@ -192,7 +181,6 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "response counter:  %d\n",count) ;
     auto speech_event_type = response.speech_event_type();
     Status st = response.error();
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "-----------Response-----------" );
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "speech_event_type: %d \n", response.speech_event_type()) ;
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: error %s code: (%d)\n", st.message().c_str(), st.code()) ;
     if (response.has_error()) {
@@ -303,7 +291,9 @@ extern "C" {
       return SWITCH_STATUS_SUCCESS;
     }
     switch_status_t google_speech_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
-          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, int utterence, void **ppUserData) {
+          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, int single_utterence,
+          int sepreate_recognition, int max_alternatives, int profinity_filter, int word_time_offset,
+          int punctuation, char* model, int enhanced, char* hints, void **ppUserData) {
 
       switch_channel_t *channel = switch_core_session_get_channel(session);
       struct cap_cb *cb;
@@ -328,7 +318,8 @@ extern "C" {
 
       GStreamer *streamer = NULL;
       try {
-        streamer = new GStreamer(session, channels, lang, interim,utterence );
+        streamer = new GStreamer(session, channels, lang, interim, single_utterence, sepreate_recognition, max_alternatives,
+         profinity_filter, word_time_offset, punctuation, model, enhanced, hints);
         cb->streamer = streamer;
       } catch (std::exception& e) {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing gstreamer: %s.\n", 
