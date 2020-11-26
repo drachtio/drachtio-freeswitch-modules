@@ -95,7 +95,7 @@ public:
     }
 
     // speech model
-    if (!strcmp(model, "")) {
+    if (model != NULL) {
       config->set_model(model);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "speech model %s\n", model);
     }
@@ -107,7 +107,7 @@ public:
     }
 
     // hints  
-    if (!strcmp(hints, "")) {
+    if (hints != NULL) {
       char *phrases[500] = { 0 };
       auto *context = config->add_speech_contexts();
       int argc = switch_separate_string((char *) hints, ',', phrases, 500);

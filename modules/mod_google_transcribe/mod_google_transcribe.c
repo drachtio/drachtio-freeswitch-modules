@@ -146,7 +146,9 @@ SWITCH_STANDARD_API(transcribe_function)
 {
 	char *mycmd = NULL, *argv[20] = { 0 };
 	int argc = 0;
-	char *hints;
+	char* hints = NULL, model = NULL;
+	int enhanced;
+	
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_media_bug_flag_t flags = SMBF_READ_STREAM /* | SMBF_WRITE_STREAM | SMBF_READ_PING */;
 
@@ -178,8 +180,10 @@ SWITCH_STANDARD_API(transcribe_function)
 		int profinity_filter = !strcmp(argv[7], "true"); // profinity-filter
 		int word_time_offset = !strcmp(argv[8], "true"); // word-time
 		int punctuation      = !strcmp(argv[9], "true");  //punctuation
-		char* model = argv[10]; // model 
-		int enhanced = !strcmp(argv[11], "true"); // enhanced
+		if (argc > 9){
+			model = argv[10]; // model 
+			enhanced = !strcmp(argv[11], "true"); // enhanced
+		}
 		if (argc > 11){
 			hints = argv[12]; // hints
 		}
