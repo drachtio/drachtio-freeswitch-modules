@@ -28,7 +28,6 @@ public:
 
     m_session(session), m_writesDone(false) {
     const char* var;
-    const char *hints;
     switch_channel_t *channel = switch_core_session_get_channel(session);
 
 		if (var = switch_channel_get_variable(channel, "GOOGLE_APPLICATION_CREDENTIALS")) {
@@ -74,7 +73,7 @@ public:
     // max alternatives
     if (max_alternatives > 1) {
       config->set_max_alternatives(max_alternatives);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "max_alternatives %d\n", max_alternatives;
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "max_alternatives %d\n", max_alternatives);
     }
 
     // profanity filter
@@ -90,7 +89,7 @@ public:
     }
 
     // enable automatic punctuation
-    if (punctuation == 1)) {
+    if (punctuation == 1) {
       config->set_enable_automatic_punctuation(true);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_automatic_punctuation\n");
     }
