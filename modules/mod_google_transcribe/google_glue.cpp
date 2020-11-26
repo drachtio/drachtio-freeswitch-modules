@@ -48,12 +48,15 @@ public:
 
     streaming_config->set_interim_results(interim);
     if (single_utterence == 1) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "single_utterance\n");
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_single_utterance\n");
       streaming_config->set_single_utterance(true);
     }
 
 		config->set_language_code(lang);
-  	config->set_sample_rate_hertz(16000);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s \n", lang);
+    int sample_rate = switch_channel_get_variable(channel, "read_rate");
+  	config->set_sample_rate_hertz(sample_rate);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "sample rate %s \n", sample_rate);
 		config->set_encoding(RecognitionConfig::LINEAR16);
 
     // the rest of config comes from channel vars

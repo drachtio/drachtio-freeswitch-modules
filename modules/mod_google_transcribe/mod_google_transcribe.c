@@ -145,9 +145,9 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 SWITCH_STANDARD_API(transcribe_function)
 {
 	char *mycmd = NULL, *argv[20] = { 0 };
-	int argc = 0;
-	char* hints = NULL, model = NULL;
-	int enhanced;
+	int argc = 0, enhanced = 0;
+	char* hints = NULL;
+	char* model = NULL;
 	
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_media_bug_flag_t flags = SMBF_READ_STREAM /* | SMBF_WRITE_STREAM | SMBF_READ_PING */;
