@@ -174,12 +174,12 @@ SWITCH_STANDARD_API(transcribe_function)
 		int single_utterence =  !strcmp(argv[4], "true"); // single-utterence
 		int sepreate_recognition = !strcmp(argv[5], "true"); // sepreate-recognition
 		int max_alternatives = atoi(argv[6]); // max-alternatives
-		int profinity_filter = !strcmp(argv[6], "true"); // profinity-filter
-		int word_time_offset = !strcmp(argv[7], "true"); // word-time
-		int punctuation      = !strcmp(argv[8], "true");  //punctuation
-		char* model = argv[9]; // model 
-		int enhanced = !strcmp(argv[10], "true"); // enhanced
-		char* hints = argv[11]; // hints
+		int profinity_filter = !strcmp(argv[7], "true"); // profinity-filter
+		int word_time_offset = !strcmp(argv[8], "true"); // word-time
+		int punctuation      = !strcmp(argv[9], "true");  //punctuation
+		char* model = argv[10]; // model 
+		int enhanced = !strcmp(argv[11], "true"); // enhanced
+		char* hints = argv[12]; // hints
 		
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
 				status = start_capture(lsession, flags, lang, interim, single_utterence, sepreate_recognition,max_alternatives,
