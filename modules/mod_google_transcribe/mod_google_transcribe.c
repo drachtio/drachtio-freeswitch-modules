@@ -146,6 +146,7 @@ SWITCH_STANDARD_API(transcribe_function)
 {
 	char *mycmd = NULL, *argv[20] = { 0 };
 	int argc = 0;
+	char *hints;
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_media_bug_flag_t flags = SMBF_READ_STREAM /* | SMBF_WRITE_STREAM | SMBF_READ_PING */;
 
@@ -155,7 +156,7 @@ SWITCH_STANDARD_API(transcribe_function)
 
 	if (zstr(cmd) || 
       (!strcasecmp(argv[1], "stop") && argc < 2) ||
-      (!strcasecmp(argv[1], "start") && argc < 3) ||
+      (!strcasecmp(argv[1], "start") && argc < 11) ||
       zstr(argv[0])) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s %s.\n", cmd, argv[0], argv[1]);
 		stream->write_function(stream, "-USAGE: %s\n", TRANSCRIBE_API_SYNTAX);
@@ -179,8 +180,9 @@ SWITCH_STANDARD_API(transcribe_function)
 		int punctuation      = !strcmp(argv[9], "true");  //punctuation
 		char* model = argv[10]; // model 
 		int enhanced = !strcmp(argv[11], "true"); // enhanced
-		char* hints = argv[12]; // hints
-		
+		if (argc > 11){
+			hints = argv[12]; // hints
+		}
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
 				status = start_capture(lsession, flags, lang, interim, single_utterence, sepreate_recognition,max_alternatives,
 				profinity_filter, word_time_offset, punctuation, model, enhanced, hints);
