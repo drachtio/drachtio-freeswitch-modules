@@ -53,10 +53,12 @@ public:
     }
 
 		config->set_language_code(lang);
+
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s \n", lang);
     int sample_rate = atoi(switch_channel_get_variable(channel, "read_rate"));
   	config->set_sample_rate_hertz(sample_rate);
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "sample rate %d \n", sample_rate);
+
 		config->set_encoding(RecognitionConfig::LINEAR16);
 
     // the rest of config comes from channel vars
@@ -306,7 +308,6 @@ extern "C" {
       cb->end_of_utterance = 0;
 
       switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
-
 
       GStreamer *streamer = NULL;
       try {
