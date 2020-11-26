@@ -54,9 +54,9 @@ public:
 
 		config->set_language_code(lang);
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s \n", lang);
-    int sample_rate = switch_channel_get_variable(channel, "read_rate");
+    int sample_rate = atoi(switch_channel_get_variable(channel, "read_rate"));
   	config->set_sample_rate_hertz(sample_rate);
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "sample rate %s \n", sample_rate);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "sample rate %d \n", sample_rate);
 		config->set_encoding(RecognitionConfig::LINEAR16);
 
     // the rest of config comes from channel vars
@@ -307,16 +307,6 @@ extern "C" {
 
       switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
 
-      if (samples_per_second != 16000) {
-          cb->resampler = speex_resampler_init(channels, samples_per_second, 16000, SWITCH_RESAMPLE_QUALITY, &err);
-        if (0 != err) {
-           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n",
-                                 switch_channel_get_name(channel), speex_resampler_strerror(err));
-          return SWITCH_STATUS_FALSE;
-        }
-      } else {
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s: no resampling needed for this call\n", switch_channel_get_name(channel));
-      }
 
       GStreamer *streamer = NULL;
       try {
