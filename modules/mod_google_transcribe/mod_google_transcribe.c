@@ -103,7 +103,7 @@ static switch_status_t do_stop(switch_core_session_t *session)
 	return status;
 }
 
-static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, 
+static switch_status_t start_capture2(switch_core_session_t *session, switch_media_bug_flag_t flags, 
   char* lang, int interim, int single_utterence, int sepreate_recognition, int max_alternatives,
   int profinity_filter, int word_time_offset, int punctuation, char* model, int enhanced, char* hints)
 {
@@ -132,7 +132,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
-	if ((status = switch_core_media_bug_add(session, "google_transcribe", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
+	if ((status = switch_core_media_bug_add(session, "google_transcribe2", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
 		return status;
 	}
   switch_channel_set_private(channel, MY_BUG_NAME, bug);
@@ -140,9 +140,89 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	return SWITCH_STATUS_SUCCESS;
 }
 
+static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, 
+  char* lang, int interim)
+{
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	switch_media_bug_t *bug;
+	switch_status_t status;
+	switch_codec_implementation_t read_impl = { 0 };
+	void *pUserData;
+	uint32_t samples_per_second;
+	int single_utterance = 0, separate_recognition = 0, max_alternatives = 0, profanity_filter = 0, word_time_offset = 0, punctuation = 0, enhanced = 0;
+	const char* model = NULL, *hints = NULL;
+
+	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
+		do_stop(session);
+	}
+
+	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_SINGLE_UTTERANCE"))) {
+      single_utterance = 1;
+    }
+
+	// transcribe each separately?
+	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_SEPARATE_RECOGNITION_PER_CHANNEL"))) {
+      separate_recognition = 1;
+    }
+
+	// max alternatives
+	if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_MAX_ALTERNATIVES")) {
+      max_alternatives = 1;
+    }
+
+	// profanity filter
+	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_PROFANITY_FILTER"))) {
+      profanity_filter = 1;
+    }
+
+	// enable word offsets
+	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_ENABLE_WORD_TIME_OFFSETS"))) {
+      word_time_offset = 1;
+    }
+
+	// enable automatic punctuation
+	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_ENABLE_AUTOMATIC_PUNCTUATION"))) {
+      punctuation = 1;
+    }
+
+    // speech model
+    model = switch_channel_get_variable(channel, "GOOGLE_SPEECH_MODEL");
+
+    // use enhanced model
+    if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_USE_ENHANCED"))) {
+      enhanced = 1;
+    }
+
+	// hints
+	hints = switch_channel_get_variable_dup(channel, "GOOGLE_SPEECH_HINTS", SWITCH_TRUE, -1);
+
+	switch_core_session_get_read_impl(session, &read_impl);
+
+	if (switch_channel_pre_answer(channel) != SWITCH_STATUS_SUCCESS) {
+		return SWITCH_STATUS_FALSE;
+	}
+
+	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
+
+	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, single_utterence,
+	 separate_recognition, max_alternatives, profanity_filter, word_time_offset, punctuation, model, enhanced, hints, &pUserData)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google speech session.\n");
+		return SWITCH_STATUS_FALSE;
+	}
+
+	if ((status = switch_core_media_bug_add(session, "google_transcribe", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
+		return status;
+	}
+
+	switch_channel_set_private(channel, MY_BUG_NAME, bug);
+
+	return SWITCH_STATUS_SUCCESS;
+}
+
 // #define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim] [single-utterence](bool) [seperate-recognition](bool) [max-alternatives](int) [profinity-filter](bool) [word-time](bool) [punctuation](bool) [model](string) [enhanced](true) [hints](string without space)"
-#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim] [single-utterence] [seperate-recognition] [max-alternatives] [profinity-filter] [word-time] [punctuation] [model] [enhanced] [hints]"
-SWITCH_STANDARD_API(transcribe_function)
+#define TRANSCRIBE2_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim] [single-utterence] [seperate-recognition] [max-alternatives] [profinity-filter] [word-time] [punctuation] [model] [enhanced] [hints]"
+SWITCH_STANDARD_API(transcribe2_function)
 {
 	char *mycmd = NULL, *argv[20] = { 0 };
 	int argc = 0, enhanced = 0;
@@ -161,7 +241,7 @@ SWITCH_STANDARD_API(transcribe_function)
       (!strcasecmp(argv[1], "start") && argc < 9) ||
       zstr(argv[0])) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s %s.\n", cmd, argv[0], argv[1]);
-		stream->write_function(stream, "-USAGE: %s\n", TRANSCRIBE_API_SYNTAX);
+		stream->write_function(stream, "-USAGE: %s\n", TRANSCRIBE2_API_SYNTAX);
 		goto done;
 	} else {
 		switch_core_session_t *lsession = NULL;
@@ -188,8 +268,56 @@ SWITCH_STANDARD_API(transcribe_function)
 			hints = argv[12]; // hints
 		}
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
-				status = start_capture(lsession, flags, lang, interim, single_utterence, sepreate_recognition,max_alternatives,
+				status = start_capture2(lsession, flags, lang, interim, single_utterence, sepreate_recognition,max_alternatives,
 				profinity_filter, word_time_offset, punctuation, model, enhanced, hints);
+			}
+			switch_core_session_rwunlock(lsession);
+		}
+	}
+
+	if (status == SWITCH_STATUS_SUCCESS) {
+		stream->write_function(stream, "+OK Success\n");
+	} else {
+		stream->write_function(stream, "-ERR Operation Failed\n");
+	}
+
+  done:
+
+	switch_safe_free(mycmd);
+	return SWITCH_STATUS_SUCCESS;
+}
+
+#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim]"
+SWITCH_STANDARD_API(transcribe_function)
+{
+	char *mycmd = NULL, *argv[5] = { 0 };
+	int argc = 0;
+	switch_status_t status = SWITCH_STATUS_FALSE;
+	switch_media_bug_flag_t flags = SMBF_READ_STREAM /* | SMBF_WRITE_STREAM | SMBF_READ_PING */;
+
+	if (!zstr(cmd) && (mycmd = strdup(cmd))) {
+		argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
+	}
+
+	if (zstr(cmd) || 
+      (!strcasecmp(argv[1], "stop") && argc < 2) ||
+      (!strcasecmp(argv[1], "start") && argc < 3) ||
+      zstr(argv[0])) {
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s %s.\n", cmd, argv[0], argv[1]);
+		stream->write_function(stream, "-USAGE: %s\n", TRANSCRIBE_API_SYNTAX);
+		goto done;
+	} else {
+		switch_core_session_t *lsession = NULL;
+
+		if ((lsession = switch_core_session_locate(argv[0]))) {
+			if (!strcasecmp(argv[1], "stop")) {
+    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "stop transcribing\n");
+				status = do_stop(lsession);
+			} else if (!strcasecmp(argv[1], "start")) {
+        char* lang = argv[2];
+        int interim = argc > 3 && !strcmp(argv[3], "interim");
+    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
+				status = start_capture(lsession, flags, lang, interim);
 			}
 			switch_core_session_rwunlock(lsession);
 		}
@@ -233,6 +361,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load)
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Google Speech Transcription API successfully loaded\n");
 
 	SWITCH_ADD_API(api_interface, "uuid_google_transcribe", "Google Speech Transcription API", transcribe_function, TRANSCRIBE_API_SYNTAX);
+	SWITCH_ADD_API(api_interface, "uuid_google_transcribe2", "Google Speech Transcription API", transcribe2_function, TRANSCRIBE2_API_SYNTAX);
 	switch_console_set_complete("add uuid_google_transcribe start lang-code");
 	switch_console_set_complete("add uuid_google_transcribe stop ");
 
