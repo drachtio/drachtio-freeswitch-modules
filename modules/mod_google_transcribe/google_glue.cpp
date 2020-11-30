@@ -22,7 +22,7 @@ class GStreamer;
 
 class GStreamer {
 public:
-	GStreamer(switch_core_session_t *session, u_int16_t channels, char* lang, int interim, int single_utterence, int sepreate_recognition,
+	GStreamer(switch_core_session_t *session, u_int16_t channels, char* lang, int interim, int single_utterence, int separate_recognition,
 		int max_alternatives, int profinity_filter, int word_time_offset, int punctuation, char* model, int enhanced, 
 		char* hints) : 
 
@@ -53,8 +53,8 @@ public:
     }
 
 		config->set_language_code(lang);
-
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s \n", lang);
+    
     int sample_rate = atoi(switch_channel_get_variable(channel, "read_rate"));
   	config->set_sample_rate_hertz(sample_rate);
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "sample rate %d \n", sample_rate);
@@ -69,7 +69,7 @@ public:
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "audio_channel_count %d\n", channels);
 
       // transcribe each separately?
-      if (sepreate_recognition == 1) {
+      if (separate_recognition == 1) {
         config->set_enable_separate_recognition_per_channel(true);
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_separate_recognition_per_channel on\n");
       }
@@ -296,7 +296,7 @@ extern "C" {
     }
     switch_status_t google_speech_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
           uint32_t samples_per_second, uint32_t channels, char* lang, int interim, int single_utterence,
-          int sepreate_recognition, int max_alternatives, int profinity_filter, int word_time_offset,
+          int separate_recognition, int max_alternatives, int profinity_filter, int word_time_offset,
           int punctuation, char* model, int enhanced, char* hints, void **ppUserData) {
 
       switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -311,7 +311,7 @@ extern "C" {
 
       GStreamer *streamer = NULL;
       try {
-        streamer = new GStreamer(session, channels, lang, interim, single_utterence, sepreate_recognition, max_alternatives,
+        streamer = new GStreamer(session, channels, lang, interim, single_utterence, separate_recognition, max_alternatives,
          profinity_filter, word_time_offset, punctuation, model, enhanced, hints);
         cb->streamer = streamer;
       } catch (std::exception& e) {
