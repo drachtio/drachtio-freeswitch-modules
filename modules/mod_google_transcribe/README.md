@@ -6,7 +6,6 @@ A Freeswitch module that generates real-time transcriptions on a Freeswitch chan
 
 ### Commands
 The freeswitch module exposes the following API commands:
-The freeswitch module exposes the following API commands:
 
 ```
 uuid_google_transcribe <uuid> start <lang-code> [interim]
