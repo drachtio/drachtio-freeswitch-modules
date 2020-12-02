@@ -5,6 +5,8 @@
  */
 #include "mod_google_transcribe.h"
 #include "google_glue.h"
+#include <stdlib.h>
+
 
 /* Prototypes */
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown);
@@ -150,7 +152,8 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	void *pUserData;
 	uint32_t samples_per_second;
 	int single_utterance = 0, separate_recognition = 0, max_alternatives = 0, profanity_filter = 0, word_time_offset = 0, punctuation = 0, enhanced = 0;
-	const char* model = NULL, *hints = NULL;
+	char* hints = NULL;
+    char* model = NULL;
 
 	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
@@ -167,8 +170,8 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
     }
 
 	// max alternatives
-	if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_MAX_ALTERNATIVES")) {
-      max_alternatives = 1;
+	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_MAX_ALTERNATIVES"))) {
+     	max_alternatives = atoi(switch_channel_get_variable(channel, "GOOGLE_SPEECH_MAX_ALTERNATIVES"));
     }
 
 	// profanity filter
@@ -187,7 +190,10 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
     }
 
     // speech model
-    model = switch_channel_get_variable(channel, "GOOGLE_SPEECH_MODEL");
+	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_MODEL"))) {	
+		model = (char *)switch_channel_get_variable(channel, "GOOGLE_SPEECH_MODEL");    
+	}
+    
 
     // use enhanced model
     if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_USE_ENHANCED"))) {
@@ -195,7 +201,9 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
     }
 
 	// hints
-	hints = switch_channel_get_variable_dup(channel, "GOOGLE_SPEECH_HINTS", SWITCH_TRUE, -1);
+	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_HINTS"))) {	
+	  hints = (char *)switch_channel_get_variable_dup(channel, "GOOGLE_SPEECH_HINTS", SWITCH_TRUE, -1);
+	}
 
 	switch_core_session_get_read_impl(session, &read_impl);
 
@@ -205,7 +213,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
-	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, single_utterence,
+	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, single_utterance,
 	 separate_recognition, max_alternatives, profanity_filter, word_time_offset, punctuation, model, enhanced, hints, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google speech session.\n");
 		return SWITCH_STATUS_FALSE;
