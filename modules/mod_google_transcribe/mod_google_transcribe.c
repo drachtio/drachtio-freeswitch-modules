@@ -51,6 +51,7 @@ static void responseHandler(switch_core_session_t* session, const char * json) {
 	}
 	else if (0 == strcmp("first_response", json)){
 		interrupt = 1;
+		// ToDo handle event error 
 	}
 	else {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "json payload: %s.\n", json);
@@ -95,7 +96,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	return SWITCH_TRUE;
 }
 
-static switch_status_t transcribe_input_callback(switch_core_session_t *session){
+static switch_status_t transcribe_input_callback(switch_core_session_t *session, void *input, switch_input_type_t input_type, void *data, unsigned int len){
 	if (interrupt == 1){
 		return SWITCH_STATUS_BREAK;
 	}
@@ -129,7 +130,7 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 	switch_codec_implementation_t read_impl = { 0 };
 	void *pUserData;
 	uint32_t samples_per_second;
-	switch_input_args_t *args;
+	switch_input_args_t args = { 0 };
 
 	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
@@ -154,8 +155,9 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 	}
 	
 	/* play the prompt, looking for detection result */
-	args->input_callback = transcribe_input_callback;
-	if ((status = switch_ivr_play_file(session, NULL, play_file, args))!= SWITCH_STATUS_SUCCESS){
+	args.input_callback = transcribe_input_callback;
+	// ToDo stop ongoing playback if available 
+	if ((status = switch_ivr_play_file(session, NULL, play_file, &args))!= SWITCH_STATUS_SUCCESS){
 		return status;
 	}
 
