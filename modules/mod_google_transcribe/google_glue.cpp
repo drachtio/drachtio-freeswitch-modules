@@ -197,6 +197,10 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       return nullptr;
     }
 
+    if (count == 1){
+      cb->responseHandler(session, "first_response");
+    }
+    
     for (int r = 0; r < response.results_size(); ++r) {
       auto result = response.results(r);
       cJSON * jResult = cJSON_CreateObject();

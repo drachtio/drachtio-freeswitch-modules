@@ -6,7 +6,7 @@
 #include "mod_google_transcribe.h"
 #include "google_glue.h"
 #include <stdlib.h>
-
+#include <switch.h>
 
 /* Prototypes */
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown);
@@ -16,6 +16,9 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load);
 SWITCH_MODULE_DEFINITION(mod_google_transcribe, mod_transcribe_load, mod_transcribe_shutdown, NULL);
 
 static switch_status_t do_stop(switch_core_session_t *session);
+
+// play interrupt flag 
+int interrupt = 0;
 
 static void responseHandler(switch_core_session_t* session, const char * json) {
 	switch_event_t *event;
@@ -45,6 +48,9 @@ static void responseHandler(switch_core_session_t* session, const char * json) {
 		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_NO_AUDIO_DETECTED);
 		switch_channel_event_set_data(channel, event);
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
+	}
+	else if (0 == strcmp("first_response", json)){
+		interrupt = 1;
 	}
 	else {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "json payload: %s.\n", json);
@@ -106,7 +112,7 @@ static switch_status_t do_stop(switch_core_session_t *session)
 }
 
 static switch_status_t start_capture2(switch_core_session_t *session, switch_media_bug_flag_t flags, 
-  char* lang, int interim, int single_utterence, int sepreate_recognition, int max_alternatives,
+  char* lang, char* play_file, int interim, int single_utterence, int sepreate_recognition, int max_alternatives,
   int profinity_filter, int word_time_offset, int punctuation, char* model, int enhanced, char* hints)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -115,6 +121,7 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 	switch_codec_implementation_t read_impl = { 0 };
 	void *pUserData;
 	uint32_t samples_per_second;
+	switch_input_args_t *args;
 
 	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
@@ -137,7 +144,14 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 	if ((status = switch_core_media_bug_add(session, "google_transcribe2", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
 		return status;
 	}
-  switch_channel_set_private(channel, MY_BUG_NAME, bug);
+	
+	/* play the prompt, looking for detection result */
+	args->input_callback = transcribe_input_callback;
+	if (status = switch_ivr_play_file(session, NULL, play_file, args)){
+		return status;
+	}
+
+  	switch_channel_set_private(channel, MY_BUG_NAME, bug);
 
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -229,7 +243,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 }
 
 // #define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim] [single-utterence](bool) [seperate-recognition](bool) [max-alternatives](int) [profinity-filter](bool) [word-time](bool) [punctuation](bool) [model](string) [enhanced](true) [hints](string without space)"
-#define TRANSCRIBE2_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim] [single-utterence] [seperate-recognition] [max-alternatives] [profinity-filter] [word-time] [punctuation] [model] [enhanced] [hints]"
+#define TRANSCRIBE2_API_SYNTAX "<uuid> [start|stop] [lang-code] [play-file] [interim]  [single-utterence] [seperate-recognition] [max-alternatives] [profinity-filter] [word-time] [punctuation] [model] [enhanced] [hints]"
 SWITCH_STANDARD_API(transcribe2_function)
 {
 	char *mycmd = NULL, *argv[20] = { 0 };
@@ -246,7 +260,7 @@ SWITCH_STANDARD_API(transcribe2_function)
 
 	if (zstr(cmd) || 
       (!strcasecmp(argv[1], "stop") && argc < 2) ||
-      (!strcasecmp(argv[1], "start") && argc < 9) ||
+      (!strcasecmp(argv[1], "start") && argc < 10) ||
       zstr(argv[0])) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s %s.\n", cmd, argv[0], argv[1]);
 		stream->write_function(stream, "-USAGE: %s\n", TRANSCRIBE2_API_SYNTAX);
@@ -260,23 +274,24 @@ SWITCH_STANDARD_API(transcribe2_function)
 				status = do_stop(lsession);
 			} else if (!strcasecmp(argv[1], "start")) {
         char* lang = argv[2];
-        int interim = argc > 3 && !strcmp(argv[3], "interim");
+		char* play_file = argv[3];
+        int interim = argc > 4 && !strcmp(argv[4], "interim");
 
-		int single_utterence =  !strcmp(argv[4], "true"); // single-utterence
-		int sepreate_recognition = !strcmp(argv[5], "true"); // sepreate-recognition
-		int max_alternatives = atoi(argv[6]); // max-alternatives
-		int profinity_filter = !strcmp(argv[7], "true"); // profinity-filter
-		int word_time_offset = !strcmp(argv[8], "true"); // word-time
-		int punctuation      = !strcmp(argv[9], "true");  //punctuation
-		if (argc > 9){
-			model = argv[10]; // model 
-			enhanced = !strcmp(argv[11], "true"); // enhanced
+		int single_utterence =  !strcmp(argv[5], "true"); // single-utterence
+		int sepreate_recognition = !strcmp(argv[6], "true"); // sepreate-recognition
+		int max_alternatives = atoi(argv[7]); // max-alternatives
+		int profinity_filter = !strcmp(argv[8], "true"); // profinity-filter
+		int word_time_offset = !strcmp(argv[9], "true"); // word-time
+		int punctuation      = !strcmp(argv[10], "true");  //punctuation
+		if (argc > 10){
+			model = argv[11]; // model 
+			enhanced = !strcmp(argv[12], "true"); // enhanced
 		}
-		if (argc > 11){
-			hints = argv[12]; // hints
+		if (argc > 12){
+			hints = argv[13]; // hints
 		}
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
-				status = start_capture2(lsession, flags, lang, interim, single_utterence, sepreate_recognition,max_alternatives,
+				status = start_capture2(lsession, flags, lang, play_file, interim, single_utterence, sepreate_recognition,max_alternatives,
 				profinity_filter, word_time_offset, punctuation, model, enhanced, hints);
 			}
 			switch_core_session_rwunlock(lsession);
@@ -385,5 +400,13 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown)
 	google_speech_cleanup();
 	switch_event_free_subclass(TRANSCRIBE_EVENT_RESULTS);
 	switch_event_free_subclass(TRANSCRIBE_EVENT_END_OF_UTTERANCE);
+	return SWITCH_STATUS_SUCCESS;
+}
+
+static switch_status_t transcribe_input_callback(switch_core_session_t *session){
+	if (interrupt == 1){
+		return SWITCH_STATUS_BREAK;
+	}
+
 	return SWITCH_STATUS_SUCCESS;
 }
