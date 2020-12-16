@@ -95,6 +95,14 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	return SWITCH_TRUE;
 }
 
+static switch_status_t transcribe_input_callback(switch_core_session_t *session){
+	if (interrupt == 1){
+		return SWITCH_STATUS_BREAK;
+	}
+
+	return SWITCH_STATUS_SUCCESS;
+}
+
 static switch_status_t do_stop(switch_core_session_t *session)
 {
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
@@ -147,7 +155,7 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 	
 	/* play the prompt, looking for detection result */
 	args->input_callback = transcribe_input_callback;
-	if (status = switch_ivr_play_file(session, NULL, play_file, args)){
+	if ((status = switch_ivr_play_file(session, NULL, play_file, args))!= SWITCH_STATUS_SUCCESS){
 		return status;
 	}
 
@@ -403,10 +411,3 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown)
 	return SWITCH_STATUS_SUCCESS;
 }
 
-static switch_status_t transcribe_input_callback(switch_core_session_t *session){
-	if (interrupt == 1){
-		return SWITCH_STATUS_BREAK;
-	}
-
-	return SWITCH_STATUS_SUCCESS;
-}
