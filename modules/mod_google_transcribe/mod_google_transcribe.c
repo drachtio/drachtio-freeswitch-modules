@@ -17,8 +17,6 @@ SWITCH_MODULE_DEFINITION(mod_google_transcribe, mod_transcribe_load, mod_transcr
 
 static switch_status_t do_stop(switch_core_session_t *session);
 
-// play interrupt flag 
-int interrupt = 0;
 
 static void responseHandler(switch_core_session_t* session, const char * json) {
 	switch_event_t *event;
@@ -50,7 +48,10 @@ static void responseHandler(switch_core_session_t* session, const char * json) {
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
 	}
 	else if (0 == strcmp("first_response", json)){
-		interrupt = 1;
+		switch_event_t *qevent;
+		if (switch_event_create(&qevent, SWITCH_EVENT_DETECTED_SPEECH) == SWITCH_STATUS_SUCCESS) {
+			switch_core_session_queue_event(session, &qevent);
+		}
 		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_PLAY_INTURRUPT);
 		switch_channel_event_set_data(channel, event);
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
@@ -99,10 +100,14 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 }
 
 static switch_status_t transcribe_input_callback(switch_core_session_t *session, void *input, switch_input_type_t input_type, void *data, unsigned int len){
-	if (interrupt == 1){
-		return SWITCH_STATUS_BREAK;
+	if (input_type == SWITCH_INPUT_TYPE_EVENT) {
+			switch_event_t *event;
+			event = (switch_event_t *)input;
+			if (event->event_id == SWITCH_EVENT_DETECTED_SPEECH) {
+				return SWITCH_STATUS_BREAK;
+			}
 	}
-
+	
 	return SWITCH_STATUS_SUCCESS;
 }
 

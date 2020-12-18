@@ -40,11 +40,12 @@ struct cap_cb {
 	switch_mutex_t *mutex;
 	char sessionId[MAX_SESSION_ID];
 	char *base;
-  SpeexResamplerState *resampler;
+  	SpeexResamplerState *resampler;
 	void* streamer;
 	responseHandler_t responseHandler;
 	switch_thread_t* thread;
 	int end_of_utterance;
+	int timer_init;
 };
 #endif
 

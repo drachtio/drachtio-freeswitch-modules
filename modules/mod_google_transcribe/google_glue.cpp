@@ -196,9 +196,10 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: session %s is gone!\n", cb->sessionId) ;
       return nullptr;
     }
-
-    if (count == 1){
+    
+    if (cb->timer_init == 0){
       cb->responseHandler(session, "first_response");
+      cb->timer_init = 1;
     }
     
     for (int r = 0; r < response.results_size(); ++r) {
@@ -310,6 +311,7 @@ extern "C" {
       cb =(struct cap_cb *) switch_core_session_alloc(session, sizeof(*cb));
       strncpy(cb->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
       cb->end_of_utterance = 0;
+      cb->timer_init = 0;
 
       switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
 
