@@ -349,6 +349,16 @@ extern "C" {
         struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
         switch_mutex_lock(cb->mutex);
 
+      // stop playback
+       if (cb->play_file == 1){
+          // stop playback 
+          if (switch_channel_test_flag(channel, CF_BROADCAST)) {
+		        switch_channel_stop_broadcast(channel);
+	        } else {
+		        switch_channel_set_flag_value(channel, CF_BREAK, 1);
+        	}
+        }
+
         // close connection and get final responses
         GStreamer* streamer = (GStreamer *) cb->streamer;
 
@@ -366,15 +376,6 @@ extern "C" {
 
         if (cb->resampler) {
           speex_resampler_destroy(cb->resampler);
-        }
-
-        if (cb->play_file == 1){
-          // stop playback 
-          if (switch_channel_test_flag(channel, CF_BROADCAST)) {
-		        switch_channel_stop_broadcast(channel);
-	        } else {
-		        switch_channel_set_flag_value(channel, CF_BREAK, 1);
-        	}
         }
 
         switch_channel_set_private(channel, MY_BUG_NAME, NULL);
