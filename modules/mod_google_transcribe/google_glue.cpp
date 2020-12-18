@@ -366,6 +366,14 @@ extern "C" {
         if (cb->resampler) {
           speex_resampler_destroy(cb->resampler);
         }
+        
+        // stop playback if play file available
+        if (cb->play_file == 1){
+          if (switch_channel_test_flag(channel, CF_BROADCAST)) {
+		        switch_channel_stop_broadcast(channel);
+	        }
+        }
+
         switch_channel_set_private(channel, MY_BUG_NAME, NULL);
 			  switch_mutex_unlock(cb->mutex);
 
