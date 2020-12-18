@@ -282,7 +282,7 @@ SWITCH_STANDARD_API(transcribe2_function)
 
 	if (zstr(cmd) || 
       (!strcasecmp(argv[1], "stop") && argc < 2) ||
-      (!strcasecmp(argv[1], "start") && argc < 10) ||
+      (!strcasecmp(argv[1], "start") && argc < 9) ||
       zstr(argv[0])) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s %s.\n", cmd, argv[0], argv[1]);
 		stream->write_function(stream, "-USAGE: %s\n", TRANSCRIBE2_API_SYNTAX);
