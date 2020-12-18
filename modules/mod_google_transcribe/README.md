@@ -12,11 +12,12 @@ uuid_google_transcribe <uuid> start <lang-code> [interim]
 ```
 
 ```bash
-uuid_google_transcribe2 <uuid> start <lang-code> [interim] [single-utterence](bool) [seperate-recognition](bool) [max-alternatives](int) [profinity-filter](bool) [word-time](bool) [punctuation](bool) [model](string) [enhanced](bool) [hints](word seperated by , and no spaces)
+uuid_google_transcribe2 <uuid> start <lang-code> [interim] (bool) [single-utterence](bool) [seperate-recognition](bool) [max-alternatives](int) [profinity-filter](bool) [word-time](bool) [punctuation](bool) [model](string) [enhanced](bool) [hints](word seperated by , and no spaces) [play-file] (play file path)
 ```
 Example:
 ```bash
-uuid_google_transcribe2 a768fc24-992f-4696-aecb-3e9c11409902 start en-US interim true true 5 true true true command_and_search true
+bgapi uuid_google_transcribe2 312033b6-4b2a-48d8-be0c-5f161aec2b3e start en-US true true true 5 true true true command_and_search true yes,no,hello https://www2.cs.uic.edu/~i101/SoundFiles/CantinaBand60.wav
+
 ```
 Attaches media bug to channel and performs streaming recognize request.
 - `uuid` - unique identifier of Freeswitch channel
