@@ -123,6 +123,13 @@ static switch_status_t do_stop(switch_core_session_t *session)
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
 
+	// stop playback 
+    if (switch_channel_test_flag(channel, CF_BROADCAST)) {
+		switch_channel_stop_broadcast(channel);
+	} else {
+		switch_channel_set_flag_value(channel, CF_BREAK, 1);
+	}
+	
 	if (bug) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command to stop transcription.\n");
 		status = google_speech_session_cleanup(session, 0);

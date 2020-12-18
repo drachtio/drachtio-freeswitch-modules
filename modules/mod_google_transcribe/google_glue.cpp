@@ -352,13 +352,6 @@ extern "C" {
         // close connection and get final responses
         GStreamer* streamer = (GStreamer *) cb->streamer;
 
-        // stop playback if play file available
-        if (cb->play_file == 1){
-          if (switch_channel_test_flag(channel, CF_BROADCAST)) {
-		        switch_channel_stop_broadcast(channel);
-	        }
-        }
-        
         if (streamer) {
           streamer->writesDone();
 
