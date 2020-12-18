@@ -349,9 +349,8 @@ extern "C" {
         struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
         switch_mutex_lock(cb->mutex);
 
-      // stop playback
-       if (cb->play_file == 1){
-          // stop playback 
+      // stop playback if available
+       if (cb->play_file == 1){ 
           if (switch_channel_test_flag(channel, CF_BROADCAST)) {
 		        switch_channel_stop_broadcast(channel);
 	        } else {
