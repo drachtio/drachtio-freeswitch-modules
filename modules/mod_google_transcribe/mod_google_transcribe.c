@@ -123,13 +123,6 @@ static switch_status_t do_stop(switch_core_session_t *session)
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
 
-	// stop playback 
-    if (switch_channel_test_flag(channel, CF_BROADCAST)) {
-		switch_channel_stop_broadcast(channel);
-	} else {
-		switch_channel_set_flag_value(channel, CF_BREAK, 1);
-	}
-	
 	if (bug) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command to stop transcription.\n");
 		status = google_speech_session_cleanup(session, 0);
@@ -169,18 +162,17 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
-	if ((status = switch_core_media_bug_add(session, "google_transcribe2", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
+	if ((status = switch_core_media_bug_add(session, "google_transcribe", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
 		return status;
 	}
-	
+
+	switch_channel_set_private(channel, MY_BUG_NAME, bug);	
+
 	/* play the prompt, looking for detection result */
 	if (play_file != NULL){
 		args.input_callback = transcribe_input_callback;
-		if ((status = switch_ivr_play_file(session, NULL, play_file, &args))!= SWITCH_STATUS_SUCCESS){
-		return status;
-		}
+		switch_ivr_play_file(session, NULL, play_file, &args);
 	}
-  	switch_channel_set_private(channel, MY_BUG_NAME, bug);
 
 	return SWITCH_STATUS_SUCCESS;
 }
