@@ -47,10 +47,15 @@ static void responseHandler(switch_core_session_t* session, const char * json) {
 		switch_channel_event_set_data(channel, event);
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
 	}
-	else if (0 == strcmp("first_response", json)){
+	else if (0 == strcmp("play_interrupt", json)){
 		switch_event_t *qevent;
+		switch_status_t status;
 		if (switch_event_create(&qevent, SWITCH_EVENT_DETECTED_SPEECH) == SWITCH_STATUS_SUCCESS) {
-			switch_core_session_queue_event(session, &qevent);
+			if ((status = switch_core_session_queue_event(session, &qevent)) != SWITCH_STATUS_SUCCESS){
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "unable to queue play inturrupt event  %d \n", status);
+			}
+		}else{
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "unable to create play inturrupt event \n");
 		}
 		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_PLAY_INTURRUPT);
 		switch_channel_event_set_data(channel, event);
@@ -128,8 +133,8 @@ static switch_status_t do_stop(switch_core_session_t *session)
 }
 
 static switch_status_t start_capture2(switch_core_session_t *session, switch_media_bug_flag_t flags, 
-  char* lang, char* play_file, int interim, int single_utterence, int sepreate_recognition, int max_alternatives,
-  int profinity_filter, int word_time_offset, int punctuation, char* model, int enhanced, char* hints)
+  char* lang, int interim, int single_utterence, int sepreate_recognition, int max_alternatives,
+  int profinity_filter, int word_time_offset, int punctuation, char* model, int enhanced, char* hints, char* play_file)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
@@ -153,7 +158,7 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
 	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, single_utterence,
-	 sepreate_recognition, max_alternatives, profinity_filter, word_time_offset, punctuation, model, enhanced, hints, &pUserData)) {
+	 sepreate_recognition, max_alternatives, profinity_filter, word_time_offset, punctuation, model, enhanced, hints, play_file, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
@@ -162,12 +167,12 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 	}
 	
 	/* play the prompt, looking for detection result */
-	args.input_callback = transcribe_input_callback;
-	// ToDo stop ongoing playback if available 
-	if ((status = switch_ivr_play_file(session, NULL, play_file, &args))!= SWITCH_STATUS_SUCCESS){
+	if (play_file != NULL){
+		args.input_callback = transcribe_input_callback;
+		if ((status = switch_ivr_play_file(session, NULL, play_file, &args))!= SWITCH_STATUS_SUCCESS){
 		return status;
+		}
 	}
-
   	switch_channel_set_private(channel, MY_BUG_NAME, bug);
 
 	return SWITCH_STATUS_SUCCESS;
@@ -259,14 +264,15 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	return SWITCH_STATUS_SUCCESS;
 }
 
-// #define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim] [single-utterence](bool) [seperate-recognition](bool) [max-alternatives](int) [profinity-filter](bool) [word-time](bool) [punctuation](bool) [model](string) [enhanced](true) [hints](string without space)"
-#define TRANSCRIBE2_API_SYNTAX "<uuid> [start|stop] [lang-code] [play-file] [interim]  [single-utterence] [seperate-recognition] [max-alternatives] [profinity-filter] [word-time] [punctuation] [model] [enhanced] [hints]"
+// #define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim] [single-utterence](bool) [seperate-recognition](bool) [max-alternatives](int) [profinity-filter](bool) [word-time](bool) [punctuation](bool) [model](string) [enhanced](true) [hints](string without space) [play-file]"
+#define TRANSCRIBE2_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim]  [single-utterence] [seperate-recognition] [max-alternatives] [profinity-filter] [word-time] [punctuation] [model] [enhanced] [hints] [play-file]"
 SWITCH_STANDARD_API(transcribe2_function)
 {
 	char *mycmd = NULL, *argv[20] = { 0 };
 	int argc = 0, enhanced = 0;
 	char* hints = NULL;
 	char* model = NULL;
+	char* play_file = NULL;
 	
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_media_bug_flag_t flags = SMBF_READ_STREAM /* | SMBF_WRITE_STREAM | SMBF_READ_PING */;
@@ -291,25 +297,26 @@ SWITCH_STANDARD_API(transcribe2_function)
 				status = do_stop(lsession);
 			} else if (!strcasecmp(argv[1], "start")) {
         char* lang = argv[2];
-		char* play_file = argv[3];
-        int interim = argc > 4 && !strcmp(argv[4], "interim");
-
-		int single_utterence =  !strcmp(argv[5], "true"); // single-utterence
-		int sepreate_recognition = !strcmp(argv[6], "true"); // sepreate-recognition
-		int max_alternatives = atoi(argv[7]); // max-alternatives
-		int profinity_filter = !strcmp(argv[8], "true"); // profinity-filter
-		int word_time_offset = !strcmp(argv[9], "true"); // word-time
-		int punctuation      = !strcmp(argv[10], "true");  //punctuation
-		if (argc > 10){
-			model = argv[11]; // model 
-			enhanced = !strcmp(argv[12], "true"); // enhanced
+        int interim = argc > 3 && !strcmp(argv[3], "true");
+		int single_utterence =  !strcmp(argv[4], "true"); // single-utterence
+		int sepreate_recognition = !strcmp(argv[5], "true"); // sepreate-recognition
+		int max_alternatives = atoi(argv[6]); // max-alternatives
+		int profinity_filter = !strcmp(argv[7], "true"); // profinity-filter
+		int word_time_offset = !strcmp(argv[8], "true"); // word-time
+		int punctuation      = !strcmp(argv[9], "true");  //punctuation
+		if (argc > 9){
+			model = argv[10]; // model 
+			enhanced = !strcmp(argv[11], "true"); // enhanced
+		}
+		if (argc > 11){
+			hints = argv[12]; // hints
 		}
 		if (argc > 12){
-			hints = argv[13]; // hints
+			play_file = argv[13];
 		}
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
-				status = start_capture2(lsession, flags, lang, play_file, interim, single_utterence, sepreate_recognition,max_alternatives,
-				profinity_filter, word_time_offset, punctuation, model, enhanced, hints);
+				status = start_capture2(lsession, flags, lang, interim, single_utterence, sepreate_recognition,max_alternatives,
+				profinity_filter, word_time_offset, punctuation, model, enhanced, hints, play_file);
 			}
 			switch_core_session_rwunlock(lsession);
 		}

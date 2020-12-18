@@ -45,7 +45,7 @@ struct cap_cb {
 	responseHandler_t responseHandler;
 	switch_thread_t* thread;
 	int end_of_utterance;
-	int timer_init;
+	int play_file;
 };
 #endif
 
