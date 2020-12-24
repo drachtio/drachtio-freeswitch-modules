@@ -15,6 +15,7 @@
 #define TRANSCRIBE_EVENT_END_OF_TRANSCRIPT "google_transcribe::end_of_transcript"
 #define TRANSCRIBE_EVENT_NO_AUDIO_DETECTED "google_transcribe::no_audio_detected"
 #define TRANSCRIBE_EVENT_MAX_DURATION_EXCEEDED "google_transcribe::max_duration_exceeded"
+#define TRANSCRIBE_EVENT_PLAY_INTERRUPT "google_transcribe::play_interrupt"
 
 
 // simply write a wave file
@@ -39,11 +40,12 @@ struct cap_cb {
 	switch_mutex_t *mutex;
 	char sessionId[MAX_SESSION_ID];
 	char *base;
-  SpeexResamplerState *resampler;
+  	SpeexResamplerState *resampler;
 	void* streamer;
 	responseHandler_t responseHandler;
 	switch_thread_t* thread;
 	int end_of_utterance;
+	int play_file;
 };
 #endif
 

@@ -196,7 +196,11 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: session %s is gone!\n", cb->sessionId) ;
       return nullptr;
     }
-
+    
+    if (cb->play_file == 1){
+      cb->responseHandler(session, "play_interrupt");
+    }
+    
     for (int r = 0; r < response.results_size(); ++r) {
       auto result = response.results(r);
       cJSON * jResult = cJSON_CreateObject();
@@ -297,7 +301,7 @@ extern "C" {
     switch_status_t google_speech_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
           uint32_t samples_per_second, uint32_t channels, char* lang, int interim, int single_utterence,
           int separate_recognition, int max_alternatives, int profinity_filter, int word_time_offset,
-          int punctuation, char* model, int enhanced, char* hints, void **ppUserData) {
+          int punctuation, char* model, int enhanced, char* hints, char* play_file, void **ppUserData) {
 
       switch_channel_t *channel = switch_core_session_get_channel(session);
       struct cap_cb *cb;
@@ -306,7 +310,10 @@ extern "C" {
       cb =(struct cap_cb *) switch_core_session_alloc(session, sizeof(*cb));
       strncpy(cb->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
       cb->end_of_utterance = 0;
-
+      if (play_file != NULL){
+        cb->play_file = 1;
+      }
+      
       switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
 
       GStreamer *streamer = NULL;
@@ -342,8 +349,18 @@ extern "C" {
         struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
         switch_mutex_lock(cb->mutex);
 
+      // stop playback if available
+       if (cb->play_file == 1){ 
+          if (switch_channel_test_flag(channel, CF_BROADCAST)) {
+		        switch_channel_stop_broadcast(channel);
+	        } else {
+		        switch_channel_set_flag_value(channel, CF_BREAK, 1);
+        	}
+        }
+
         // close connection and get final responses
         GStreamer* streamer = (GStreamer *) cb->streamer;
+
         if (streamer) {
           streamer->writesDone();
 
@@ -359,6 +376,7 @@ extern "C" {
         if (cb->resampler) {
           speex_resampler_destroy(cb->resampler);
         }
+
         switch_channel_set_private(channel, MY_BUG_NAME, NULL);
 			  switch_mutex_unlock(cb->mutex);
 
