@@ -54,6 +54,7 @@ static switch_status_t hanguphook(switch_core_session_t *session) {
 		audioFiles.erase(sessionId);
 		switch_core_event_hook_remove_state_change(session, hanguphook);
 	}
+	return SWITCH_STATUS_SUCCESS;
 }
 
 static  void parseEventParams(Struct* grpcParams, cJSON* json) {
