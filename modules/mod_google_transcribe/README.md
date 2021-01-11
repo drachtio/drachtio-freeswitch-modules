@@ -5,10 +5,28 @@ A Freeswitch module that generates real-time transcriptions on a Freeswitch chan
 ## API
 
 ### Commands
-The freeswitch module exposes the following API commands:
-
-```
+The freeswitch module exposes two versions of an API command to transcribe speech:
+#### version 1
+```bash
 uuid_google_transcribe <uuid> start <lang-code> [interim]
+```
+When using this command, additional speech processing options can be provided through Freeswitch channel variables, described [below](#command-variables).
+
+####version 2
+```bash
+uuid_google_transcribe2 <uuid> start <lang-code> [interim] (bool) \
+[single-utterance](bool) [separate-recognition](bool) [max-alternatives](int) \
+[profanity-filter](bool) [word-time](bool) [punctuation](bool) \
+[model](string) [enhanced](bool) [hints](word seperated by , and no spaces) \
+[play-file] (play file path)
+```
+This command allows speech processing options to be provided on the command line, and has the ability to optionally play an audio file as a prompt.
+
+Example:
+```bash
+bgapi uuid_google_transcribe2 312033b6-4b2a-48d8-be0c-5f161aec2b3e start en-US \
+true true true 5 true true true command_and_search true \
+yes,no,hello https://www2.cs.uic.edu/~i101/SoundFiles/CantinaBand60.wav
 ```
 Attaches media bug to channel and performs streaming recognize request.
 - `uuid` - unique identifier of Freeswitch channel
@@ -20,8 +38,8 @@ uuid_google_transcribe <uuid> stop
 ```
 Stop transcription on the channel.
 
-### Channel Variables
-Additional google speech options can be set through freeswitch channel variables listed below.
+### Command Variables
+Additional google speech options can be set through freeswitch channel variables for `uuid_google_transcribe` and  in the command line for `uuid_google_transcribe2`.
 
 | variable | Description |
 | --- | ----------- |
@@ -38,7 +56,7 @@ Additional google speech options can be set through freeswitch channel variables
 
 
 ### Events
-`google_transcribe::transcription` - returns an interim or final transcription.  The event contains a JSON body describing the transcription result:
+**google_transcribe::transcription** - returns an interim or final transcription.  The event contains a JSON body describing the transcription result:
 ```js
 {
 	"stability": 0,
@@ -50,13 +68,15 @@ Additional google speech options can be set through freeswitch channel variables
 }
 ```
 
-`google_transcribe::end_of_utterance` - returns an indication that an utterance has been detected.  This may be returned prior to a final transcription.  This event is only returned when GOOGLE_SPEECH_SINGLE_UTTERANCE is set to true.
+**google_transcribe::end_of_utterance** - returns an indication that an utterance has been detected.  This may be returned prior to a final transcription.  This event is only returned when GOOGLE_SPEECH_SINGLE_UTTERANCE is set to true.
 
-`google_transcribe::end_of_transcript` - returned when a transcription operation has completed. If a final transcription has not been returned by now, it won't be. This event is only returned when GOOGLE_SPEECH_SINGLE_UTTERANCE is set to true.
+**google_transcribe::end_of_transcript** - returned when a transcription operation has completed. If a final transcription has not been returned by now, it won't be. This event is only returned when GOOGLE_SPEECH_SINGLE_UTTERANCE is set to true.
 
-`google_transcribe::no_audio_detected` - returned when google has returned an error indicating that no audio was received for a lengthy period of time.
+**google_transcribe::no_audio_detected** - returned when google has returned an error indicating that no audio was received for a lengthy period of time.
 
-`google_transcribe::max_duration_exceeded` - returned when google has returned an an indication that a long-running transcription has been stopped due to a max duration limit (305 seconds) on their side.  It is the applications responsibility to respond by starting a new transcription session, if desired.
+**google_transcribe::max_duration_exceeded** - returned when google has returned an an indication that a long-running transcription has been stopped due to a max duration limit (305 seconds) on their side.  It is the applications responsibility to respond by starting a new transcription session, if desired.
+
+**google_transcribe::no_audio_detected** - returned when google has not received any audio for some reason.
 
 ## Usage
 When using [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), you can access this API command via the api method on the 'endpoint' object.

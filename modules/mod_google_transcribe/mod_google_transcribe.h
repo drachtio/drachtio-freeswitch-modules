@@ -11,9 +11,11 @@
 #define MY_BUG_NAME "google_transcribe"
 #define TRANSCRIBE_EVENT_RESULTS "google_transcribe::transcription"
 #define TRANSCRIBE_EVENT_END_OF_UTTERANCE "google_transcribe::end_of_utterance"
+#define TRANSCRIBE_EVENT_START_OF_TRANSCRIPT "google_transcribe::start_of_transcript"
 #define TRANSCRIBE_EVENT_END_OF_TRANSCRIPT "google_transcribe::end_of_transcript"
 #define TRANSCRIBE_EVENT_NO_AUDIO_DETECTED "google_transcribe::no_audio_detected"
 #define TRANSCRIBE_EVENT_MAX_DURATION_EXCEEDED "google_transcribe::max_duration_exceeded"
+#define TRANSCRIBE_EVENT_PLAY_INTERRUPT "google_transcribe::play_interrupt"
 
 
 // simply write a wave file
@@ -43,6 +45,7 @@ struct cap_cb {
 	responseHandler_t responseHandler;
 	switch_thread_t* thread;
 	int end_of_utterance;
+	int play_file;
 };
 #endif
 
