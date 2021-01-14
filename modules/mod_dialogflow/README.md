@@ -18,7 +18,7 @@ dialogflow_start <uuid> <project-id> <lang-code> [<event>]
 ```
 Attaches media bug to channel and performs streaming recognize request.
 - `uuid` - unique identifier of Freeswitch channel
-- `project-id` - the identifier of the dialogflow project to execute
+- `project-id` - the identifier of the dialogflow project to execute.  Note: to specify a [dialogflow environment](https://cloud.google.com/dialogflow/es/docs/agents-versions) enter the value as `project-id:environment`.
 - `lang-code` - a valid dialogflow [language tag](https://dialogflow.com/docs/reference/language) to use for speech recognition
 - `event` - name of an initial event to send to dialogflow; e.g. to trigger an initial prompt
 
@@ -36,7 +36,7 @@ Stop dialogflow on the channel.
 ## Usage
 When using [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), you can access this API command via the api method on the 'endpoint' object.
 ```js
-ep.api('dialogflow_start', `${ep.uuid} my-project-id en-US welcome`); 
+ep.api('dialogflow_start', `${ep.uuid} my-agent-uuxr:production en-US welcome`); 
 ```
 ## Examples
 [drachtio-dialogflow-phone-gateway](https://github.com/davehorton/drachtio-dialogflow-phone-gateway)
