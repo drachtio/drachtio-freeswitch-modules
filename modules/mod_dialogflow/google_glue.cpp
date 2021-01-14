@@ -117,12 +117,25 @@ public:
 
 	void startStream(switch_core_session_t *session, const char* event, const char* text) {
 		char szSession[256];
+		std::string project;
+		std::string environment;
+
 		m_request = std::make_shared<StreamingDetectIntentRequest>();
 		m_context= std::make_shared<grpc::ClientContext>();
 		m_stub = Sessions::NewStub(m_channel);
-		snprintf(szSession, 256, "projects/%s/agent/sessions/%s", m_projectId.c_str(), m_sessionId.c_str());
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::startStream set event %s, text %s %p\n", event, text, this);
+		size_t pos = 0;
+		if ((pos = m_projectId.find(":")) != std::string::npos) {
+			project = m_projectId.substr(0, pos);
+			environment = m_projectId.substr(pos + 1);
+			snprintf(szSession, 256, "projects/%s/agent/environments/%s/users/-/sessions/%s", 
+				project.c_str(), environment.c_str(), m_sessionId.c_str());
+		}
+		else {
+			snprintf(szSession, 256, "projects/%s/agent/sessions/%s", m_projectId.c_str(), m_sessionId.c_str());
+		}
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::startStream session %s, event %s, text %s %p\n", szSession, event, text, this);
 
 		m_request->set_session(szSession);
 		m_request->set_single_utterance(true);
