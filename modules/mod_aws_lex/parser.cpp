@@ -97,7 +97,7 @@ cJSON* lex2Json(const SessionState& state) {
     cJSON_AddItemToArray(jContexts, lex2Json(context));
   }
 
-  cJSON_AddItemToObject(json, "attributes", lex2Json(state.GetAttributes()));
+  cJSON_AddItemToObject(json, "attributes", lex2Json(state.GetSessionAttributes()));
 
   return json;
 }
@@ -138,7 +138,7 @@ cJSON* lex2Json(const ActiveContext& context) {
 
   cJSON_AddItemToObject(json, "name", cJSON_CreateString(context.GetName().c_str()));
   cJSON_AddItemToObject(json, "ttl", lex2Json(context.GetTimeToLive()));
-  cJSON_AddItemToObject(json, "parameters", lex2Json(context.GetParameters()));
+  cJSON_AddItemToObject(json, "attributes", lex2Json(context.GetContextAttributes()));
 
   return json;
 }
@@ -186,7 +186,7 @@ cJSON* lex2Json(const Value& value) {
   return json;
 }
 
-cJSON* lex2Json(const Aws::Client::AWSError<LexRuntimeServiceV2Errors>& err) {
+cJSON* lex2Json(const Aws::Client::AWSError<LexRuntimeV2Errors>& err) {
  	cJSON * json = cJSON_CreateObject();
 
   cJSON_AddItemToObject(json, "message", cJSON_CreateString(err.GetMessage().c_str()));

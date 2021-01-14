@@ -2,12 +2,12 @@
 #define __PARSER_H__
 
 #include <switch_json.h>
-#include <aws/lex/LexRuntimeServiceV2Client.h>
-#include <aws/lex/model/StartConversationRequest.h>
+#include <aws/lexv2-runtime/LexRuntimeV2Client.h>
+#include <aws/lexv2-runtime/model/StartConversationRequest.h>
 
-using namespace Aws::LexRuntimeServiceV2;
-using namespace Aws::LexRuntimeServiceV2::Model;
-    
+using namespace Aws::LexRuntimeV2;
+using namespace Aws::LexRuntimeV2::Model;
+ 
 cJSON* lex2Json(const TranscriptEvent& ev);
 cJSON* lex2Json(const TextResponseEvent& ev);
 cJSON* lex2Json(const Message& msg);
@@ -24,6 +24,6 @@ cJSON* lex2Json(const SentimentScore& score);
 cJSON* lex2Json(const ActiveContextTimeToLive& ttl);
 cJSON* lex2Json(const Slot& slot);
 cJSON* lex2Json(const Value& value) ;
-cJSON* lex2Json(const Aws::Client::AWSError<LexRuntimeServiceV2Errors>& err);
+cJSON* lex2Json(const Aws::Client::AWSError<LexRuntimeV2Errors>& err);
 
 #endif

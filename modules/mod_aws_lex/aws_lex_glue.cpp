@@ -20,8 +20,8 @@
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/utils/logging/DefaultLogSystem.h>
 #include <aws/core/utils/logging/AWSLogging.h>
-#include <aws/lex/LexRuntimeServiceV2Client.h>
-#include <aws/lex/model/StartConversationRequest.h>
+#include <aws/lexv2-runtime/LexRuntimeV2Client.h>
+#include <aws/lexv2-runtime/model/StartConversationRequest.h>
 
 #include "mod_aws_lex.h"
 #include "parser.h"
@@ -29,8 +29,8 @@
 using namespace Aws;
 using namespace Aws::Utils;
 using namespace Aws::Auth;
-using namespace Aws::LexRuntimeServiceV2;
-using namespace Aws::LexRuntimeServiceV2::Model;
+using namespace Aws::LexRuntimeV2;
+using namespace Aws::LexRuntimeV2::Model;
 
 
 const char ALLOC_TAG[] = "drachtio";
@@ -184,7 +184,6 @@ public:
 		Aws::Client::ClientConfiguration config;
 		config.region = region;
 		if (endpointOverride) config.endpointOverride = endpointOverride;
-		//config.endpointOverride = "https://runtime-phoenix.lex.us-east-1.amazonaws.com/v2";
 		char keySnippet[20];
 
 		strncpy(keySnippet, awsAccessKeyId, 4);
@@ -194,11 +193,11 @@ public:
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p ACCESS_KEY_ID %s\n", this, keySnippet);		
 		if (*awsAccessKeyId && *awsSecretAccessKey) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "using AWS creds %s %s\n", awsAccessKeyId, awsSecretAccessKey);	
-			m_client = Aws::MakeUnique<LexRuntimeServiceV2Client>(ALLOC_TAG, AWSCredentials(awsAccessKeyId, awsSecretAccessKey), config);
+			m_client = Aws::MakeUnique<LexRuntimeV2Client>(ALLOC_TAG, AWSCredentials(awsAccessKeyId, awsSecretAccessKey), config);
 		}
 		else {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "No AWS credentials so using default credentials\n");	
-			m_client = Aws::MakeUnique<LexRuntimeServiceV2Client>(ALLOC_TAG, config);
+			m_client = Aws::MakeUnique<LexRuntimeV2Client>(ALLOC_TAG, config);
 		}
 	
     m_handler.SetHeartbeatEventCallback([this](const HeartbeatEvent&)
@@ -302,7 +301,7 @@ public:
 			}
    });
 
-    m_handler.SetOnErrorCallback([this, errorHandler](const Aws::Client::AWSError<LexRuntimeServiceV2Errors>& err)
+    m_handler.SetOnErrorCallback([this, errorHandler](const Aws::Client::AWSError<LexRuntimeV2Errors>& err)
     {
 			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
 			if (psession) {
@@ -356,16 +355,16 @@ public:
 				if (metadata) parseMetadata(slots, sessionAttributes, metadata);
 
 				SessionState sessionState;
-				sessionState.SetAttributes(sessionAttributes);
+				sessionState.SetSessionAttributes(sessionAttributes);
 
 				ConfigurationEvent configurationEvent;
 				configurationEvent.SetResponseContentType("audio/mpeg");
 
 				Intent intent;
-				if (intentName) {
+				if (intentName && strlen(intentName) > 0) {
 					DialogAction dialogAction;
 
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p setting initial intent to %s\n", this, intentName);
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p setting initial intent to '%s'\n", this, intentName);
 					intent.SetName(intentName);
 
 					for (auto const& pair : slots) {
@@ -376,10 +375,7 @@ public:
 					sessionState.SetIntent(intent);
 					dialogAction.SetType(DialogActionType::Delegate);
 					sessionState.SetDialogAction(dialogAction);
-
-					//if (!bargein) configurationEvent.SetAwaitPlaybackCompletionAtConversationStart(true);
 				}
-
 				else if (var = switch_channel_get_variable(channel, "LEX_WELCOME_MESSAGE")) {
 					Message message;
 					DialogAction dialogAction;
@@ -389,8 +385,6 @@ public:
 					message.SetContent(var);
 					message.SetContentType(MessageContentType::PlainText);
 					configurationEvent.AddWelcomeMessages(message);		
-
-					//if (!bargein) configurationEvent.SetAwaitPlaybackCompletionAtConversationStart(true);
 
 					// TODO: should we erase the channel var, so it is not reused in future intent?
 
@@ -409,14 +403,14 @@ public:
 				switch_core_session_rwunlock(psession);
 			}
     };
-    auto OnResponseCallback = [&](const LexRuntimeServiceV2Client* pClient,
+    auto OnResponseCallback = [&](const LexRuntimeV2Client* pClient,
             const StartConversationRequest& request,
             const StartConversationOutcome& outcome,
             const std::shared_ptr<const Aws::Client::AsyncCallerContext>&)
     {
  			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p stream got final response\n", this);
 			if (!outcome.IsSuccess()) {				
-				const LexRuntimeServiceV2Error& err = outcome.GetError();
+				const LexRuntimeV2Error& err = outcome.GetError();
 				auto message = err.GetMessage();
 				auto exception = err.GetExceptionName();
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p stream got error response %s : %s\n", this, message.c_str(), exception.c_str());
@@ -523,7 +517,7 @@ private:
 	std::string  m_bot;
 	std::string  m_alias;
 	std::string  m_region;
-	Aws::UniquePtr<LexRuntimeServiceV2Client> m_client;
+	Aws::UniquePtr<LexRuntimeV2Client> m_client;
 	StartConversationRequestEventStream* m_pStream;
 	StartConversationRequest m_request;
 	StartConversationHandler m_handler;
