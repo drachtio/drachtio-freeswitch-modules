@@ -122,7 +122,7 @@ public:
 	}
 
 	~GStreamer() {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::~GStreamer wrote %ld packets %p\n", m_packets, this);		
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::~GStreamer wrote %u packets %p\n", m_packets, this);		
 	}
 
 	bool write(void* data, uint32_t datalen) {
@@ -255,6 +255,7 @@ static void *SWITCH_THREAD_FUNC aws_transcribe_thread(switch_thread_t *thread, v
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "transcribe_thread: stopping cb %p\n", (void *) cb);
 	delete pStreamer;
 	cb->streamer = nullptr;
+	return nullptr;
 }
 
 static void killcb(struct cap_cb* cb) {
