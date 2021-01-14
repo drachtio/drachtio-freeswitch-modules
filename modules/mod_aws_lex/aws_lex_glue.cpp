@@ -386,7 +386,8 @@ public:
 					message.SetContentType(MessageContentType::PlainText);
 					configurationEvent.AddWelcomeMessages(message);		
 
-					// TODO: should we erase the channel var, so it is not reused in future intent?
+					// erase the channel var, so it is not reused in future intent
+					switch_channel_set_variable(channel, "LEX_WELCOME_MESSAGE", nullptr);
 
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p setting welcome message: %s\n", this, var);
 				}
