@@ -48,9 +48,8 @@ static switch_status_t hanguphook(switch_core_session_t *session) {
 
 	if (state == CS_HANGUP || state == CS_ROUTING) {
 		char * sessionId = switch_core_session_get_uuid(session);
-		typedef std::multimap<std::string, std::string>::iterator MMAPIterator;
-		std::pair<MMAPIterator, MMAPIterator> result = audioFiles.equal_range(sessionId);
-		for (MMAPIterator it = result.first; it != result.second; it++) {
+		auto range = audioFiles.equal_range(sessionId);
+		for (auto it = range.first; it != range.second; it++) {
 			std::string filename = it->second;
 			std::remove(filename.c_str());
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, 
@@ -59,6 +58,7 @@ static switch_status_t hanguphook(switch_core_session_t *session) {
 		audioFiles.erase(sessionId);
 		switch_core_event_hook_remove_state_change(session, hanguphook);
 	}
+	return SWITCH_STATUS_SUCCESS;
 }
 
 static bool parseMetadata(Aws::Map<Aws::String, Slot>& slots, Aws::Map<Aws::String, Aws::String>& attributes, char* metadata) {
@@ -552,6 +552,7 @@ static void *SWITCH_THREAD_FUNC lex_thread(switch_thread_t *thread, void *obj) {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "lex_thread: stopping cb %p\n", (void *) cb);
 	delete pStreamer;
 	cb->streamer = nullptr;
+	return NULL;
 }
 
 static void killcb(struct cap_cb* cb) {
