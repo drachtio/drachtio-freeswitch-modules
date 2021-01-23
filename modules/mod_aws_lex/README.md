@@ -14,13 +14,15 @@ This allows the application whether to decide to play the returned audio clip (v
 The freeswitch module exposes the following API commands:
 
 ```
-aws_lex_start <uuid>  bot alias region
+aws_lex_start <uuid>  botId aliasId region locale [welcome-intent]
 ```
 Attaches media bug to channel and performs streaming recognize request.
 - `uuid` - freeswitch channel uuid
 - `bot` - name of Lex bot
 - `alias` - alias of Lex bot
 - `region` - AWS region name (e.g 'us-east-1')
+- `locale` - AWS language to use for speech recognition (e.g. 'en-US')
+- `welcome-intent` - name of intent to trigger initially
 
 ```
 aws_lex_dtmf <uuid> dtmf-entry
@@ -39,7 +41,7 @@ Stop dialogflow on the channel.
 ### Channel variables
 * `ACCESS_KEY_ID` - AWS access key id to use to authenticate; if not provided an environment variable of the same name is used if provided
 * `SECRET_ACCESS_KEY` - AWS secret access key to use to authenticate; if not provided an environment variable of the same name is used if provided
-* `x-amz-lex:barge-in-enabled` - enables speech barge-in, if set to true or 1
+* `LEX_WELCOME_MESSAGE` - text for a welcome message to play at audio start
 * `x-amz-lex:start-silence-threshold-ms` - no-input timeout in milliseconds (Lex defaults to 4000 if not provided)
 
 ### Events
@@ -47,6 +49,7 @@ Stop dialogflow on the channel.
 * `lex::transcription` - a transcription has been returned
 * `lex::text_response` - a text response has been returned; the telephony application can play this using text-to-speech if desired.
 * `lex::audio_provided` - an audio response (.mp3 format) has been returned; the telephony application can play this file if TTS is not being used
+* `lex::text_response` - a text response was provided.
 * `lex::playback_interruption` - the caller has spoken during prompt playback; the telephony application should kill the current audio prompt
 * `lex::error` - dialogflow has returned an error
 ## Usage
@@ -54,5 +57,7 @@ When using [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), you c
 ```js
 ep.api('aws_lex_start', `${ep.uuid} BookTrip Gamma us-east-1`); 
 ```
-## Examples
-TODO..
+
+# Example application
+
+See [drachtio-lex-gateway](https://github.com/drachtio/drachtio-lex-phone-gateway).

@@ -13,6 +13,9 @@ Adds a Freeswitch API call to start (or stop) real-time transcription on a Frees
 #### [mod_dialogflow](modules/mod_dialogflow/README.md)
 Adds a Freeswitch API to start a Google Dialogflow agent on a Freeswitch channel.
 
+#### [mod_aws_lex](modules/mod_aws_lex/README.md)
+Adds Freeswitch APIs call to integrate with aws lex v2 apis.
+
 #### [mod_aws_transcribe](modules/mod_aws_transcribe/README.md)
 Adds a Freeswitch API call to start (or stop) real-time transcription on a Freeswitch channel using AWS streaming transcription (HTTP/2 based).
 
