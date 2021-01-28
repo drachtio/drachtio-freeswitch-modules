@@ -39,7 +39,7 @@ uuid_google_transcribe <uuid> stop
 Stop transcription on the channel.
 
 ### Command Variables
-Additional google speech options can be set through freeswitch channel variables for `uuid_google_transcribe` and  in the command line for `uuid_google_transcribe2`.
+Additional google speech options can be set through freeswitch channel variables for `uuid_google_transcribe` (some can alternatively be set in the command line for `uuid_google_transcribe2`).
 
 | variable | Description |
 | --- | ----------- |
@@ -51,7 +51,16 @@ Additional google speech options can be set through freeswitch channel variables
 | GOOGLE_SPEECH_ENABLE_AUTOMATIC_PUNCTUATION | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.bool.google.cloud.speech.v1.RecognitionConfig.enable_automatic_punctuation) |
 | GOOGLE_SPEECH_MODEL | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.string.google.cloud.speech.v1.RecognitionConfig.model) |
 | GOOGLE_SPEECH_USE_ENHANCED | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.RecognitionConfig.FIELDS.bool.google.cloud.speech.v1.RecognitionConfig.use_enhanced) |
-| GOOGLE_SPEECH_HINTS | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1#google.cloud.speech.v1.SpeechContext.FIELDS.repeated.string.google.cloud.speech.v1.SpeechContext.phrases) |
+| GOOGLE_SPEECH_HINTS | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.PhraseSet) |
+| GOOGLE_SPEECH_ALTERNATIVE_LANGUAGE_CODES | a comma-separated list of language codes, [per this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.RecognitionConfig.FIELDS.repeated.string.google.cloud.speech.v1p1beta1.RecognitionConfig.alternative_language_codes) |
+| GOOGLE_SPEECH_SPEAKER_DIARIZATION | set to 1 to enable [speaker diarization](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.SpeakerDiarizationConfig) |
+|  GOOGLE_SPEECH_SPEAKER_DIARIZATION_MIN_SPEAKER_COUNT | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.SpeakerDiarizationConfig) |
+|  GOOGLE_SPEECH_SPEAKER_DIARIZATION_MAX_SPEAKER_COUNT | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.SpeakerDiarizationConfig) |
+| GOOGLE_SPEECH_METADATA_INTERACTION_TYPE | set to 'discussion', 'presentation', 'phone_call', 'voicemail', 'professionally_produced', 'voice_search', 'voice_command', or 'dictation' [per this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.RecognitionMetadata.InteractionType) |
+| GOOGLE_SPEECH_METADATA_INDUSTRY_NAICS_CODE | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.RecognitionMetadata) |
+| GOOGLE_SPEECH_METADATA_MICROPHONE_DISTANCE | set to 'nearfield', 'midfield', or 'farfield' [per this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.RecognitionMetadata.MicrophoneDistance) |
+| GOOGLE_SPEECH_METADATA_ORIGINAL_MEDIA_TYPE | set to 'audio', or 'video' [per this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.RecognitionMetadata.OriginalMediaType) |
+| GOOGLE_SPEECH_METADATA_RECORDING_DEVICE_TYPE | set to 'smartphone', 'pc', 'phone_line', 'vehicle', 'other_outdoor_device', or 'other_indoor_device' [per this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.RecognitionMetadata.RecordingDeviceType)
 
 
 
