@@ -17,6 +17,9 @@ using google::cloud::speech::v1p1beta1::SpeechContext;
 using google::cloud::speech::v1p1beta1::StreamingRecognizeRequest;
 using google::cloud::speech::v1p1beta1::StreamingRecognizeResponse;
 using google::cloud::speech::v1p1beta1::SpeakerDiarizationConfig;
+using google::cloud::speech::v1p1beta1::SpeechAdaptation;
+using google::cloud::speech::v1p1beta1::PhraseSet;
+using google::cloud::speech::v1p1beta1::PhraseSet_Phrase;
 using google::cloud::speech::v1p1beta1::RecognitionMetadata;
 using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_DISCUSSION;
 using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_PRESENTATION;
@@ -142,11 +145,15 @@ public:
 
     // hints  
     if (hints != NULL) {
+      auto* adaptation = config->mutable_adaptation();
+      auto* phrase_set = adaptation->add_phrase_sets();
+
       char *phrases[500] = { 0 };
       auto *context = config->add_speech_contexts();
       int argc = switch_separate_string((char *) hints, ',', phrases, 500);
       for (int i = 0; i < argc; i++) {
-        context->add_phrases(phrases[i]);
+        auto* phrase = phrase_set->add_phrases();
+        phrase->set_value(phrases[i]);
       }
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", argc);
     }
