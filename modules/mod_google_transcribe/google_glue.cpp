@@ -1,23 +1,57 @@
 #include <cstdlib>
+#include <algorithm>
 
 #include <switch.h>
 #include <switch_json.h>
 #include <grpc++/grpc++.h>
 
-#include "google/cloud/speech/v1/cloud_speech.grpc.pb.h"
+#include "google/cloud/speech/v1p1beta1/cloud_speech.grpc.pb.h"
 
 #include "mod_google_transcribe.h"
 
 #define BUFFER_SECS (3)
 
-using google::cloud::speech::v1::RecognitionConfig;
-using google::cloud::speech::v1::Speech;
-using google::cloud::speech::v1::SpeechContext;
-using google::cloud::speech::v1::StreamingRecognizeRequest;
-using google::cloud::speech::v1::StreamingRecognizeResponse;
-using google::cloud::speech::v1::StreamingRecognizeResponse_SpeechEventType_END_OF_SINGLE_UTTERANCE;
+using google::cloud::speech::v1p1beta1::RecognitionConfig;
+using google::cloud::speech::v1p1beta1::Speech;
+using google::cloud::speech::v1p1beta1::SpeechContext;
+using google::cloud::speech::v1p1beta1::StreamingRecognizeRequest;
+using google::cloud::speech::v1p1beta1::StreamingRecognizeResponse;
+using google::cloud::speech::v1p1beta1::SpeakerDiarizationConfig;
+using google::cloud::speech::v1p1beta1::SpeechAdaptation;
+using google::cloud::speech::v1p1beta1::PhraseSet;
+using google::cloud::speech::v1p1beta1::PhraseSet_Phrase;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_DISCUSSION;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_PRESENTATION;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_PHONE_CALL;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_VOICEMAIL;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_PROFESSIONALLY_PRODUCED;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_VOICE_SEARCH;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_VOICE_COMMAND;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_DICTATION;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_MicrophoneDistance_NEARFIELD;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_MicrophoneDistance_MIDFIELD;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_MicrophoneDistance_FARFIELD;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_OriginalMediaType_AUDIO;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_OriginalMediaType_VIDEO;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_SMARTPHONE;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_PC;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_PHONE_LINE;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_VEHICLE;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_OTHER_OUTDOOR_DEVICE;
+using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_OTHER_INDOOR_DEVICE;
+using google::cloud::speech::v1p1beta1::StreamingRecognizeResponse_SpeechEventType_END_OF_SINGLE_UTTERANCE;
 using google::rpc::Status;
 
+namespace {
+  int case_insensitive_match(std::string s1, std::string s2) {
+   std::transform(s1.begin(), s1.end(), s1.begin(), ::tolower);
+   std::transform(s2.begin(), s2.end(), s2.begin(), ::tolower);
+   if(s1.compare(s2) == 0)
+      return 1; //The strings are same
+   return 0; //not matched
+}
+}
 class GStreamer;
 
 class GStreamer {
@@ -111,15 +145,74 @@ public:
 
     // hints  
     if (hints != NULL) {
+      auto* adaptation = config->mutable_adaptation();
+      auto* phrase_set = adaptation->add_phrase_sets();
+
       char *phrases[500] = { 0 };
       auto *context = config->add_speech_contexts();
       int argc = switch_separate_string((char *) hints, ',', phrases, 500);
       for (int i = 0; i < argc; i++) {
-        context->add_phrases(phrases[i]);
+        auto* phrase = phrase_set->add_phrases();
+        phrase->set_value(phrases[i]);
       }
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", argc);
     }
 
+    // alternative language
+    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_ALTERNATIVE_LANGUAGE_CODES")) {
+      config->add_alternative_language_codes(var);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "alternative lang %s\n", var);
+    }
+
+    // speaker diarization
+    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SPEAKER_DIARIZATION")) {
+      auto* diarization_config = config->mutable_diarization_config();
+      diarization_config->set_enable_speaker_diarization(true);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enabling speaker diarization\n", var);
+      if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SPEAKER_DIARIZATION_MIN_SPEAKER_COUNT")) {
+        int count = std::max(atoi(var), 1);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "setting min speaker count to %d\n", count);
+        diarization_config->set_min_speaker_count(count);
+      }
+      if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SPEAKER_DIARIZATION_MAX_SPEAKER_COUNT")) {
+        int count = std::max(atoi(var), 2);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "setting max speaker count to %d\n", count);
+        diarization_config->set_max_speaker_count(count);
+      }
+    }
+
+    // recognition metadata
+    auto* metadata = config->mutable_metadata();
+    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_INTERACTION_TYPE")) {
+      if (case_insensitive_match("discussion", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_DISCUSSION);
+      if (case_insensitive_match("presentation", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_PRESENTATION);
+      if (case_insensitive_match("phone_call", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_PHONE_CALL);
+      if (case_insensitive_match("voicemail", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_VOICEMAIL);
+      if (case_insensitive_match("professionally_produced", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_PROFESSIONALLY_PRODUCED);
+      if (case_insensitive_match("voice_search", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_VOICE_SEARCH);
+      if (case_insensitive_match("voice_command", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_VOICE_COMMAND);
+      if (case_insensitive_match("dicatation", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_DICTATION);
+    }
+    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_INDUSTRY_NAICS_CODE")) {
+      metadata->set_industry_naics_code_of_audio(atoi(var));
+    }
+    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_MICROPHONE_DISTANCE")) {
+      if (case_insensitive_match("nearfield", var)) metadata->set_microphone_distance(RecognitionMetadata_MicrophoneDistance_NEARFIELD);
+      if (case_insensitive_match("midfield", var)) metadata->set_microphone_distance(RecognitionMetadata_MicrophoneDistance_MIDFIELD);
+      if (case_insensitive_match("farfield", var)) metadata->set_microphone_distance(RecognitionMetadata_MicrophoneDistance_FARFIELD);
+    }
+    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_ORIGINAL_MEDIA_TYPE")) {
+      if (case_insensitive_match("audio", var)) metadata->set_original_media_type(RecognitionMetadata_OriginalMediaType_AUDIO);
+      if (case_insensitive_match("video", var)) metadata->set_original_media_type(RecognitionMetadata_OriginalMediaType_VIDEO);
+    }
+    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_RECORDING_DEVICE_TYPE")) {
+      if (case_insensitive_match("smartphone", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_SMARTPHONE);
+      if (case_insensitive_match("pc", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_PC);
+      if (case_insensitive_match("phone_line", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_PHONE_LINE);
+      if (case_insensitive_match("vehicle", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_VEHICLE);
+      if (case_insensitive_match("other_outdoor_device", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_OTHER_OUTDOOR_DEVICE);
+      if (case_insensitive_match("other_indoor_device", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_OTHER_INDOOR_DEVICE);
+    }
   	// Begin a stream.
   	m_streamer = m_stub->StreamingRecognize(&m_context);
 
