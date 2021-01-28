@@ -191,7 +191,7 @@ public:
       if (case_insensitive_match("professionally_produced", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_PROFESSIONALLY_PRODUCED);
       if (case_insensitive_match("voice_search", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_VOICE_SEARCH);
       if (case_insensitive_match("voice_command", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_VOICE_COMMAND);
-      if (case_insensitive_match("dicatation", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_DICTATION);
+      if (case_insensitive_match("dictation", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_DICTATION);
     }
     if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_INDUSTRY_NAICS_CODE")) {
       metadata->set_industry_naics_code_of_audio(atoi(var));
@@ -324,6 +324,15 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
             if (words.has_end_time()) {
               cJSON_AddItemToObject(jWord, "end_time", cJSON_CreateNumber(words.end_time().seconds()));
             }
+            int speaker_tag = words.speaker_tag();
+            if (speaker_tag > 0) {
+              cJSON_AddItemToObject(jWord, "speaker_tag", cJSON_CreateNumber(speaker_tag));
+            }
+            float confidence = words.confidence();
+            if (confidence > 0.0) {
+              cJSON_AddItemToObject(jWord, "confidence", cJSON_CreateNumber(confidence));
+            }
+
             cJSON_AddItemToArray(jWords, jWord);
           }
           cJSON_AddItemToObject(jAlt, "words", jWords);
