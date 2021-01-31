@@ -56,7 +56,7 @@ class GStreamer;
 
 class GStreamer {
 public:
-	GStreamer(switch_core_session_t *session, u_int16_t channels, char* lang, int interim, int single_utterance, int separate_recognition,
+	GStreamer(switch_core_session_t *session, uint32_t channels, char* lang, int interim, int single_utterance, int separate_recognition,
 		int max_alternatives, int profanity_filter, int word_time_offset, int punctuation, char* model, int enhanced, 
 		char* hints) : 
 
@@ -160,8 +160,12 @@ public:
 
     // alternative language
     if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_ALTERNATIVE_LANGUAGE_CODES")) {
-      config->add_alternative_language_codes(var);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "alternative lang %s\n", var);
+      char *alt_langs[3] = { 0 };
+      int argc = switch_separate_string((char *) var, ',', alt_langs, 3);
+      for (int i = 0; i < argc; i++) {
+        config->add_alternative_language_codes(alt_langs[i]);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added alternative lang %s\n", alt_langs[i]);
+      }
     }
 
     // speaker diarization

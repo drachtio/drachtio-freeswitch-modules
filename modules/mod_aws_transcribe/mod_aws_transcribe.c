@@ -51,12 +51,12 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 
 	switch (type) {
 	case SWITCH_ABC_TYPE_INIT:
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_INIT.\n");
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Got SWITCH_ABC_TYPE_INIT.\n");
 		break;
 
 	case SWITCH_ABC_TYPE_CLOSE:
 		{
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_CLOSE.\n");
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Got SWITCH_ABC_TYPE_CLOSE.\n");
 
 			aws_transcribe_session_stop(session, 1);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Finished SWITCH_ABC_TYPE_CLOSE.\n");
@@ -99,7 +99,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
-	if (SWITCH_STATUS_FALSE == aws_transcribe_session_init(session, responseHandler, samples_per_second, lang, interim, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == aws_transcribe_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing aws speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
@@ -107,6 +107,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 		return status;
 	}
   switch_channel_set_private(channel, MY_BUG_NAME, bug);
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "added media bug for aws transcribe\n");
 
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -127,7 +128,7 @@ static switch_status_t do_stop(switch_core_session_t *session)
 	return status;
 }
 
-#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] lang-code [interim]"
+#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] lang-code [interim] [stereo|mono]"
 SWITCH_STANDARD_API(aws_transcribe_function)
 {
 	char *mycmd = NULL, *argv[5] = { 0 };
@@ -156,6 +157,10 @@ SWITCH_STANDARD_API(aws_transcribe_function)
 			} else if (!strcasecmp(argv[1], "start")) {
         char* lang = argv[2];
         int interim = argc > 3 && !strcmp(argv[3], "interim");
+				if (argc > 4 && !strcmp(argv[4], "stereo")) {
+          flags |= SMBF_WRITE_STREAM ;
+          flags |= SMBF_STEREO;
+				}
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
 				status = start_capture(lsession, flags, lang, interim);
 			}
@@ -197,9 +202,9 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aws_transcribe_load)
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "AWS Speech Transcription API successfully loaded\n");
 
-	SWITCH_ADD_API(api_interface, "aws_transcribe", "AWS Speech Transcription API", aws_transcribe_function, TRANSCRIBE_API_SYNTAX);
-	switch_console_set_complete("add aws_transcribe start lang-code");
-	switch_console_set_complete("add aws_transcribe stop ");
+	SWITCH_ADD_API(api_interface, "uuid_aws_transcribe", "AWS Speech Transcription API", aws_transcribe_function, TRANSCRIBE_API_SYNTAX);
+	switch_console_set_complete("add uuid_aws_transcribe start lang-code [interim|final] [stereo|mono]");
+	switch_console_set_complete("add uuid_aws_transcribe stop ");
 
 	/* indicate that the module should continue to be loaded */
 	return SWITCH_STATUS_SUCCESS;

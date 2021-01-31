@@ -39,6 +39,7 @@ class GStreamer {
 public:
 	GStreamer(
     const char *sessionId,
+		u_int16_t channels,
     char *lang, 
     int interim,
 		const char* region, 
@@ -56,7 +57,7 @@ public:
 		for (int i = 4; i < 20; i++) keySnippet[i] = 'x';
 		keySnippet[19] = '\0';
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p ACCESS_KEY_ID %s\n", this, keySnippet);		
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p ACCESS_KEY_ID %s, region %s\n", this, keySnippet, region);		
 		if (*awsAccessKeyId && *awsSecretAccessKey) {
 			m_client = Aws::MakeUnique<TranscribeStreamingServiceClient>(ALLOC_TAG, AWSCredentials(awsAccessKeyId, awsSecretAccessKey), config);
 		}
@@ -77,10 +78,32 @@ public:
 			}
     });
 
+
     m_request.SetMediaSampleRateHertz(16000);
     m_request.SetLanguageCode(LanguageCodeMapper::GetLanguageCodeForName(lang));
     m_request.SetMediaEncoding(MediaEncoding::pcm);
     m_request.SetEventStreamHandler(m_handler);
+		m_request.SetNumberOfChannels(channels);
+
+		const char* var;
+		switch_core_session_t* session = switch_core_session_locate(sessionId);
+    switch_channel_t *channel = switch_core_session_get_channel(session);
+
+		if (var = switch_channel_get_variable(channel, "AWS_SHOW_SPEAKER_LABEL")) {
+			m_request.SetShowSpeakerLabel(true);
+		}
+		if (var = switch_channel_get_variable(channel, "AWS_ENABLE_CHANNEL_IDENTIFICATION")) {
+			m_request.SetEnableChannelIdentification(true);
+		}
+		if (var = switch_channel_get_variable(channel, "AWS_VOCABULARY_NAME")) {
+			m_request.SetVocabularyName(var);
+		}
+		if (var = switch_channel_get_variable(channel, "AWS_VOCABULARY_FILTER_NAME")) {
+			m_request.SetVocabularyFilterName(var);
+		}
+		if (var = switch_channel_get_variable(channel, "AWS_VOCABULARY_FILTER_METHOD")) {
+			m_request.SetVocabularyFilterMethod(VocabularyFilterMethodMapper::GetVocabularyFilterMethodForName(var));
+		}
 
     auto OnStreamReady = [this](Model::AudioStream& stream)
     {
@@ -243,7 +266,7 @@ static void *SWITCH_THREAD_FUNC aws_transcribe_thread(switch_thread_t *thread, v
 	struct cap_cb *cb = (struct cap_cb *) obj;
 	bool ok = true;
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "transcribe_thread: starting cb %p\n", (void *) cb);
-	GStreamer* pStreamer = new GStreamer(cb->sessionId, cb->lang, cb->interim, cb->region, cb->awsAccessKeyId, cb->awsSecretAccessKey, 
+	GStreamer* pStreamer = new GStreamer(cb->sessionId, cb->channels, cb->lang, cb->interim, cb->region, cb->awsAccessKeyId, cb->awsSecretAccessKey, 
 		cb->responseHandler);
 	if (!pStreamer) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "transcribe_thread: Error allocating streamer\n");
@@ -311,7 +334,7 @@ extern "C" {
 
 	// start transcribe on a channel
 	switch_status_t aws_transcribe_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
-          uint32_t samples_per_second, char* lang, int interim, void **ppUserData
+          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, void **ppUserData
 	) {
 		switch_status_t status = SWITCH_STATUS_SUCCESS;
 		switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -323,6 +346,7 @@ extern "C" {
 		const char* awsAccessKeyId = switch_channel_get_variable(channel, "AWS_ACCESS_KEY_ID");
 		const char* awsSecretAccessKey = switch_channel_get_variable(channel, "AWS_SECRET_ACCESS_KEY");
 		const char* awsRegion = switch_channel_get_variable(channel, "AWS_REGION");
+		cb->channels = channels;
 		LanguageCode code = LanguageCodeMapper::GetLanguageCodeForName(lang);
 		if(LanguageCode::NOT_SET == code) {
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid language code %s\n", lang);

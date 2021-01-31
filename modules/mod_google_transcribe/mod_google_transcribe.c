@@ -333,7 +333,7 @@ SWITCH_STANDARD_API(transcribe2_function)
 	return SWITCH_STATUS_SUCCESS;
 }
 
-#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim]"
+#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim|full] [stereo|mono]"
 SWITCH_STANDARD_API(transcribe_function)
 {
 	char *mycmd = NULL, *argv[5] = { 0 };
@@ -362,6 +362,10 @@ SWITCH_STANDARD_API(transcribe_function)
 			} else if (!strcasecmp(argv[1], "start")) {
         char* lang = argv[2];
         int interim = argc > 3 && !strcmp(argv[3], "interim");
+				if (argc > 4 && !strcmp(argv[4], "stereo")) {
+          flags |= SMBF_WRITE_STREAM ;
+          flags |= SMBF_STEREO;
+				}
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
 				status = start_capture(lsession, flags, lang, interim);
 			}
