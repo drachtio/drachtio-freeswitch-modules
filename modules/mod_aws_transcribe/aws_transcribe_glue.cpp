@@ -83,7 +83,7 @@ public:
     m_request.SetLanguageCode(LanguageCodeMapper::GetLanguageCodeForName(lang));
     m_request.SetMediaEncoding(MediaEncoding::pcm);
     m_request.SetEventStreamHandler(m_handler);
-		m_request.SetNumberOfChannels(channels);
+		if (channels > 1) m_request.SetNumberOfChannels(channels);
 
 		const char* var;
 		switch_core_session_t* session = switch_core_session_locate(sessionId);
@@ -202,7 +202,7 @@ public:
 					switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
 					if (psession) {
 
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::got a transcript to send out %p\n", this);
+						//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::got a transcript to send out %p\n", this);
 						bool isFinal = false;
 						std::ostringstream s;
 						s << "[";
