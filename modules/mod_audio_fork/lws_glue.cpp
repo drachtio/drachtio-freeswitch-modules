@@ -56,11 +56,9 @@ namespace {
           cJSON* jsonFile = NULL;
           cJSON* jsonAudio = cJSON_DetachItemFromObject(jsonData, "payload");
           int validAudio = (jsonAudio && NULL != jsonAudio->valuestring);
-          char *format = NULL;
+          char* format = "raw";
           const char* szAudioContentType = cJSON_GetObjectCstr(jsonData, "audioContentType");
-          if (szAudioContentType == NULL) {
-              strcpy(format, "raw");
-          } else{
+          if (szAudioContentType != NULL) {
               format = (char*)szAudioContentType;
           }
           char fileType[6];
