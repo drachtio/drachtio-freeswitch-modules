@@ -56,12 +56,12 @@ namespace {
           cJSON* jsonFile = NULL;
           cJSON* jsonAudio = cJSON_DetachItemFromObject(jsonData, "payload");
           int validAudio = (jsonAudio && NULL != jsonAudio->valuestring);
-          char *format == NULL;
+          char *format = NULL;
           const char* szAudioContentType = cJSON_GetObjectCstr(jsonData, "audioContentType");
           if (szAudioContentType == NULL) {
               strcpy(format, "raw");
           } else{
-              format = szAudioContentType;
+              format = (char*)szAudioContentType;
           }
           char fileType[6];
           int sampleRate = 16000;
@@ -167,7 +167,7 @@ namespace {
         free(jsonString);
       }
       else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) processIncomingMessage - unsupported msg type %s\n", tech_pvt->id, type.c_str());  
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) processIncomingMessage - unsupported msg type %s\n", tech_pvt->id, event.c_str());
       }
       cJSON_Delete(json);
     }
