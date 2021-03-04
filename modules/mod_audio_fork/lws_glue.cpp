@@ -56,14 +56,16 @@ namespace {
           cJSON* jsonFile = NULL;
           cJSON* jsonAudio = cJSON_DetachItemFromObject(jsonData, "payload");
           int validAudio = (jsonAudio && NULL != jsonAudio->valuestring);
-
+          char *format == NULL;
           const char* szAudioContentType = cJSON_GetObjectCstr(jsonData, "audioContentType");
           if (szAudioContentType == NULL) {
-              strcpy(szAudioContentType,"raw")
+              strcpy(format, "raw");
+          } else{
+              format = szAudioContentType;
           }
           char fileType[6];
           int sampleRate = 16000;
-          if (0 == strcmp(szAudioContentType, "raw")) {
+          if (0 == strcmp(format, "raw")) {
             cJSON* jsonSR = cJSON_GetObjectItem(jsonData, "sampleRate");
             sampleRate = jsonSR && jsonSR->valueint ? jsonSR->valueint : 0;
 
@@ -91,12 +93,12 @@ namespace {
                 break;
             }
           }
-          else if (0 == strcmp(szAudioContentType, ".wave")) {
+          else if (0 == strcmp(format, ".wave")) {
             strcpy(fileType, "wave");
           }
           else {
             validAudio = 0;
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - unsupported audioContentType: %s\n", tech_pvt->id, szAudioContentType);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - unsupported audioContentType: %s\n", tech_pvt->id, format);
           }
 
           if (validAudio) {
