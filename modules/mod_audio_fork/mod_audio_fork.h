@@ -4,6 +4,7 @@
 #include <switch.h>
 #include <libwebsockets.h>
 #include <speex/speex_resampler.h>
+#include <switch_json.h>
 
 #include <unistd.h>
 
