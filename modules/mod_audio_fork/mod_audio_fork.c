@@ -252,7 +252,7 @@ SWITCH_STANDARD_API(fork_function)
                 cJSON_AddItemToObject(start, "streamSid", cJSON_CreateString(streamID));
             }
             if(accID){
-                cJSON_AddItemToObject(start, "accountSid", cJSON_CreateString(streamID));
+                cJSON_AddItemToObject(start, "accountSid", cJSON_CreateString(accID));
             }
             if(metadata){
                 custom = cJSON_Parse(metadata);
