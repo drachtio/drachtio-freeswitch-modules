@@ -265,7 +265,6 @@ SWITCH_STANDARD_API(fork_function)
             cJSON_AddItemToObject(mediaFormat, "channel", cJSON_CreateNumber(1));
             cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-mulaw"));
             out = cJSON_Print(obj);
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "initial packet: %s\n", out);
 
             status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, out, "mod_audio_fork");
         }
