@@ -258,6 +258,8 @@ SWITCH_STANDARD_API(fork_function)
                 custom = cJSON_Parse(metadata);
                 cJSON_AddItemToObject(start, "customParameters", custom);
             }
+            cJSON_AddItemToObject(start, "tracks", tracks);
+            cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
             cJSON_AddItemToObject(start, "mediaFormat", mediaFormat);
             cJSON_AddItemToObject(mediaFormat, "sampleRate", cJSON_CreateNumber(sampling));
             cJSON_AddItemToObject(mediaFormat, "channel", cJSON_CreateNumber(1));
