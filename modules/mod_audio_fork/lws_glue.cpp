@@ -32,23 +32,38 @@ namespace {
   static uint32_t playCount = 0;
 
   void processIncomingMessage(private_t* tech_pvt, switch_core_session_t* session, const char* message) {
+//     New json payload
+//      {
+//          "streamSid":"",
+//          "event": "media",
+//          "media": {
+//              "audioContentType": "raw",
+//		        "sampleRate": 8000,
+//		        "payload": "base64 encoded raw audio..",
+//		        "textContent": "Hi there!  How can we help?"
+//           }
+//        }
     std::string msg = message;
-    std::string type;
-    cJSON* json = parse_json(session, msg, type) ;
+    std::string event;
+    switch_input_args_t args = { 0 };
+    cJSON* json = parse_json(session, msg, event) ;
     if (json) {
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - received %s message\n", tech_pvt->id, type.c_str());
-      cJSON* jsonData = cJSON_GetObjectItem(json, "data");
-      if (0 == type.compare("playAudio")) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - received %s message\n", tech_pvt->id, event.c_str());
+      cJSON* jsonData = cJSON_GetObjectItem(json, "media");
+      if (0 == event.compare("media")) {
         if (jsonData) {
           // dont send actual audio bytes in event message
           cJSON* jsonFile = NULL;
-          cJSON* jsonAudio = cJSON_DetachItemFromObject(jsonData, "audioContent");
+          cJSON* jsonAudio = cJSON_DetachItemFromObject(jsonData, "payload");
           int validAudio = (jsonAudio && NULL != jsonAudio->valuestring);
-
+          char* format = "raw";
           const char* szAudioContentType = cJSON_GetObjectCstr(jsonData, "audioContentType");
+          if (szAudioContentType != NULL) {
+              format = (char*)szAudioContentType;
+          }
           char fileType[6];
           int sampleRate = 16000;
-          if (0 == strcmp(szAudioContentType, "raw")) {
+          if (0 == strcmp(format, "raw")) {
             cJSON* jsonSR = cJSON_GetObjectItem(jsonData, "sampleRate");
             sampleRate = jsonSR && jsonSR->valueint ? jsonSR->valueint : 0;
 
@@ -76,12 +91,12 @@ namespace {
                 break;
             }
           }
-          else if (0 == strcmp(szAudioContentType, ".wave")) {
+          else if (0 == strcmp(format, ".wave")) {
             strcpy(fileType, "wave");
           }
           else {
             validAudio = 0;
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - unsupported audioContentType: %s\n", tech_pvt->id, szAudioContentType);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - unsupported audioContentType: %s\n", tech_pvt->id, format);
           }
 
           if (validAudio) {
@@ -103,6 +118,9 @@ namespace {
 
             jsonFile = cJSON_CreateString(szFilePath);
             cJSON_AddItemToObject(jsonData, "file", jsonFile);
+            // Play recieved audio
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "playing File %s \n", szFilePath );
+            switch_ivr_play_file(session, NULL, szFilePath, &args);
           }
 
           char* jsonString = cJSON_PrintUnformatted(jsonData);
@@ -114,40 +132,40 @@ namespace {
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) processIncomingMessage - missing data payload in playAudio request\n", tech_pvt->id); 
         }
       }
-      else if (0 == type.compare("killAudio")) {
+      else if (0 == event.compare("killAudio")) {
         tech_pvt->responseHandler(session, EVENT_KILL_AUDIO, NULL);
 
         // kill any current playback on the channel
         switch_channel_t *channel = switch_core_session_get_channel(session);
         switch_channel_set_flag_value(channel, CF_BREAK, 2);
       }
-      else if (0 == type.compare("transcription")) {
+      else if (0 == event.compare("transcription")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
         tech_pvt->responseHandler(session, EVENT_TRANSCRIPTION, jsonString);
         free(jsonString);        
       }
-      else if (0 == type.compare("transfer")) {
+      else if (0 == event.compare("transfer")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
         tech_pvt->responseHandler(session, EVENT_TRANSFER, jsonString);
         free(jsonString);                
       }
-      else if (0 == type.compare("disconnect")) {
+      else if (0 == event.compare("disconnect")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
         tech_pvt->responseHandler(session, EVENT_DISCONNECT, jsonString);
         free(jsonString);        
       }
-      else if (0 == type.compare("error")) {
+      else if (0 == event.compare("error")) {
         char* jsonString = cJSON_PrintUnformatted(jsonData);
         tech_pvt->responseHandler(session, EVENT_ERROR, jsonString);
         free(jsonString);        
       }
-      else if (0 == type.compare("json")) {
+      else if (0 == event.compare("json")) {
         char* jsonString = cJSON_PrintUnformatted(json);
         tech_pvt->responseHandler(session, EVENT_JSON, jsonString);
         free(jsonString);
       }
       else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) processIncomingMessage - unsupported msg type %s\n", tech_pvt->id, type.c_str());  
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) processIncomingMessage - unsupported msg type %s\n", tech_pvt->id, event.c_str());
       }
       cJSON_Delete(json);
     }

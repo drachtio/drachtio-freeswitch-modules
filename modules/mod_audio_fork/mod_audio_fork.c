@@ -153,10 +153,10 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
   return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume | graceful-shutdown ] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [metadata]"
+#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume | graceful-shutdown ] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [streamID] [accID][metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
-	char *mycmd = NULL, *argv[6] = { 0 };
+	char *mycmd = NULL, *argv[8] = { 0 };
 	int argc = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
 
@@ -203,7 +203,9 @@ SWITCH_STANDARD_API(fork_function)
         int sslFlags;
         int sampling = 8000;
       	switch_media_bug_flag_t flags = SMBF_READ_STREAM ;
-        char *metadata = argc > 5 ? argv[5] : NULL ;
+      	char *streamID = argc > 5 ? argv[5] : NULL ;
+      	char *accID = argc > 6 ? argv[6] : NULL ;
+        char *metadata = argc > 7 ? argv[7] : NULL ;
         if (0 == strcmp(argv[3], "mixed")) {
           flags |= SMBF_WRITE_STREAM ;
         }
@@ -232,7 +234,39 @@ SWITCH_STANDARD_API(fork_function)
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid sample rate: %s\n", argv[4]);					
 				}
         else {
-          status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, metadata, "mod_audio_fork");
+         // create json string
+            char *out;
+            cJSON *obj, *start, *mediaFormat, *custom, *tracks;
+            obj = cJSON_CreateObject();
+            start = cJSON_CreateObject();
+            mediaFormat = cJSON_CreateObject();
+            custom = cJSON_CreateObject();
+            tracks = cJSON_CreateArray();
+            cJSON_AddItemToObject(obj, "event", cJSON_CreateString("start"));
+            cJSON_AddItemToObject(obj, "sequenceNumber", cJSON_CreateNumber(1));
+            cJSON_AddItemToObject(obj, "start", start);
+
+            cJSON_AddItemToObject(start, "callSid", cJSON_CreateString(argv[0]));
+            if(streamID){
+                cJSON_AddItemToObject(obj, "streamSid", cJSON_CreateString(streamID));
+                cJSON_AddItemToObject(start, "streamSid", cJSON_CreateString(streamID));
+            }
+            if(accID){
+                cJSON_AddItemToObject(start, "accountSid", cJSON_CreateString(accID));
+            }
+            if(metadata){
+                custom = cJSON_Parse(metadata);
+                cJSON_AddItemToObject(start, "customParameters", custom);
+            }
+            cJSON_AddItemToObject(start, "tracks", tracks);
+            cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
+            cJSON_AddItemToObject(start, "mediaFormat", mediaFormat);
+            cJSON_AddItemToObject(mediaFormat, "sampleRate", cJSON_CreateNumber(sampling));
+            cJSON_AddItemToObject(mediaFormat, "channel", cJSON_CreateNumber(1));
+            cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-mulaw"));
+            out = cJSON_Print(obj);
+
+            status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, out, "mod_audio_fork");
         }
 			}
       else {
