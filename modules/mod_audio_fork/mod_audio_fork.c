@@ -153,10 +153,10 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
   return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume | graceful-shutdown ] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [streamID] [accID][metadata]"
+#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume | graceful-shutdown ] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [streamID] [accID] [uuid_with_cid] [metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
-	char *mycmd = NULL, *argv[8] = { 0 };
+	char *mycmd = NULL, *argv[9] = { 0 };
 	int argc = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
 
@@ -205,7 +205,8 @@ SWITCH_STANDARD_API(fork_function)
       	switch_media_bug_flag_t flags = SMBF_READ_STREAM ;
       	char *streamID = argc > 5 ? argv[5] : NULL ;
       	char *accID = argc > 6 ? argv[6] : NULL ;
-        char *metadata = argc > 7 ? argv[7] : NULL ;
+      	char *uuidWithCID = argc > 7 ? argv[7]: NULL;
+        char *metadata = argc > 8 ? argv[8] : NULL ;
         if (0 == strcmp(argv[3], "mixed")) {
           flags |= SMBF_WRITE_STREAM ;
         }
@@ -246,13 +247,15 @@ SWITCH_STANDARD_API(fork_function)
             cJSON_AddItemToObject(obj, "sequenceNumber", cJSON_CreateNumber(1));
             cJSON_AddItemToObject(obj, "start", start);
 
-            cJSON_AddItemToObject(start, "callSid", cJSON_CreateString(argv[0]));
             if(streamID){
                 cJSON_AddItemToObject(obj, "streamSid", cJSON_CreateString(streamID));
                 cJSON_AddItemToObject(start, "streamSid", cJSON_CreateString(streamID));
             }
             if(accID){
                 cJSON_AddItemToObject(start, "accountSid", cJSON_CreateString(accID));
+            }
+            if(uuidWithCID){
+                cJSON_AddItemToObject(start, "callSid", cJSON_CreateString(uuidWithCID));
             }
             if(metadata){
                 custom = cJSON_Parse(metadata);
@@ -267,6 +270,8 @@ SWITCH_STANDARD_API(fork_function)
             out = cJSON_Print(obj);
 
             status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, out, "mod_audio_fork");
+
+            cJSON_Delete(obj);
         }
 			}
       else {
