@@ -265,12 +265,18 @@ SWITCH_STANDARD_API(fork_function)
             }
             cJSON_AddItemToObject(start, "tracks", tracks);
             if(track){
-                cJSON_AddItemToArray(tracks, cJSON_CreateString(track));
-                if (0 == strcmp(track, "both")){
+                if (0 == strcmp(track, "both_tracks")){
                     channel = 2;
+                    cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
+                    cJSON_AddItemToArray(tracks, cJSON_CreateString("outbound"));
                 }
-                else{
+                else if (0 == strcmp(track, "outbound_track"){
                     channel = 1;
+                    cJSON_AddItemToArray(tracks, cJSON_CreateString("outbound"));
+                }
+                else {
+                    channel = 1;
+                    cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
                 }
             }
             cJSON_AddItemToObject(start, "mediaFormat", mediaFormat);
