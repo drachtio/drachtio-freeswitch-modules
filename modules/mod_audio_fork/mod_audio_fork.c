@@ -208,6 +208,8 @@ SWITCH_STANDARD_API(fork_function)
       	char *uuidWithCID = argc > 7 ? argv[7]: NULL;
         char *track = argc > 8 ? argv[8] : NULL ;
         char *metadata = argc > 9 ? argv[9] : NULL ;
+        switch_channel_t *channel = switch_core_session_get_channel(lsession);
+
         if (0 == strcmp(argv[3], "mixed")) {
           flags |= SMBF_WRITE_STREAM ;
         }
@@ -237,7 +239,7 @@ SWITCH_STANDARD_API(fork_function)
 				}
         else {
          // create json string
-            int channel = 1;
+            int channelCount = 1;
             char *out;
             cJSON *obj, *start, *mediaFormat, *custom, *tracks;
             obj = cJSON_CreateObject();
@@ -266,7 +268,7 @@ SWITCH_STANDARD_API(fork_function)
             cJSON_AddItemToObject(start, "tracks", tracks);
             if(track){
                 if (0 == strcmp(track, "both_tracks")){
-                    channel = 2;
+                    channelCount = 2;
                     cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
                     cJSON_AddItemToArray(tracks, cJSON_CreateString("outbound"));
                 }
@@ -282,8 +284,22 @@ SWITCH_STANDARD_API(fork_function)
             }
             cJSON_AddItemToObject(start, "mediaFormat", mediaFormat);
             cJSON_AddItemToObject(mediaFormat, "sampleRate", cJSON_CreateNumber(sampling));
-            cJSON_AddItemToObject(mediaFormat, "channel", cJSON_CreateNumber(channel));
-            cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-mulaw"));
+            cJSON_AddItemToObject(mediaFormat, "channel", cJSON_CreateNumber(channelCount));
+            char *codec = switch_channel_get_variable(channel, "read_codec");
+            if(codec){
+                if ((0 == strcasecmp(codec, "PCMU")) || (0 == strcasecmp(codec, "PCMA"))){
+                    cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-pcm"));
+                }
+                else if (0 == strcasecmp(codec, "opus")){
+                    cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-opus"));
+                }
+                else if (0 == strcasecmp(codec, "amr")){
+                    cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-amr"));
+                }
+                else {
+                    cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString(""));
+                }
+            }
             out = cJSON_Print(obj);
 
             status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, out, "mod_audio_fork");
