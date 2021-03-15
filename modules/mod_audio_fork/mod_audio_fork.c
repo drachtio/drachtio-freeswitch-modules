@@ -197,7 +197,7 @@ SWITCH_STANDARD_API(fork_function)
         status = send_text(lsession, argv[2]);
       }
       else if (!strcasecmp(argv[1], "start")) {
-				switch_channel_t *channel = switch_core_session_get_channel(lsession);
+        switch_channel_t *channel = switch_core_session_get_channel(lsession);
         char host[MAX_WS_URL_LEN], path[MAX_PATH_LEN];
         unsigned int port;
         int sslFlags;
@@ -228,15 +228,15 @@ SWITCH_STANDARD_API(fork_function)
         else if (0 == strcmp(argv[4], "8k")) {
           sampling = 8000;
         }
-				else {
+        else {
 					sampling = atoi(argv[4]);
-				}
+        }
         if (!parse_ws_uri(channel, argv[2], &host[0], &path[0], &port, &sslFlags)) {
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid websocket uri: %s\n", argv[2]);
         }
-				else if (sampling % 8000 != 0) {
+        else if (sampling % 8000 != 0) {
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid sample rate: %s\n", argv[4]);					
-				}
+        }
         else {
          // create json string
             int channelCount = 1;
@@ -285,9 +285,7 @@ SWITCH_STANDARD_API(fork_function)
             cJSON_AddItemToObject(start, "mediaFormat", mediaFormat);
             cJSON_AddItemToObject(mediaFormat, "sampleRate", cJSON_CreateNumber(sampling));
             cJSON_AddItemToObject(mediaFormat, "channel", cJSON_CreateNumber(channelCount));
-            if (switch_true(switch_channel_get_variable(channel, "read_codec"))) {
-                codec = (char *)switch_channel_get_variable(channel, "read_codec");
-            }
+            codec = (char *)switch_channel_get_variable(channel, "read_codec");
             if(codec){
                 if ((0 == strcasecmp(codec, "PCMU")) || (0 == strcasecmp(codec, "PCMA"))){
                     cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-pcm"));
