@@ -208,7 +208,7 @@ SWITCH_STANDARD_API(fork_function)
       	char *uuidWithCID = argc > 7 ? argv[7]: NULL;
         char *track = argc > 8 ? argv[8] : NULL ;
         char *metadata = argc > 9 ? argv[9] : NULL ;
-        switch_channel_t *channel = switch_core_session_get_channel(lsession);
+        char *codec = NULL;
 
         if (0 == strcmp(argv[3], "mixed")) {
           flags |= SMBF_WRITE_STREAM ;
@@ -285,7 +285,9 @@ SWITCH_STANDARD_API(fork_function)
             cJSON_AddItemToObject(start, "mediaFormat", mediaFormat);
             cJSON_AddItemToObject(mediaFormat, "sampleRate", cJSON_CreateNumber(sampling));
             cJSON_AddItemToObject(mediaFormat, "channel", cJSON_CreateNumber(channelCount));
-            char *codec = switch_channel_get_variable(channel, "read_codec");
+            if (switch_true(switch_channel_get_variable(channel, "read_codec"))) {
+                codec = (char *)switch_channel_get_variable(channel, "read_codec");
+            }
             if(codec){
                 if ((0 == strcasecmp(codec, "PCMU")) || (0 == strcasecmp(codec, "PCMA"))){
                     cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-pcm"));
