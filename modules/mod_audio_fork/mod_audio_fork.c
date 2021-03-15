@@ -202,7 +202,6 @@ SWITCH_STANDARD_API(fork_function)
         unsigned int port;
         int sslFlags;
         int sampling = 8000;
-        int channel = 1;
       	switch_media_bug_flag_t flags = SMBF_READ_STREAM ;
       	char *streamID = argc > 5 ? argv[5] : NULL ;
       	char *accID = argc > 6 ? argv[6] : NULL ;
@@ -238,6 +237,7 @@ SWITCH_STANDARD_API(fork_function)
 				}
         else {
          // create json string
+            int channel = 1;
             char *out;
             cJSON *obj, *start, *mediaFormat, *custom, *tracks;
             obj = cJSON_CreateObject();
@@ -271,12 +271,13 @@ SWITCH_STANDARD_API(fork_function)
                     cJSON_AddItemToArray(tracks, cJSON_CreateString("outbound"));
                 }
                 else if (0 == strcmp(track, "outbound_track"){
-                    channel = 1;
                     cJSON_AddItemToArray(tracks, cJSON_CreateString("outbound"));
                 }
-                else {
-                    channel = 1;
+                else if (0 == strcmp(track, "inbound_track"){
                     cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
+                }
+                else{
+                    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid track value %s\n", track);
                 }
             }
             cJSON_AddItemToObject(start, "mediaFormat", mediaFormat);
