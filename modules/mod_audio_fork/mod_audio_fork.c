@@ -270,10 +270,10 @@ SWITCH_STANDARD_API(fork_function)
                     cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
                     cJSON_AddItemToArray(tracks, cJSON_CreateString("outbound"));
                 }
-                else if (0 == strcmp(track, "outbound_track"){
+                else if (0 == strcmp(track, "outbound_track")){
                     cJSON_AddItemToArray(tracks, cJSON_CreateString("outbound"));
                 }
-                else if (0 == strcmp(track, "inbound_track"){
+                else if (0 == strcmp(track, "inbound_track")){
                     cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
                 }
                 else{
