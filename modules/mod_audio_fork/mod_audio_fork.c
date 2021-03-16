@@ -15,9 +15,12 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load);
 
 SWITCH_MODULE_DEFINITION(mod_audio_fork, mod_audio_fork_load, mod_audio_fork_shutdown, NULL /*mod_audio_fork_runtime*/);
 
+static switch_status_t send_text(switch_core_session_t *session, char* text);
+
 static void responseHandler(switch_core_session_t* session, const char * eventName, char * json) {
 	switch_event_t *event;
     switch_status_t status = SWITCH_STATUS_FALSE;
+    switch_channel_t *channel = switch_core_session_get_channel(session);
 
 	// send mark event back
 	if (0 == strcmp(eventName, EVENT_MARK)){
@@ -29,7 +32,6 @@ static void responseHandler(switch_core_session_t* session, const char * eventNa
         }
 	}
 
-	switch_channel_t *channel = switch_core_session_get_channel(session);
 	if (json) switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "responseHandler: sending event payload: %s.\n", json);
 	switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
 	switch_channel_event_set_data(channel, event);
