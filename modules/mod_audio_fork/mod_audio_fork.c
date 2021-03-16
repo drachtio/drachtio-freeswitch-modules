@@ -5,6 +5,7 @@
  */
 #include "mod_audio_fork.h"
 #include "lws_glue.h"
+#include <string.h>
 
 //static int mod_running = 0;
 
@@ -16,6 +17,17 @@ SWITCH_MODULE_DEFINITION(mod_audio_fork, mod_audio_fork_load, mod_audio_fork_shu
 
 static void responseHandler(switch_core_session_t* session, const char * eventName, char * json) {
 	switch_event_t *event;
+    switch_status_t status = SWITCH_STATUS_FALSE;
+
+	// send mark event back
+	if (0 == strcmp(eventName, EVENT_MARK)){
+        status = send_text(session, json);
+        if (status == SWITCH_STATUS_SUCCESS) {
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "mark event success payload: %s.\n", json);
+        } else {
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Err sending mark event: %s \n", json);
+        }
+	}
 
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	if (json) switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "responseHandler: sending event payload: %s.\n", json);

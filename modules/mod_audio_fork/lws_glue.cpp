@@ -165,7 +165,9 @@ namespace {
         free(jsonString);
       }
       else if (0 == event.compare("mark")){
-          // mark event
+          char* jsonString = cJSON_PrintUnformatted(json);
+          tech_pvt->responseHandler(session, EVENT_MARK, jsonString);
+          free(jsonString);
       }
       else if (0 == event.compare("clear")){
           // clear event
