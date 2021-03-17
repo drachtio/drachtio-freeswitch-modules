@@ -19,7 +19,7 @@ full-fledged IVR or dialog-type applications.
 The freeswitch module exposes the following API commands:
 
 ```
-uuid_audio_fork <uuid> start <wss-url> <mix-type> <sampling-rate> <streamID> <accID> <uuidWithHash> <track> <metadata>
+uuid_audio_fork <uuid> start <wss-url> <mix-type> <sampling-rate> <streamID> <accID> <callSid> <track> <metadata>
 ```
 
 Attaches media bug and starts streaming audio stream to the back-end server. Audio is streamed in linear 16 format (
@@ -36,7 +36,7 @@ Attaches media bug and starts streaming audio stream to the back-end server. Aud
     - "16k" = 16000 Hz sample rate will be generated
 - `streamId` - unique streaming id
 - `accID` - accID of the call leg
-- `uuidWithHash` - custom uuid with CID
+- `callSid` - custom uuid with CID
 - `track` - call track to stream (`experimental`)
     - "both_tracks" = both inbound and outbound track
     - "inbound_track" = only inbound track

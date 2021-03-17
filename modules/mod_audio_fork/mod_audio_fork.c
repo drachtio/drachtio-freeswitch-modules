@@ -167,7 +167,7 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
   return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume | graceful-shutdown ] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [streamID] [accID] [uuidWithHash] [track] [metadata]"
+#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume | graceful-shutdown ] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [streamID] [accID] [callSid] [track] [metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
 	char *mycmd = NULL, *argv[10] = { 0 };
@@ -219,7 +219,7 @@ SWITCH_STANDARD_API(fork_function)
       	switch_media_bug_flag_t flags = SMBF_READ_STREAM ;
       	char *streamID = argc > 5 ? argv[5] : NULL ;
       	char *accID = argc > 6 ? argv[6] : NULL ;
-      	char *uuidWithCID = argc > 7 ? argv[7]: NULL;
+      	char *callSid = argc > 7 ? argv[7]: NULL;
         char *track = argc > 8 ? argv[8] : NULL ;
         char *metadata = argc > 9 ? argv[9] : NULL ;
         char *codec = NULL;
@@ -272,8 +272,8 @@ SWITCH_STANDARD_API(fork_function)
             if(accID){
                 cJSON_AddItemToObject(start, "accountSid", cJSON_CreateString(accID));
             }
-            if(uuidWithCID){
-                cJSON_AddItemToObject(start, "callSid", cJSON_CreateString(uuidWithCID));
+            if(callSid){
+                cJSON_AddItemToObject(start, "callSid", cJSON_CreateString(callSid));
             }
             if(metadata){
                 custom = cJSON_Parse(metadata);
