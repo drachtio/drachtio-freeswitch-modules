@@ -5,6 +5,7 @@
  */
 #include "mod_audio_fork.h"
 #include "lws_glue.h"
+#include <string.h>
 
 //static int mod_running = 0;
 
@@ -14,10 +15,23 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load);
 
 SWITCH_MODULE_DEFINITION(mod_audio_fork, mod_audio_fork_load, mod_audio_fork_shutdown, NULL /*mod_audio_fork_runtime*/);
 
+static switch_status_t send_text(switch_core_session_t *session, char* text);
+
 static void responseHandler(switch_core_session_t* session, const char * eventName, char * json) {
 	switch_event_t *event;
+    switch_status_t status = SWITCH_STATUS_FALSE;
+    switch_channel_t *channel = switch_core_session_get_channel(session);
 
-	switch_channel_t *channel = switch_core_session_get_channel(session);
+	// send mark event back
+	if (0 == strcmp(eventName, EVENT_MARK)){
+        status = send_text(session, json);
+        if (status == SWITCH_STATUS_SUCCESS) {
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "mark event success payload: %s.\n", json);
+        } else {
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Err sending mark event: %s \n", json);
+        }
+	}
+
 	if (json) switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "responseHandler: sending event payload: %s.\n", json);
 	switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
 	switch_channel_event_set_data(channel, event);
@@ -153,10 +167,10 @@ static switch_status_t send_text(switch_core_session_t *session, char* text) {
   return status;
 }
 
-#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume | graceful-shutdown ] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [streamID] [accID][metadata]"
+#define FORK_API_SYNTAX "<uuid> [start | stop | send_text | pause | resume | graceful-shutdown ] [wss-url | path] [mono | mixed | stereo] [8000 | 16000 | 24000 | 32000 | 64000] [streamID] [accID] [callSid] [track] [metadata]"
 SWITCH_STANDARD_API(fork_function)
 {
-	char *mycmd = NULL, *argv[8] = { 0 };
+	char *mycmd = NULL, *argv[10] = { 0 };
 	int argc = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
 
@@ -197,7 +211,7 @@ SWITCH_STANDARD_API(fork_function)
         status = send_text(lsession, argv[2]);
       }
       else if (!strcasecmp(argv[1], "start")) {
-				switch_channel_t *channel = switch_core_session_get_channel(lsession);
+        switch_channel_t *channel = switch_core_session_get_channel(lsession);
         char host[MAX_WS_URL_LEN], path[MAX_PATH_LEN];
         unsigned int port;
         int sslFlags;
@@ -205,7 +219,11 @@ SWITCH_STANDARD_API(fork_function)
       	switch_media_bug_flag_t flags = SMBF_READ_STREAM ;
       	char *streamID = argc > 5 ? argv[5] : NULL ;
       	char *accID = argc > 6 ? argv[6] : NULL ;
-        char *metadata = argc > 7 ? argv[7] : NULL ;
+      	char *callSid = argc > 7 ? argv[7]: NULL;
+        char *track = argc > 8 ? argv[8] : NULL ;
+        char *metadata = argc > 9 ? argv[9] : NULL ;
+        char *codec = NULL;
+
         if (0 == strcmp(argv[3], "mixed")) {
           flags |= SMBF_WRITE_STREAM ;
         }
@@ -224,17 +242,18 @@ SWITCH_STANDARD_API(fork_function)
         else if (0 == strcmp(argv[4], "8k")) {
           sampling = 8000;
         }
-				else {
+        else {
 					sampling = atoi(argv[4]);
-				}
+        }
         if (!parse_ws_uri(channel, argv[2], &host[0], &path[0], &port, &sslFlags)) {
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid websocket uri: %s\n", argv[2]);
         }
-				else if (sampling % 8000 != 0) {
+        else if (sampling % 8000 != 0) {
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid sample rate: %s\n", argv[4]);					
-				}
+        }
         else {
          // create json string
+            int channelCount = 1;
             char *out;
             cJSON *obj, *start, *mediaFormat, *custom, *tracks;
             obj = cJSON_CreateObject();
@@ -246,7 +265,6 @@ SWITCH_STANDARD_API(fork_function)
             cJSON_AddItemToObject(obj, "sequenceNumber", cJSON_CreateNumber(1));
             cJSON_AddItemToObject(obj, "start", start);
 
-            cJSON_AddItemToObject(start, "callSid", cJSON_CreateString(argv[0]));
             if(streamID){
                 cJSON_AddItemToObject(obj, "streamSid", cJSON_CreateString(streamID));
                 cJSON_AddItemToObject(start, "streamSid", cJSON_CreateString(streamID));
@@ -254,19 +272,53 @@ SWITCH_STANDARD_API(fork_function)
             if(accID){
                 cJSON_AddItemToObject(start, "accountSid", cJSON_CreateString(accID));
             }
+            if(callSid){
+                cJSON_AddItemToObject(start, "callSid", cJSON_CreateString(callSid));
+            }
             if(metadata){
                 custom = cJSON_Parse(metadata);
                 cJSON_AddItemToObject(start, "customParameters", custom);
             }
             cJSON_AddItemToObject(start, "tracks", tracks);
-            cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
+            if(track){
+                if (0 == strcmp(track, "both_tracks")){
+                    channelCount = 2;
+                    cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
+                    cJSON_AddItemToArray(tracks, cJSON_CreateString("outbound"));
+                }
+                else if (0 == strcmp(track, "outbound_track")){
+                    cJSON_AddItemToArray(tracks, cJSON_CreateString("outbound"));
+                }
+                else if (0 == strcmp(track, "inbound_track")){
+                    cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
+                }
+                else{
+                    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid track value %s\n", track);
+                }
+            }
             cJSON_AddItemToObject(start, "mediaFormat", mediaFormat);
             cJSON_AddItemToObject(mediaFormat, "sampleRate", cJSON_CreateNumber(sampling));
-            cJSON_AddItemToObject(mediaFormat, "channel", cJSON_CreateNumber(1));
-            cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-mulaw"));
+            cJSON_AddItemToObject(mediaFormat, "channel", cJSON_CreateNumber(channelCount));
+            codec = (char *)switch_channel_get_variable(channel, "read_codec");
+            if(codec){
+                if ((0 == strcasecmp(codec, "PCMU")) || (0 == strcasecmp(codec, "PCMA"))){
+                    cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-pcm"));
+                }
+                else if (0 == strcasecmp(codec, "opus")){
+                    cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-opus"));
+                }
+                else if (0 == strcasecmp(codec, "amr")){
+                    cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString("audio/x-amr"));
+                }
+                else {
+                    cJSON_AddItemToObject(mediaFormat, "encoding", cJSON_CreateString(""));
+                }
+            }
             out = cJSON_Print(obj);
 
             status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, out, "mod_audio_fork");
+
+            cJSON_Delete(obj);
         }
 			}
       else {

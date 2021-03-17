@@ -164,6 +164,14 @@ namespace {
         tech_pvt->responseHandler(session, EVENT_JSON, jsonString);
         free(jsonString);
       }
+      else if (0 == event.compare("mark")){
+          char* jsonString = cJSON_PrintUnformatted(json);
+          tech_pvt->responseHandler(session, EVENT_MARK, jsonString);
+          free(jsonString);
+      }
+      else if (0 == event.compare("clear")){
+          // clear event
+      }
       else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "(%u) processIncomingMessage - unsupported msg type %s\n", tech_pvt->id, event.c_str());
       }
