@@ -117,6 +117,7 @@ inline std::string base64_encode(unsigned char const * input, size_t len) {
  * @return A base64 encoded string representing input
  */
 inline std::string base64_encode(std::string const & input) {
+inline std::string base64_encode(std::string const & input) {
     return base64_encode(
         reinterpret_cast<const unsigned char *>(input.data()),
         input.size()

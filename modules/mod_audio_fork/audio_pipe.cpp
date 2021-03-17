@@ -212,7 +212,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
               media = cJSON_CreateObject();
               cJSON_AddItemToObject(obj, "event", cJSON_CreateString("media"));
               cJSON_AddItemToObject(obj, "media", media);
-              std::string audioStr = base64_encode((unsigned char*) ap->m_audio_buffer, ap->m_audio_buffer_write_offset - LWS_PRE);
+              std::string audioStr = drachtio::base64_encode((unsigned char*) ap->m_audio_buffer, ap->m_audio_buffer_write_offset - LWS_PRE);
               cJSON_AddItemToObject(media, "payload", cJSON_CreateString(audioStr.c_str()));
               out = cJSON_PrintUnformatted(obj);
               std::string jsonData(out);
