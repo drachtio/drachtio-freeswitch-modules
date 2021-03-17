@@ -219,7 +219,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
               uint8_t buf[jsonData.length() + LWS_PRE];
               memcpy(buf + LWS_PRE, jsonData.c_str(), jsonData.length());
               int datalen = jsonData.length();
-              int sent = lws_write(wsi, buf + LWS_PRE, n, LWS_WRITE_TEXT);
+              int sent = lws_write(wsi, buf + LWS_PRE, datalen, LWS_WRITE_TEXT);
               if (sent < datalen) {
                lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_WRITEABLE %s attemped to send %lu only sent %d wsi %p..\n",
                 ap->m_uuid.c_str(), datalen, sent, wsi); 
