@@ -257,6 +257,7 @@ SWITCH_STANDARD_API(fork_function)
          // create json string
             int channelCount = 1;
             char *out;
+            char *trackValue = "inbound";
             cJSON *obj, *start, *mediaFormat, *custom, *tracks;
             obj = cJSON_CreateObject();
             start = cJSON_CreateObject();
@@ -266,7 +267,6 @@ SWITCH_STANDARD_API(fork_function)
             cJSON_AddItemToObject(obj, "event", cJSON_CreateString("start"));
             cJSON_AddItemToObject(obj, "sequenceNumber", cJSON_CreateNumber(1));
             cJSON_AddItemToObject(obj, "start", start);
-            char *trackValue = "inbound";
 
             if(streamID){
                 cJSON_AddItemToObject(obj, "streamSid", cJSON_CreateString(streamID));

@@ -230,6 +230,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
               }
               cJSON_Delete(obj);
               ap->sequenceNumber++;
+              ap->mediaChunk++;
             ap->m_audio_buffer_write_offset = LWS_PRE;
           }
         }
