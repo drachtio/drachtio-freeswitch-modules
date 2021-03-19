@@ -85,6 +85,11 @@ public:
   AudioPipe(const AudioPipe&) = delete;
   void operator=(const AudioPipe&) = delete;
 
+  std::string streamSid;
+  std::string track;
+  int sequenceNumber = 0;
+  int mediaChunk = 0;
+
 private:
 
   static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len); 

@@ -73,7 +73,9 @@ static switch_status_t start_capture(switch_core_session_t *session,
         char* path,
         int sampling,
         int sslFlags,
-	      char* metadata, 
+        char* streamSid,
+        char* trackValue,
+        char* metadata,
         const char* base)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -102,7 +104,7 @@ static switch_status_t start_capture(switch_core_session_t *session,
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "calling fork_session_init.\n");
 	if (SWITCH_STATUS_FALSE == fork_session_init(session, responseHandler, read_codec->implementation->actual_samples_per_second, 
-		host, port, path, sampling, sslFlags, channels, metadata, &pUserData)) {
+		host, port, path, sampling, sslFlags, channels, streamSid, trackValue, metadata, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error initializing mod_audio_fork session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
@@ -255,6 +257,7 @@ SWITCH_STANDARD_API(fork_function)
          // create json string
             int channelCount = 1;
             char *out;
+            char *trackValue = "inbound";
             cJSON *obj, *start, *mediaFormat, *custom, *tracks;
             obj = cJSON_CreateObject();
             start = cJSON_CreateObject();
@@ -288,6 +291,7 @@ SWITCH_STANDARD_API(fork_function)
                 }
                 else if (0 == strcmp(track, "outbound_track")){
                     cJSON_AddItemToArray(tracks, cJSON_CreateString("outbound"));
+                    trackValue = "outbound";
                 }
                 else if (0 == strcmp(track, "inbound_track")){
                     cJSON_AddItemToArray(tracks, cJSON_CreateString("inbound"));
@@ -316,7 +320,7 @@ SWITCH_STANDARD_API(fork_function)
             }
             out = cJSON_Print(obj);
 
-            status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, out, "mod_audio_fork");
+            status = start_capture(lsession, flags, host, port, path, sampling, sslFlags, streamID , trackValue, out, "mod_audio_fork");
 
             cJSON_Delete(obj);
         }
