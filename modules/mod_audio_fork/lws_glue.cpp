@@ -419,6 +419,7 @@ extern "C" {
               int sslFlags,
               int channels,
               char* streamSid,
+              char* trackValue,
               char* metadata, 
               void **ppUserData)
   {    	
@@ -439,6 +440,7 @@ extern "C" {
 
     AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
     pAudioPipe->streamSid = streamSid;
+    pAudioPipe->track = trackValue;
     pAudioPipe->connect();
     return SWITCH_STATUS_SUCCESS;
   }
