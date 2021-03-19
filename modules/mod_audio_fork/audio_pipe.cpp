@@ -188,7 +188,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
             if (m < n) {
               return -1;
             }
-
+            ap->sequenceNumber++;
             // there may be audio data, but only one write per writeable event
             // get it next time
             lws_callback_on_writable(wsi);
@@ -212,6 +212,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
               media = cJSON_CreateObject();
               cJSON_AddItemToObject(obj, "event", cJSON_CreateString("media"));
               cJSON_AddItemToObject(obj, "streamSid", cJSON_CreateString(ap->streamSid.c_str()));
+              cJSON_AddItemToObject(obj, "sequenceNumber", cJSON_CreateNumber(ap->sequenceNumber));
               cJSON_AddItemToObject(obj, "media", media);
               std::string audioStr = drachtio::base64_encode((unsigned char*) ap->m_audio_buffer, ap->m_audio_buffer_write_offset - LWS_PRE);
               cJSON_AddItemToObject(media, "payload", cJSON_CreateString(audioStr.c_str()));
@@ -226,6 +227,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
                 ap->m_uuid.c_str(), datalen, sent, wsi); 
               }
               cJSON_Delete(obj);
+              ap->sequenceNumber++;
             ap->m_audio_buffer_write_offset = LWS_PRE;
           }
         }
