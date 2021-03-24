@@ -32,20 +32,8 @@ namespace {
   static uint32_t playCount = 0;
 
   void processIncomingMessage(private_t* tech_pvt, switch_core_session_t* session, const char* message) {
-//     New json payload
-//      {
-//          "streamSid":"",
-//          "event": "media",
-//          "media": {
-//              "audioContentType": "raw",
-//		        "sampleRate": 8000,
-//		        "payload": "base64 encoded raw audio..",
-//		        "textContent": "Hi there!  How can we help?"
-//           }
-//        }
     std::string msg = message;
     std::string event;
-    switch_input_args_t args = { 0 };
     cJSON* json = parse_json(session, msg, event) ;
     if (json) {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - received %s message\n", tech_pvt->id, event.c_str());
@@ -120,7 +108,7 @@ namespace {
             cJSON_AddItemToObject(jsonData, "file", jsonFile);
             // Play recieved audio
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "playing File %s \n", szFilePath );
-            switch_ivr_play_file(session, NULL, szFilePath, &args);
+            switch_core_session_execute_application_async(session, "playback", szFilePath);
           }
 
           char* jsonString = cJSON_PrintUnformatted(jsonData);
