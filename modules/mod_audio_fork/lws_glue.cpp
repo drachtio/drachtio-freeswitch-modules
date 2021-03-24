@@ -34,7 +34,6 @@ namespace {
   void processIncomingMessage(private_t* tech_pvt, switch_core_session_t* session, const char* message) {
     std::string msg = message;
     std::string event;
-    switch_input_args_t args = { 0 };
     cJSON* json = parse_json(session, msg, event) ;
     if (json) {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - received %s message\n", tech_pvt->id, event.c_str());
