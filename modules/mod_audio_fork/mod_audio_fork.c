@@ -24,6 +24,7 @@ static void responseHandler(switch_core_session_t* session, const char * eventNa
 
 	// send mark event back
 	if (0 == strcmp(eventName, EVENT_MARK)){
+	    fork_session_pauseresume(session, 1);
         status = send_text(session, json);
         if (status == SWITCH_STATUS_SUCCESS) {
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "mark event success payload: %s.\n", json);
