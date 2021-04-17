@@ -370,7 +370,6 @@ bool AudioPipe::lws_service_thread(unsigned int nServiceThread) {
   info.ka_interval = 5;                 // time between ka's
   info.timeout_secs = 10;                // doc says timeout for "various processes involving network roundtrips"
   info.keepalive_timeout = 5;           // seconds to allow remote client to hold on to an idle HTTP/1.1 connection 
-  info.ws_ping_pong_interval = 20;      // interval in seconds between sending PINGs on idle websocket connections
   info.timeout_secs_ah_idle = 10;       // secs to allow a client to hold an ah without using it
 
   lwsl_notice("AudioPipe::lws_service_thread creating context in service thread %d.\n", nServiceThread);
