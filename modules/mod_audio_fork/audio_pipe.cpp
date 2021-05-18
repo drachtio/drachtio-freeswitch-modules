@@ -7,6 +7,9 @@
 namespace {
   static const char* basicAuthUser = std::getenv("MOD_AUDIO_FORK_HTTP_AUTH_USER");
   static const char* basicAuthPassword = std::getenv("MOD_AUDIO_FORK_HTTP_AUTH_PASSWORD");
+
+  static const char *requestedTcpKeepaliveSecs = std::getenv("MOD_AUDIO_FORK_TCP_KEEPALIVE_SECS");
+  static int nTcpKeepaliveSecs = requestedTcpKeepaliveSecs ? ::atoi(requestedTcpKeepaliveSecs) : 55;
 }
 
 // remove once we update to lws with this helper
@@ -365,7 +368,7 @@ bool AudioPipe::lws_service_thread(unsigned int nServiceThread) {
   info.protocols = protocols;
   info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 
-  info.ka_time = 60;                    // tcp keep-alive timer
+  info.ka_time = nTcpKeepaliveSecs;                    // tcp keep-alive timer
   info.ka_probes = 4;                   // number of times to try ka before closing connection
   info.ka_interval = 5;                 // time between ka's
   info.timeout_secs = 10;                // doc says timeout for "various processes involving network roundtrips"
