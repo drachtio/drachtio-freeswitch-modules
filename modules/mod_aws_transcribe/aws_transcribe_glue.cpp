@@ -105,6 +105,12 @@ public:
 			m_request.SetVocabularyFilterMethod(VocabularyFilterMethodMapper::GetVocabularyFilterMethodForName(var));
 		}
 
+		// NB: this was added in AWS SDK 1.9
+		if (var = switch_channel_get_variable(channel, "AWS_ENABLE_PARTIAL_RESULTS_STABILITY")) {
+			m_request.SetEnablePartialResultsStabilization(true);
+			m_request.SetPartialResultsStability(PartialResultsStabilityMapper::GetPartialResultsStabilityForName(var));
+		}
+
     auto OnStreamReady = [this](Model::AudioStream& stream)
     {
 			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
