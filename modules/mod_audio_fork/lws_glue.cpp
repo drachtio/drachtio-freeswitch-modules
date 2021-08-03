@@ -76,8 +76,8 @@ namespace {
                 break;
             }
           }
-          else if (0 == strcmp(szAudioContentType, ".wave")) {
-            strcpy(fileType, "wave");
+          else if (0 == strcmp(szAudioContentType, "wave") || 0 == strcmp(szAudioContentType, "wav")) {
+            strcpy(fileType, ".wav");
           }
           else {
             validAudio = 0;
