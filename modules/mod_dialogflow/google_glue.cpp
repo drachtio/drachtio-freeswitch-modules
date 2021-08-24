@@ -7,6 +7,8 @@
 #include <mutex>
 #include <condition_variable>
 
+#include <regex>
+
 #include <fstream>
 #include <string>
 #include <sstream>
@@ -90,23 +92,69 @@ static  void parseEventParams(Struct* grpcParams, cJSON* json) {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "parseEventParams: added %d event params\n", map->size());
 }
 
+void tokenize(std::string const &str, const char delim, std::vector<std::string> &out) {
+    size_t start = 0;
+    size_t end = 0;
+		bool finished = false;
+		do {
+			end = str.find(delim, start);
+			if (end == std::string::npos) {
+				finished = true;
+				out.push_back(str.substr(start));
+			}
+			else {
+				out.push_back(str.substr(start, end - start));
+				start = ++end;
+			}
+		} while (!finished);
+}
+
 class GStreamer {
 public:
 	GStreamer(switch_core_session_t *session, const char* lang, char* projectId, char* event, char* text) : 
-	m_lang(lang), m_projectId(projectId), m_sessionId(switch_core_session_get_uuid(session)), m_finished(false), m_packets(0)
-	{
+	m_lang(lang), m_sessionId(switch_core_session_get_uuid(session)), 
+	m_finished(false), m_packets(0) {
 		const char* var;
 		switch_channel_t* channel = switch_core_session_get_channel(session);
+		std::vector<std::string> tokens;
+		const char delim = ':';
+		tokenize(projectId, delim, tokens);
+		int idx = 0;
+		for (auto &s: tokens) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer: token %d: '%s'\n", idx, s.c_str());
+			if (0 == idx) m_projectId = s;
+			else if (1 == idx && s.length() > 0) m_environment = s;
+			else if (2 == idx && s.length() > 0) m_regionId = s;
+			idx++;
+		}
+
+		std::string endpoint = "dialogflow.googleapis.com";
+		if (!m_regionId.empty()) {
+			endpoint = m_regionId;
+			endpoint.append("-dialogflow.googleapis.com");
+		}
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer dialogflow endpoint is %s\n", endpoint.c_str());		
 
 		if (var = switch_channel_get_variable(channel, "GOOGLE_APPLICATION_CREDENTIALS")) {
-			auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
-			auto callCreds = grpc::ServiceAccountJWTAccessCredentials(var);
-			auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
-			m_channel = grpc::CreateChannel("dialogflow.googleapis.com", creds);
+			if (!m_regionId.empty()) {
+				std::vector<grpc::string> scopes{"https://www.googleapis.com/auth/cloud-platform"};
+				auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
+				//auto callCreds = grpc::ExternalAccountCredentials(var, scopes);
+				auto callCreds = grpc::ServiceAccountJWTAccessCredentials(var, INT64_MAX);
+				auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
+				m_channel = grpc::CreateChannel(endpoint, creds);
+			}
+			else {
+				auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
+				auto callCreds = grpc::ServiceAccountJWTAccessCredentials(var, INT64_MAX);
+				auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
+				m_channel = grpc::CreateChannel(endpoint, creds);
+			}
 		}
 		else {
 			auto creds = grpc::GoogleDefaultCredentials();
-			m_channel = grpc::CreateChannel("dialogflow.googleapis.com", creds);
+			m_channel = grpc::CreateChannel(endpoint, creds);
 		}
 		startStream(session, event, text);
 	}
@@ -117,22 +165,27 @@ public:
 
 	void startStream(switch_core_session_t *session, const char* event, const char* text) {
 		char szSession[256];
-		std::string project;
-		std::string environment;
 
 		m_request = std::make_shared<StreamingDetectIntentRequest>();
 		m_context= std::make_shared<grpc::ClientContext>();
 		m_stub = Sessions::NewStub(m_channel);
 
 		size_t pos = 0;
-		if ((pos = m_projectId.find(":")) != std::string::npos) {
-			project = m_projectId.substr(0, pos);
-			environment = m_projectId.substr(pos + 1);
+		if (m_environment.empty() && m_regionId.empty()) {
+			snprintf(szSession, 256, "projects/%s/agent/sessions/%s", m_projectId.c_str(), m_sessionId.c_str());
+		}
+		else if (m_environment.empty() && !m_regionId.empty()) {
+			snprintf(szSession, 256, "projects/%s/locations/%s/agent/sessions/%s", 
+				m_projectId.c_str(), m_regionId.c_str(), m_sessionId.c_str());
+		}
+		else if  (!m_environment.empty() && m_regionId.empty()) {
 			snprintf(szSession, 256, "projects/%s/agent/environments/%s/users/-/sessions/%s", 
-				project.c_str(), environment.c_str(), m_sessionId.c_str());
+				m_projectId.c_str(), m_environment.c_str(), m_sessionId.c_str());
 		}
 		else {
-			snprintf(szSession, 256, "projects/%s/agent/sessions/%s", m_projectId.c_str(), m_sessionId.c_str());
+			snprintf(szSession, 256, "projects/%s/locations/%s/agent/environments/%s/users/-/sessions/%s", 
+				m_projectId.c_str(), m_regionId.c_str(), m_environment.c_str(), m_sessionId.c_str());
+
 		}
 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::startStream session %s, event %s, text %s %p\n", szSession, event, text, this);
@@ -215,6 +268,8 @@ private:
 	std::shared_ptr<StreamingDetectIntentRequest> m_request;
 	std::string m_lang;
 	std::string m_projectId;
+	std::string m_environment;
+	std::string m_regionId;
 	bool m_finished;
 	uint32_t m_packets;
 };
