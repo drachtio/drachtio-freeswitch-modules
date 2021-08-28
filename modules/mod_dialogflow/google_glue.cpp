@@ -112,7 +112,7 @@ void tokenize(std::string const &str, const char delim, std::vector<std::string>
 class GStreamer {
 public:
 	GStreamer(switch_core_session_t *session, const char* lang, char* projectId, char* event, char* text) : 
-	m_lang(lang), m_sessionId(switch_core_session_get_uuid(session)), 
+	m_lang(lang), m_sessionId(switch_core_session_get_uuid(session)), m_environment("draft"), m_regionId("us"),
 	m_finished(false), m_packets(0) {
 		const char* var;
 		switch_channel_t* channel = switch_core_session_get_channel(session);
@@ -129,28 +129,21 @@ public:
 		}
 
 		std::string endpoint = "dialogflow.googleapis.com";
-		if (!m_regionId.empty()) {
+		if (0 != m_regionId.compare("us")) {
 			endpoint = m_regionId;
-			endpoint.append("-dialogflow.googleapis.com");
+			endpoint.append("-dialogflow.googleapis.com:443");
 		}
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer dialogflow endpoint is %s\n", endpoint.c_str());		
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
+			"GStreamer dialogflow endpoint is %s, region is %s, project is %s, environment is %s\n", 
+			endpoint.c_str(), m_regionId.c_str(), m_projectId.c_str(), m_environment.c_str());		
 
 		if (var = switch_channel_get_variable(channel, "GOOGLE_APPLICATION_CREDENTIALS")) {
-			if (!m_regionId.empty()) {
-				std::vector<grpc::string> scopes{"https://www.googleapis.com/auth/cloud-platform"};
-				auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
-				//auto callCreds = grpc::ExternalAccountCredentials(var, scopes);
 				auto callCreds = grpc::ServiceAccountJWTAccessCredentials(var, INT64_MAX);
+				auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
 				auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
 				m_channel = grpc::CreateChannel(endpoint, creds);
-			}
-			else {
-				auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
-				auto callCreds = grpc::ServiceAccountJWTAccessCredentials(var, INT64_MAX);
-				auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
-				m_channel = grpc::CreateChannel(endpoint, creds);
-			}
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer json credentials are %s\n", var); 
 		}
 		else {
 			auto creds = grpc::GoogleDefaultCredentials();
@@ -170,6 +163,7 @@ public:
 		m_context= std::make_shared<grpc::ClientContext>();
 		m_stub = Sessions::NewStub(m_channel);
 
+/*
 		size_t pos = 0;
 		if (m_environment.empty() && m_regionId.empty()) {
 			snprintf(szSession, 256, "projects/%s/agent/sessions/%s", m_projectId.c_str(), m_sessionId.c_str());
@@ -187,8 +181,11 @@ public:
 				m_projectId.c_str(), m_regionId.c_str(), m_environment.c_str(), m_sessionId.c_str());
 
 		}
+		*/
+		snprintf(szSession, 256, "projects/%s/locations/%s/agent/environments/%s/users/-/sessions/%s", 
+				m_projectId.c_str(), m_regionId.c_str(), m_environment.c_str(), m_sessionId.c_str());
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::startStream session %s, event %s, text %s %p\n", szSession, event, text, this);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream session %s, event %s, text %s %p\n", szSession, event, text, this);
 
 		m_request->set_session(szSession);
 		m_request->set_single_utterance(true);
