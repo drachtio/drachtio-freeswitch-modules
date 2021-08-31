@@ -163,32 +163,12 @@ public:
 		m_context= std::make_shared<grpc::ClientContext>();
 		m_stub = Sessions::NewStub(m_channel);
 
-/*
-		size_t pos = 0;
-		if (m_environment.empty() && m_regionId.empty()) {
-			snprintf(szSession, 256, "projects/%s/agent/sessions/%s", m_projectId.c_str(), m_sessionId.c_str());
-		}
-		else if (m_environment.empty() && !m_regionId.empty()) {
-			snprintf(szSession, 256, "projects/%s/locations/%s/agent/sessions/%s", 
-				m_projectId.c_str(), m_regionId.c_str(), m_sessionId.c_str());
-		}
-		else if  (!m_environment.empty() && m_regionId.empty()) {
-			snprintf(szSession, 256, "projects/%s/agent/environments/%s/users/-/sessions/%s", 
-				m_projectId.c_str(), m_environment.c_str(), m_sessionId.c_str());
-		}
-		else {
-			snprintf(szSession, 256, "projects/%s/locations/%s/agent/environments/%s/users/-/sessions/%s", 
-				m_projectId.c_str(), m_regionId.c_str(), m_environment.c_str(), m_sessionId.c_str());
-
-		}
-		*/
 		snprintf(szSession, 256, "projects/%s/locations/%s/agent/environments/%s/users/-/sessions/%s", 
 				m_projectId.c_str(), m_regionId.c_str(), m_environment.c_str(), m_sessionId.c_str());
 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream session %s, event %s, text %s %p\n", szSession, event, text, this);
 
 		m_request->set_session(szSession);
-		m_request->set_single_utterance(true);
 		auto* queryInput = m_request->mutable_query_input();
 		if (event) {
 			auto* eventInput = queryInput->mutable_event();
@@ -217,6 +197,7 @@ public:
 			audio_config->set_sample_rate_hertz(16000);
 			audio_config->set_audio_encoding(AudioEncoding::AUDIO_ENCODING_LINEAR_16);
 			audio_config->set_language_code(m_lang.c_str());
+			audio_config->set_single_utterance(true);
 		}
 
   	m_streamer = m_stub->StreamingDetectIntent(m_context.get());
