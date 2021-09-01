@@ -13,19 +13,40 @@ This allows the application whether to decide to play the returned audio clip (v
 ### Commands
 The freeswitch module exposes the following API commands:
 
+#### dialogflow_start
 ```
 dialogflow_start <uuid> <project-id> <lang-code> [<event>]
 ```
 Attaches media bug to channel and performs streaming recognize request.
 - `uuid` - unique identifier of Freeswitch channel
-- `project-id` - the identifier of the dialogflow project to execute.  Note: to specify a [dialogflow environment](https://cloud.google.com/dialogflow/es/docs/agents-versions) enter the value as `project-id:environment`.
+- `project-id` - the identifier of the dialogflow project to execute, which may optionally include a dialogflow environment and a region (see below).
 - `lang-code` - a valid dialogflow [language tag](https://dialogflow.com/docs/reference/language) to use for speech recognition
 - `event` - name of an initial event to send to dialogflow; e.g. to trigger an initial prompt
 
+When executing a dialogflow project, the environment and region will default to 'draft' and 'us', respectively.  
+
+To specify both an environment and a region, provide a value for project-id in the dialogflow_start command as follows:
+```
+dialogflow-project-id:environment:region, i.e myproject:production:eu-west1
+```
+To specify environment and default to the global region:
+```
+dialogflow-project-id:environment, i.e myproject:production
+```
+To specify a region and default environment:
+```
+dialogflow-project-id::region, i.e myproject::eu-west1
+```
+To simply use the defaults for both environment and region:
+```
+dialogflow-project-id, i.e myproject
+```
+
+#### dialogflow_stop
 ```
 dialogflow_stop <uuid> 
 ```
-Stop dialogflow on the channel.
+Stops dialogflow on the channel.
 
 ### Events
 * `dialogflow::intent` - a dialogflow [intent](https://dialogflow.com/docs/intents) has been detected.
