@@ -370,7 +370,12 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_audio_fork_load)
     switch_event_reserve_subclass(EVENT_PLAY_AUDIO) != SWITCH_STATUS_SUCCESS ||
     switch_event_reserve_subclass(EVENT_KILL_AUDIO) != SWITCH_STATUS_SUCCESS ||
     switch_event_reserve_subclass(EVENT_ERROR) != SWITCH_STATUS_SUCCESS ||
-    switch_event_reserve_subclass(EVENT_DISCONNECT) != SWITCH_STATUS_SUCCESS) {
+    switch_event_reserve_subclass(EVENT_DISCONNECT) != SWITCH_STATUS_SUCCESS ||
+    switch_event_reserve_subclass(EVENT_CONNECT_SUCCESS) != SWITCH_STATUS_SUCCESS ||
+    switch_event_reserve_subclass(EVENT_CONNECT_FAIL) != SWITCH_STATUS_SUCCESS ||
+    switch_event_reserve_subclass(EVENT_BUFFER_OVERRUN) != SWITCH_STATUS_SUCCESS ||
+    switch_event_reserve_subclass(EVENT_JSON) != SWITCH_STATUS_SUCCESS ||
+    switch_event_reserve_subclass(EVENT_MARK) != SWITCH_STATUS_SUCCESS) {
 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register an event subclass for mod_audio_fork API.\n");
 		return SWITCH_STATUS_TERM;
@@ -403,6 +408,11 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_audio_fork_shutdown)
 	switch_event_free_subclass(EVENT_KILL_AUDIO);
 	switch_event_free_subclass(EVENT_DISCONNECT);
 	switch_event_free_subclass(EVENT_ERROR);
+	switch_event_free_subclass(EVENT_CONNECT_SUCCESS);
+	switch_event_free_subclass(EVENT_CONNECT_FAIL);
+	switch_event_free_subclass(EVENT_BUFFER_OVERRUN);
+	switch_event_free_subclass(EVENT_JSON);
+	switch_event_free_subclass(EVENT_MARK);
 
 	return SWITCH_STATUS_SUCCESS;
 }
