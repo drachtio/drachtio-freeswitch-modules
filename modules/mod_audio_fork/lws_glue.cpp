@@ -89,6 +89,7 @@ namespace {
 
           if (validAudio) {
             char szFilePath[256];
+            switch_channel_t *channel = switch_core_session_get_channel(session);
 
             std::string rawAudio = drachtio::base64_decode(jsonAudio->valuestring);
             switch_snprintf(szFilePath, 256, "%s%s%s_%d.tmp%s", SWITCH_GLOBAL_dirs.temp_dir, 
