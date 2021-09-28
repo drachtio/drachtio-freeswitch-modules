@@ -89,6 +89,7 @@ namespace {
 
           if (validAudio) {
             char szFilePath[256];
+            switch_channel_t *channel = switch_core_session_get_channel(session);
 
             std::string rawAudio = drachtio::base64_decode(jsonAudio->valuestring);
             switch_snprintf(szFilePath, 256, "%s%s%s_%d.tmp%s", SWITCH_GLOBAL_dirs.temp_dir, 
@@ -106,6 +107,8 @@ namespace {
 
             jsonFile = cJSON_CreateString(szFilePath);
             cJSON_AddItemToObject(jsonData, "file", jsonFile);
+            // Stop previously played audio
+            switch_channel_set_flag_value(channel, CF_BREAK, 1); 
             // Play recieved audio
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "playing File %s \n", szFilePath );
             switch_core_session_execute_application_async(session, "playback", szFilePath);
@@ -155,6 +158,14 @@ namespace {
       else if (0 == event.compare("mark")){
           char* jsonString = cJSON_PrintUnformatted(json);
           tech_pvt->responseHandler(session, EVENT_MARK, jsonString);
+          free(jsonString);
+      }else if (0 == event.compare("pause")){
+          char* jsonString = cJSON_PrintUnformatted(json);
+          tech_pvt->responseHandler(session, EVENT_PAUSE, jsonString);
+          free(jsonString);
+      }else if (0 == event.compare("resume")){
+          char* jsonString = cJSON_PrintUnformatted(json);
+          tech_pvt->responseHandler(session, EVENT_RESUME, jsonString);
           free(jsonString);
       }
       else if (0 == event.compare("clear")){

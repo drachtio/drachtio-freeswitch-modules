@@ -24,6 +24,8 @@
 #define EVENT_BUFFER_OVERRUN  "mod_audio_fork::buffer_overrun"
 #define EVENT_JSON            "mod_audio_fork::json"
 #define EVENT_MARK            "mod_audio_fork::mark"
+#define EVENT_PAUSE           "mod_audio_fork::pause"
+#define EVENT_RESUME          "mod_audio_fork::resume"
 
 #define MAX_METADATA_LEN (8192)
 

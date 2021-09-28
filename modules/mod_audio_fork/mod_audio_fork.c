@@ -31,7 +31,13 @@ static void responseHandler(switch_core_session_t* session, const char * eventNa
         } else {
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Err sending mark event: %s \n", json);
         }
-	}
+	}else if(0 == strcmp(eventName, EVENT_PAUSE)){
+      fork_session_pauseresume(session, 1);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "pause event success %s.\n", json);
+  }else if(0 == strcmp(eventName, EVENT_RESUME)){
+      fork_session_pauseresume(session, 0);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "resume event success %s.\n", json);
+  }
 
 	if (json) switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "responseHandler: sending event payload: %s.\n", json);
 	switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
