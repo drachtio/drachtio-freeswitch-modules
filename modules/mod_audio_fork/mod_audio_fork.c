@@ -37,6 +37,8 @@ static void responseHandler(switch_core_session_t* session, const char * eventNa
   }else if(0 == strcmp(eventName, EVENT_RESUME)){
       fork_session_pauseresume(session, 0);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "resume event success %s.\n", json);
+  }else if(0 == strcmp(eventName, EVENT_FIRST_TRANSCRIPT)){
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "recieved firstTrascript event  %s.\n", json);
   }
 
 	if (json) switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "responseHandler: sending event payload: %s.\n", json);

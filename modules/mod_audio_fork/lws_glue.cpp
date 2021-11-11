@@ -109,9 +109,6 @@ namespace {
             cJSON_AddItemToObject(jsonData, "file", jsonFile);
             // Stop previously played audio
             switch_channel_set_flag_value(channel, CF_BREAK, 1); 
-            // Play recieved audio
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "playing File %s \n", szFilePath );
-            switch_core_session_execute_application_async(session, "playback", szFilePath);
           }
 
           char* jsonString = cJSON_PrintUnformatted(jsonData);
@@ -166,6 +163,10 @@ namespace {
       }else if (0 == event.compare("resume")){
           char* jsonString = cJSON_PrintUnformatted(json);
           tech_pvt->responseHandler(session, EVENT_RESUME, jsonString);
+          free(jsonString);
+      }else if(0 == event.compare("firstTranscript")){
+         char* jsonString = cJSON_PrintUnformatted(json);
+          tech_pvt->responseHandler(session, EVENT_FIRST_TRANSCRIPT, jsonString);
           free(jsonString);
       }
       else if (0 == event.compare("clear")){
