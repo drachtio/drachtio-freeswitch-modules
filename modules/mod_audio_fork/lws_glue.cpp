@@ -291,7 +291,7 @@ namespace {
 extern "C" {
   int parse_ws_uri(switch_channel_t *channel, const char* szServerUri, char* host, char *path, unsigned int* pPort, int* pSslFlags) {
     int i = 0, offset;
-    char server[MAX_WS_URL_LEN];
+    char server[MAX_WS_URL_LEN + MAX_PATH_LEN];
     char *saveptr;
     int flags = LCCSCF_USE_SSL;
     
@@ -309,7 +309,7 @@ extern "C" {
     }
 
     // get the scheme
-    strncpy(server, szServerUri, MAX_WS_URL_LEN);
+    strncpy(server, szServerUri, MAX_WS_URL_LEN + MAX_PATH_LEN);
     if (0 == strncmp(server, "https://", 8) || 0 == strncmp(server, "HTTPS://", 8)) {
       *pSslFlags = flags;
       offset = 8;
@@ -358,7 +358,7 @@ extern "C" {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "parse_ws_uri - invalid format %s\n", strHost.c_str());
       return 0;
     }
-    //switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "parse_ws_uri - path %s\n", path);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "parse_ws_uri - host %s, path %s\n", host, path);
 
     return 1;
   }

@@ -10,7 +10,7 @@
 #define MY_BUG_NAME "audio_fork"
 #define MAX_SESSION_ID (256)
 #define MAX_WS_URL_LEN (512)
-#define MAX_PATH_LEN (128)
+#define MAX_PATH_LEN (4096)
 
 #define EVENT_TRANSCRIPTION   "mod_audio_fork::transcription"
 #define EVENT_TRANSFER        "mod_audio_fork::transfer"
