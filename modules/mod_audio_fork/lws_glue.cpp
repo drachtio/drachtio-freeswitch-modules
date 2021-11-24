@@ -107,8 +107,6 @@ namespace {
 
             jsonFile = cJSON_CreateString(szFilePath);
             cJSON_AddItemToObject(jsonData, "file", jsonFile);
-            // Stop previously played audio
-            switch_channel_set_flag_value(channel, CF_BREAK, 1); 
           }
 
           char* jsonString = cJSON_PrintUnformatted(jsonData);
