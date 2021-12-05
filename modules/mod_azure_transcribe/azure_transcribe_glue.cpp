@@ -34,14 +34,15 @@ public:
 		const char* region, 
 		const char* subscriptionKey, 
 		responseHandler_t responseHandler
-  ) : m_sessionId(sessionId), m_finished(false), m_interim(interim), m_responseHandler(responseHandler) {
+  ) : m_sessionId(sessionId), m_finished(false), m_stopped(false), m_interim(interim), 
+	m_responseHandler(responseHandler) {
 
 		switch_core_session_t* psession = switch_core_session_locate(sessionId);
 		if (!psession) throw std::invalid_argument( "session id no longer active" );
 		switch_channel_t *channel = switch_core_session_get_channel(psession);
  
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::GStreamer(%p) api key %s, region %s, language %s\n", 
-			this, subscriptionKey, region, lang);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::GStreamer(%p) region %s, language %s\n", 
+			this, region, lang);
 
 		auto sourceLanguageConfig = SourceLanguageConfig::FromLanguage(lang);
 		auto format = AudioStreamFormat::GetWaveFormatPCM(8000, 16, 1);
@@ -86,15 +87,16 @@ public:
 			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
 			if (psession) {
 				auto sessionId = args.SessionId;
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer session started\n");
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer got session started from microsoft\n");
 				switch_core_session_rwunlock(psession);
 			}
 		};
 		auto onSessionStopped = [this](const SessionEventArgs& args) {
 			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
+			m_stopped = true;
 			if (psession) {
 				auto sessionId = args.SessionId;
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer session stopped\n");
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer: got session stopped from microsoft\n");
 				switch_core_session_rwunlock(psession);
 			}
 		};
@@ -177,10 +179,15 @@ public:
 
 	void finish() {
 		if (m_finished) return;
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::finish %p\n", this);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::finish - calling  StopContinuousRecognitionAsync%p\n", this);
 		m_finished = true;
-		std::future<void> done = m_recognizer->StopContinuousRecognitionAsync();
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::finish recognition has completed%p\n", this);
+		//std::future<void> done = m_recognizer->StopContinuousRecognitionAsync();
+		m_recognizer->StopContinuousRecognitionAsync().get();
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::finish - recognition has completed%p\n", this);
+	}
+
+	bool isStopped() {
+		return m_stopped;
 	}
 
 private:
@@ -192,6 +199,7 @@ private:
 	responseHandler_t m_responseHandler;
 	bool m_interim;
 	bool m_finished;
+	bool m_stopped;
 };
 
 static void killcb(struct cap_cb* cb) {
@@ -315,13 +323,19 @@ extern "C" {
 
 			GStreamer* streamer = (GStreamer *) cb->streamer;
 			if (streamer) {
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "azure_transcribe_session_stop: finish..\n");
-				streamer->finish();
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "azure_transcribe_session_stop: calling finish..\n");
+
+				// launch thread to stop recognition as MS will take a bit to eval final transcript
+				std::thread t([streamer, cb]{
+					streamer->finish();
+					killcb(cb);
+				});
+				t.detach();
 			}
-			killcb(cb);
+			else killcb(cb);
 
 			switch_mutex_unlock(cb->mutex);
-			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "azure_transcribe_session_stop: Closed azure session\n");
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "azure_transcribe_session_stop: done calling finish\n");
 
 			return SWITCH_STATUS_SUCCESS;
 		}

@@ -102,9 +102,9 @@ static switch_status_t do_stop(switch_core_session_t *session)
 	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
 
 	if (bug) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command to stop transcribe.\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "do_stop: Received user command command to stop transcribe.\n");
 		status = azure_transcribe_session_stop(session, 0);
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "stopped transcribe.\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "do_stop: stopped transcribe.\n");
 	}
 
 	return status;
