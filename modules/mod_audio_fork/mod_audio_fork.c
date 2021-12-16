@@ -66,6 +66,7 @@ static switch_status_t start_capture(switch_core_session_t *session,
 	switch_media_bug_t *bug;
 	switch_status_t status;
 	switch_codec_t* read_codec;
+        uint32_t samples_per_second;
 
 	void *pUserData = NULL;
   int channels = (flags & SMBF_STEREO) ? 2 : 1;
