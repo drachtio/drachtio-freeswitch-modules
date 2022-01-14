@@ -151,6 +151,9 @@ namespace {
       }
       cJSON_Delete(json);
     }
+    else {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) processIncomingMessage - could not parse message: %s\n", tech_pvt->id, message);
+    }
   }
 
   static void eventCallback(const char* sessionId, AudioPipe::NotifyEvent_t event, const char* message) {

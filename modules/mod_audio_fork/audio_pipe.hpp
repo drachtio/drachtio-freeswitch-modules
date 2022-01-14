@@ -129,13 +129,13 @@ private:
   size_t m_audio_buffer_min_freespace;
   uint8_t* m_recv_buf;
   uint8_t* m_recv_buf_ptr;
+  size_t m_recv_buf_len;
   struct lws_per_vhost_data* m_vhd;
   notifyHandler_t m_callback;
   log_emit_function m_logger;
   std::string m_username;
   std::string m_password;
   bool m_gracefulShutdown;
-
 };
 
 #endif

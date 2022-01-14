@@ -4,6 +4,11 @@
 #include <cassert>
 #include <iostream>
 
+/* discard incoming text messages over the socket that are longer than this */
+#define MAX_RECV_BUF_SIZE (65 * 1024 * 10)
+#define RECV_BUF_REALLOC_SIZE (8 * 1024)
+
+
 namespace {
   static const char* basicAuthUser = std::getenv("MOD_AUDIO_FORK_HTTP_AUTH_USER");
   static const char* basicAuthPassword = std::getenv("MOD_AUDIO_FORK_HTTP_AUTH_PASSWORD");
@@ -140,23 +145,45 @@ int AudioPipe::lws_callback(struct lws *wsi,
         if (lws_is_first_fragment(wsi)) {
           // allocate a buffer for the entire chunk of memory needed
           assert(nullptr == ap->m_recv_buf);
-          size_t bufLen = len + lws_remaining_packet_payload(wsi);
-          ap->m_recv_buf = new uint8_t[bufLen];
+          ap->m_recv_buf_len = len + lws_remaining_packet_payload(wsi);
+          ap->m_recv_buf = (uint8_t*) malloc(ap->m_recv_buf_len);
           ap->m_recv_buf_ptr = ap->m_recv_buf;
         }
 
-        assert(nullptr != ap->m_recv_buf);
-        if (len > 0) {
-          // if we got any data, append it to the buffer
-          memcpy(ap->m_recv_buf_ptr, in, len);
-          ap->m_recv_buf_ptr += len;
+        size_t write_offset = ap->m_recv_buf_ptr - ap->m_recv_buf;
+        size_t remaining_space = ap->m_recv_buf_len - write_offset;
+        if (remaining_space < len) {
+          lwsl_notice("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_RECEIVE buffer realloc needed.\n");
+          size_t newlen = ap->m_recv_buf_len + RECV_BUF_REALLOC_SIZE;
+          if (newlen > MAX_RECV_BUF_SIZE) {
+            free(ap->m_recv_buf);
+            ap->m_recv_buf = ap->m_recv_buf_ptr = nullptr;
+            ap->m_recv_buf_len = 0;
+            lwsl_notice("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_RECEIVE max buffer exceeded, truncating message.\n");
+          }
+          else {
+            ap->m_recv_buf = (uint8_t*) realloc(ap->m_recv_buf, newlen);
+            if (nullptr != ap->m_recv_buf) {
+              ap->m_recv_buf_len = newlen;
+              ap->m_recv_buf_ptr = ap->m_recv_buf + write_offset;
+            }
+          }
         }
 
-        if (lws_is_final_fragment(wsi)) {
-          std::string msg((char *)ap->m_recv_buf, ap->m_recv_buf_ptr - ap->m_recv_buf);
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::MESSAGE, msg.c_str());
-          delete [] ap->m_recv_buf;
-          ap->m_recv_buf = ap->m_recv_buf_ptr = nullptr;
+        if (nullptr != ap->m_recv_buf) {
+          if (len > 0) {
+            memcpy(ap->m_recv_buf_ptr, in, len);
+            ap->m_recv_buf_ptr += len;
+          }
+          if (lws_is_final_fragment(wsi)) {
+            if (nullptr != ap->m_recv_buf) {
+              std::string msg((char *)ap->m_recv_buf, ap->m_recv_buf_ptr - ap->m_recv_buf);
+              ap->m_callback(ap->m_uuid.c_str(), AudioPipe::MESSAGE, msg.c_str());
+              if (nullptr != ap->m_recv_buf) free(ap->m_recv_buf);
+            }
+            ap->m_recv_buf = ap->m_recv_buf_ptr = nullptr;
+            ap->m_recv_buf_len = 0;
+          }
         }
       }
       break;
