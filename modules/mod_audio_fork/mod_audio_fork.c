@@ -66,7 +66,6 @@ static switch_status_t start_capture(switch_core_session_t *session,
 	switch_media_bug_t *bug;
 	switch_status_t status;
 	switch_codec_t* read_codec;
-        uint32_t samples_per_second;
 
 	void *pUserData = NULL;
   int channels = (flags & SMBF_STEREO) ? 2 : 1;
@@ -80,22 +79,11 @@ static switch_status_t start_capture(switch_core_session_t *session,
 		return SWITCH_STATUS_FALSE;
 	}
 
+	read_codec = switch_core_session_get_read_codec(session);
+
 	if (switch_channel_pre_answer(channel) != SWITCH_STATUS_SUCCESS) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_fork: channel must have reached pre-answer status before calling start!\n");
 		return SWITCH_STATUS_FALSE;
-	}
-
-	read_codec = switch_core_session_get_read_codec(session);
-	if (read_codec == NULL) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_WARNING, "No read codec assigned, set default session rate to 8000 samples\n");
-		samples_per_second = 8000;
-	} else {
-		if (read_codec->implementation == NULL) {
-			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_WARNING, "No read codec implementation assigned, set default session rate to 8000 samples\n");
-			samples_per_second = 8000;
-		} else {
-			samples_per_second = read_codec->implementation->actual_samples_per_second;
-		}
 	}
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "calling fork_session_init.\n");
