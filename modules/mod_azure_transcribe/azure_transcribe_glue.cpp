@@ -148,7 +148,9 @@ public:
 
 		auto onCanceled = [this](const SpeechRecognitionCanceledEventArgs& args) {
 			auto result = args.Result;
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer recognition canceled\n");
+			auto details = args.ErrorDetails;
+			auto code = args.ErrorCode;
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer recognition canceled, error %d: %s\n", code, details.c_str());
 		};
 
 		m_recognizer->SessionStarted += onSessionStarted;
@@ -179,11 +181,11 @@ public:
 
 	void finish() {
 		if (m_finished) return;
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::finish - calling  StopContinuousRecognitionAsync%p\n", this);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::finish - calling  StopContinuousRecognitionAsync (%p)\n", this);
 		m_finished = true;
 		//std::future<void> done = m_recognizer->StopContinuousRecognitionAsync();
 		m_recognizer->StopContinuousRecognitionAsync().get();
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::finish - recognition has completed%p\n", this);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::finish - recognition has completed (%p)\n", this);
 	}
 
 	bool isStopped() {
@@ -321,9 +323,11 @@ extern "C" {
 			switch_channel_set_private(channel, MY_BUG_NAME, NULL);
 			if (!channelIsClosing) switch_core_media_bug_remove(session, &bug);
 
+			killcb(cb);
+			/*
 			GStreamer* streamer = (GStreamer *) cb->streamer;
 			if (streamer) {
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "azure_transcribe_session_stop: calling finish..\n");
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "azure_transcribe_session_stop: calling finish.. (%p)\n", streamer);
 
 				// launch thread to stop recognition as MS will take a bit to eval final transcript
 				std::thread t([streamer, cb]{
@@ -333,6 +337,7 @@ extern "C" {
 				t.detach();
 			}
 			else killcb(cb);
+			*/
 
 			switch_mutex_unlock(cb->mutex);
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "azure_transcribe_session_stop: done calling finish\n");
