@@ -19,7 +19,6 @@
 using namespace Microsoft::CognitiveServices::Speech;
 using namespace Microsoft::CognitiveServices::Speech::Audio;
 
-
 const char ALLOC_TAG[] = "drachtio";
 
 static bool hasDefaultCredentials = false;
@@ -147,6 +146,7 @@ public:
 		};
 
 		auto onCanceled = [this](const SpeechRecognitionCanceledEventArgs& args) {
+			if (m_finished) return;
 			auto result = args.Result;
 			auto details = args.ErrorDetails;
 			auto code = args.ErrorCode;
@@ -167,7 +167,7 @@ public:
 	}
 
 	~GStreamer() {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::~GStreamer %p\n", this);		
+		//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::~GStreamer %p\n", this);		
 	}
 
 	bool write(void* data, uint32_t datalen) {
@@ -183,7 +183,6 @@ public:
 		if (m_finished) return;
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::finish - calling  StopContinuousRecognitionAsync (%p)\n", this);
 		m_finished = true;
-		//std::future<void> done = m_recognizer->StopContinuousRecognitionAsync();
 		m_recognizer->StopContinuousRecognitionAsync().get();
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::finish - recognition has completed (%p)\n", this);
 	}
@@ -203,6 +202,17 @@ private:
 	bool m_finished;
 	bool m_stopped;
 };
+
+static void reaper(struct cap_cb *cb) {
+	std::shared_ptr<GStreamer> pStreamer;
+	pStreamer.reset((GStreamer *)cb->streamer);
+	cb->streamer = nullptr;
+
+	std::thread t([pStreamer]{
+		pStreamer->finish();
+	});
+	t.detach();
+}
 
 static void killcb(struct cap_cb* cb) {
 	if (cb) {
@@ -319,28 +329,16 @@ extern "C" {
 
 			// close connection and get final responses
 			switch_mutex_lock(cb->mutex);
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "azure_transcribe_session_stop: locked session\n");
 
 			switch_channel_set_private(channel, MY_BUG_NAME, NULL);
 			if (!channelIsClosing) switch_core_media_bug_remove(session, &bug);
 
-			killcb(cb);
-			/*
 			GStreamer* streamer = (GStreamer *) cb->streamer;
-			if (streamer) {
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "azure_transcribe_session_stop: calling finish.. (%p)\n", streamer);
-
-				// launch thread to stop recognition as MS will take a bit to eval final transcript
-				std::thread t([streamer, cb]{
-					streamer->finish();
-					killcb(cb);
-				});
-				t.detach();
-			}
-			else killcb(cb);
-			*/
-
+			if (streamer) reaper(cb);
+			killcb(cb);
 			switch_mutex_unlock(cb->mutex);
-			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "azure_transcribe_session_stop: done calling finish\n");
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "azure_transcribe_session_stop: unlocked session\n");
 
 			return SWITCH_STATUS_SUCCESS;
 		}
