@@ -27,7 +27,7 @@
 #define EVENT_PAUSE            "mod_audio_fork::pause"
 #define EVENT_RESUME           "mod_audio_fork::resume"
 #define EVENT_FIRST_TRANSCRIPT "mod_audio_fork::first_transcript"
-#define EVENT_END_OF_INTERACTION "mod_audio_form::end_of_interaction"
+#define EVENT_END_OF_INTERACTION "mod_audio_fork::end_of_interaction"
 
 #define MAX_METADATA_LEN (8192)
 
