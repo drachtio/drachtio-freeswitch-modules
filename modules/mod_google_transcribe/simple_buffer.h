@@ -1,29 +1,39 @@
+/**
+ * (very) simple and limited circular buffer, 
+ * supporting only the use case of doing all of the adds
+ * and then subsquently retrieves.
+ * 
+ */
 class SimpleBuffer {
   public:
     SimpleBuffer(uint32_t chunkSize, uint32_t numChunks) : numItems(0),
     m_numChunks(numChunks), m_chunkSize(chunkSize) {
-      pData = new char[chunkSize * numChunks];
-      pNextWrite = pData;
+      m_pData = new char[chunkSize * numChunks];
+      m_pNextWrite = m_pData;
     }
     ~SimpleBuffer() {
-      delete [] pData;
+      delete [] m_pData;
     }
 
     void add(void *data, uint32_t datalen) {
-      memcpy(pNextWrite, data, datalen);
-      if (numItems < m_numChunks) numItems++;
+      if (datalen % m_chunkSize != 0) return;
+      int numChunks = datalen / m_chunkSize;
+      for (int i = 0; i < numChunks; i++) {
+        memcpy(m_pNextWrite, data, datalen);
+        if (numItems < m_numChunks) numItems++;
 
-      uint32_t offset = (pNextWrite - pData) / m_chunkSize;
-      if (offset >= m_numChunks - 1) pNextWrite = pData;
-      else pNextWrite += m_chunkSize;
+        uint32_t offset = (m_pNextWrite - m_pData) / m_chunkSize;
+        if (offset >= m_numChunks - 1) m_pNextWrite = m_pData;
+        else m_pNextWrite += m_chunkSize;
+      }
     }
 
     char* getNextChunk() {
       if (numItems--) {
-        char *p = pNextWrite;
-        uint32_t offset = (pNextWrite - pData) / m_chunkSize;
-        if (offset >= m_numChunks - 1) pNextWrite = pData;
-        else pNextWrite += m_chunkSize;
+        char *p = m_pNextWrite;
+        uint32_t offset = (m_pNextWrite - m_pData) / m_chunkSize;
+        if (offset >= m_numChunks - 1) m_pNextWrite = m_pData;
+        else m_pNextWrite += m_chunkSize;
         return p;
       }
       return nullptr;
@@ -32,9 +42,9 @@ class SimpleBuffer {
     uint32_t getNumItems() { return numItems;}
 
   private:
-    char *pData;
+    char *m_pData;
     uint32_t numItems;
     uint32_t m_chunkSize;
     uint32_t m_numChunks;
-    char* pNextWrite;
+    char* m_pNextWrite;
 };
