@@ -166,6 +166,10 @@ namespace {
          char* jsonString = cJSON_PrintUnformatted(json);
           tech_pvt->responseHandler(session, EVENT_FIRST_TRANSCRIPT, jsonString);
           free(jsonString);
+      } else if(0 == event.compare("endOfInteraction")) {
+        char* jsonString = cJSON_PrintUnformatted(json);
+          tech_pvt->responseHandler(session, EVENT_END_OF_INTERACTION, jsonString);
+          free(jsonString);
       }
       else if (0 == event.compare("clear")){
           // clear event
