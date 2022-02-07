@@ -502,8 +502,8 @@ extern "C" {
           if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_VOICE_MS")) {
             voice_ms = atoi(var);
           }
-          if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_VOICE_MS")) {
-            voice_ms = atoi(var);
+          if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_DEBUG")) {
+            debug = atoi(var);
           }
           switch_vad_set_mode(cb->vad, mode);
           switch_vad_set_param(cb->vad, "silence_ms", silence_ms);
