@@ -58,10 +58,23 @@ class GStreamer;
 
 class GStreamer {
 public:
-	GStreamer(switch_core_session_t *session, uint32_t channels, char* lang, int interim, int single_utterance, int separate_recognition,
-		int max_alternatives, int profanity_filter, int word_time_offset, int punctuation, char* model, int enhanced, 
-		char* hints) : m_session(session), m_writesDone(false), m_connected(false), m_audioBuffer(CHUNKSIZE, 15) {
-
+	GStreamer(
+    switch_core_session_t *session, 
+    uint32_t channels, 
+    char* lang, 
+    int interim, 
+		uint32_t samples_per_second,
+    int single_utterance, 
+    int separate_recognition,
+		int max_alternatives, 
+    int profanity_filter, 
+    int word_time_offset, 
+    int punctuation, 
+    char* model, 
+    int enhanced, 
+		char* hints) : m_session(session), m_writesDone(false), m_connected(false), 
+      m_audioBuffer(CHUNKSIZE, 15) {
+  
     const char* var;
     switch_channel_t *channel = switch_core_session_get_channel(session);
 
@@ -237,7 +250,9 @@ public:
   	m_streamer->Write(m_request);
 
     // send any buffered audio
-    if (m_audioBuffer.getNumItems()) {
+    int nFrames = m_audioBuffer.getNumItems();
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p got stream ready, %d buffered frames\n", this, nFrames);	
+    if (nFrames) {
       char *p;
       do {
         p = m_audioBuffer.getNextChunk();
@@ -250,7 +265,7 @@ public:
 
 	bool write(void* data, uint32_t datalen) {
     if (!m_connected) {
-      if (datalen == CHUNKSIZE) {
+      if (datalen % CHUNKSIZE == 0) {
         m_audioBuffer.add(data, datalen);
       }
       return true;
@@ -460,6 +475,8 @@ extern "C" {
           int punctuation, char* model, int enhanced, char* hints, char* play_file, void **ppUserData) {
 
       switch_channel_t *channel = switch_core_session_get_channel(session);
+      auto read_codec = switch_core_session_get_read_codec(session);
+      uint32_t sampleRate = read_codec->implementation->actual_samples_per_second;
       struct cap_cb *cb;
       int err;
 
@@ -471,8 +488,8 @@ extern "C" {
       }
       
       switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
-      if (samples_per_second != 8000) {
-          cb->resampler = speex_resampler_init(channels, samples_per_second, 8000, SWITCH_RESAMPLE_QUALITY, &err);
+      if (sampleRate != 8000) {
+          cb->resampler = speex_resampler_init(channels, sampleRate, 8000, SWITCH_RESAMPLE_QUALITY, &err);
         if (0 != err) {
            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n",
                                  switch_channel_get_name(channel), speex_resampler_strerror(err));
@@ -485,7 +502,7 @@ extern "C" {
 
       // allocate vad if we are delaying connecting to the recognizer until we detect speech
       if (switch_channel_var_true(channel, "START_RECOGNIZING_ON_VAD")) {
-        cb->vad = switch_vad_init(8000, 1);
+        cb->vad = switch_vad_init(sampleRate, channels);
         if (cb->vad) {
           const char* var;
           int mode = 2;
@@ -502,8 +519,8 @@ extern "C" {
           if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_VOICE_MS")) {
             voice_ms = atoi(var);
           }
-          if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_DEBUG")) {
-            debug = atoi(var);
+          if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_VOICE_MS")) {
+            voice_ms = atoi(var);
           }
           switch_vad_set_mode(cb->vad, mode);
           switch_vad_set_param(cb->vad, "silence_ms", silence_ms);
@@ -514,7 +531,7 @@ extern "C" {
 
       GStreamer *streamer = NULL;
       try {
-        streamer = new GStreamer(session, channels, lang, interim, single_utterance, separate_recognition, max_alternatives,
+        streamer = new GStreamer(session, channels, lang, interim, sampleRate, single_utterance, separate_recognition, max_alternatives,
          profanity_filter, word_time_offset, punctuation, model, enhanced, hints);
         cb->streamer = streamer;
       } catch (std::exception& e) {
@@ -613,6 +630,13 @@ extern "C" {
         if (switch_mutex_trylock(cb->mutex) == SWITCH_STATUS_SUCCESS) {
           while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
             if (frame.datalen) {
+              if (cb->vad && !streamer->isConnected()) {
+                switch_vad_state_t state = switch_vad_process(cb->vad, (int16_t*) frame.data, frame.samples);
+                if (state == SWITCH_VAD_STATE_START_TALKING) {
+                  switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to google speech now\n");
+                  streamer->connect();
+                }
+              }
 
               if (cb->resampler) {
                 spx_int16_t out[SWITCH_RECOMMENDED_BUFFER_SIZE];
@@ -625,25 +649,9 @@ extern "C" {
                   (spx_uint32_t *) &in_len,
                   &out[0],
                   &out_len);
-
-                if (cb->vad && !streamer->isConnected()) {
-                  switch_vad_state_t state = switch_vad_process(cb->vad, (int16_t*) &out[0], sizeof(spx_int16_t) * out_len);
-                  if (state == SWITCH_VAD_STATE_START_TALKING) {
-                    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to google speech now\n");
-                    streamer->connect();
-                  }
-                }
                 streamer->write( &out[0], sizeof(spx_int16_t) * out_len);
               }
-
               else {
-                if (cb->vad && !streamer->isConnected()) {
-                  switch_vad_state_t state = switch_vad_process(cb->vad, (int16_t*) frame.data, frame.samples);
-                  if (state == SWITCH_VAD_STATE_START_TALKING) {
-                    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to google speech now\n");
-                    streamer->connect();
-                  }
-                }
                 streamer->write( frame.data, sizeof(spx_int16_t) * frame.samples);
               }
             }
