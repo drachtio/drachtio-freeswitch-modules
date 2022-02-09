@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <algorithm>
+#include <future>
 
 #include <switch.h>
 #include <switch_json.h>
@@ -8,8 +9,7 @@
 #include "google/cloud/speech/v1p1beta1/cloud_speech.grpc.pb.h"
 
 #include "mod_google_transcribe.h"
-
-#define BUFFER_SECS (3)
+#include "simple_buffer.h"
 
 using google::cloud::speech::v1p1beta1::RecognitionConfig;
 using google::cloud::speech::v1p1beta1::Speech;
@@ -43,6 +43,8 @@ using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_
 using google::cloud::speech::v1p1beta1::StreamingRecognizeResponse_SpeechEventType_END_OF_SINGLE_UTTERANCE;
 using google::rpc::Status;
 
+#define CHUNKSIZE (320)
+
 namespace {
   int case_insensitive_match(std::string s1, std::string s2) {
    std::transform(s1.begin(), s1.end(), s1.begin(), ::tolower);
@@ -50,17 +52,29 @@ namespace {
    if(s1.compare(s2) == 0)
       return 1; //The strings are same
    return 0; //not matched
-}
+  }
 }
 class GStreamer;
 
 class GStreamer {
 public:
-	GStreamer(switch_core_session_t *session, uint32_t channels, char* lang, int interim, int single_utterance, int separate_recognition,
-		int max_alternatives, int profanity_filter, int word_time_offset, int punctuation, char* model, int enhanced, 
-		char* hints) : 
-
-    m_session(session), m_writesDone(false) {
+	GStreamer(
+    switch_core_session_t *session, 
+    uint32_t channels, 
+    char* lang, 
+    int interim, 
+		uint32_t samples_per_second,
+    int single_utterance, 
+    int separate_recognition,
+		int max_alternatives, 
+    int profanity_filter, 
+    int word_time_offset, 
+    int punctuation, 
+    char* model, 
+    int enhanced, 
+		char* hints) : m_session(session), m_writesDone(false), m_connected(false), 
+      m_audioBuffer(CHUNKSIZE, 15) {
+  
     const char* var;
     switch_channel_t *channel = switch_core_session_get_channel(session);
 
@@ -217,18 +231,45 @@ public:
       if (case_insensitive_match("other_outdoor_device", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_OTHER_OUTDOOR_DEVICE);
       if (case_insensitive_match("other_indoor_device", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_OTHER_INDOOR_DEVICE);
     }
-  	// Begin a stream.
-  	m_streamer = m_stub->StreamingRecognize(&m_context);
-
-  	// Write the first request, containing the config only.
-  	m_streamer->Write(m_request);
 	}
 
 	~GStreamer() {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "GStreamer::~GStreamer - deleting channel and stub\n");
+		//switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_INFO, "GStreamer::~GStreamer - deleting channel and stub: %p\n", (void*)this);
 	}
 
+  void connect() {
+    assert(!m_connected);
+    // Begin a stream.
+  	m_streamer = m_stub->StreamingRecognize(&m_context);
+    m_connected = true;
+
+    // read thread is waiting on this
+    m_promise.set_value();
+
+  	// Write the first request, containing the config only.
+  	m_streamer->Write(m_request);
+
+    // send any buffered audio
+    int nFrames = m_audioBuffer.getNumItems();
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p got stream ready, %d buffered frames\n", this, nFrames);	
+    if (nFrames) {
+      char *p;
+      do {
+        p = m_audioBuffer.getNextChunk();
+        if (p) {
+          write(p, CHUNKSIZE);
+        }
+      } while (p);
+    }
+  }
+
 	bool write(void* data, uint32_t datalen) {
+    if (!m_connected) {
+      if (datalen % CHUNKSIZE == 0) {
+        m_audioBuffer.add(data, datalen);
+      }
+      return true;
+    }
     m_request.set_audio_content(data, datalen);
     bool ok = m_streamer->Write(m_request);
     return ok;
@@ -250,13 +291,29 @@ public:
 
 	void writesDone() {
     // grpc crashes if we call this twice on a stream
-    if (!m_writesDone) {
+    if (!m_connected) {
+      cancelConnect();
+    }
+    else if (!m_writesDone) {
       m_streamer->WritesDone();
       m_writesDone = true;
     }
 	}
 
-protected:
+  bool waitForConnect() {
+    std::shared_future<void> sf(m_promise.get_future());
+    sf.wait();
+    return m_connected;
+  }
+
+  void cancelConnect() {
+    assert(!m_connected);
+    m_promise.set_value();
+  }
+
+  bool isConnected() {
+    return m_connected;
+  }
 
 private:
 	switch_core_session_t* m_session;
@@ -266,12 +323,21 @@ private:
 	std::unique_ptr< grpc::ClientReaderWriterInterface<StreamingRecognizeRequest, StreamingRecognizeResponse> > m_streamer;
 	StreamingRecognizeRequest m_request;
   bool m_writesDone;
+  bool m_connected;
+  std::promise<void> m_promise;
+  SimpleBuffer m_audioBuffer;
 };
 
 static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *obj) {
   static int count;
 	struct cap_cb *cb = (struct cap_cb *) obj;
 	GStreamer* streamer = (GStreamer *) cb->streamer;
+
+  bool connected = streamer->waitForConnect();
+  if (!connected) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "google transcribe grpc read thread exiting since we didnt connect\n") ;
+    return nullptr;
+  }
 
   // Read responses.
   StreamingRecognizeResponse response;
@@ -385,6 +451,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
 }
 
 extern "C" {
+
     switch_status_t google_speech_init() {
       const char* gcsServiceKeyFile = std::getenv("GOOGLE_APPLICATION_CREDENTIALS");
       if (gcsServiceKeyFile) {
@@ -408,6 +475,8 @@ extern "C" {
           int punctuation, char* model, int enhanced, char* hints, char* play_file, void **ppUserData) {
 
       switch_channel_t *channel = switch_core_session_get_channel(session);
+      auto read_codec = switch_core_session_get_read_codec(session);
+      uint32_t sampleRate = read_codec->implementation->actual_samples_per_second;
       struct cap_cb *cb;
       int err;
 
@@ -419,8 +488,8 @@ extern "C" {
       }
       
       switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
-      if (samples_per_second != 8000) {
-          cb->resampler = speex_resampler_init(channels, samples_per_second, 8000, SWITCH_RESAMPLE_QUALITY, &err);
+      if (sampleRate != 8000) {
+          cb->resampler = speex_resampler_init(channels, sampleRate, 8000, SWITCH_RESAMPLE_QUALITY, &err);
         if (0 != err) {
            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n",
                                  switch_channel_get_name(channel), speex_resampler_strerror(err));
@@ -429,10 +498,40 @@ extern "C" {
       } else {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s: no resampling needed for this call\n", switch_channel_get_name(channel));
       }
+      cb->responseHandler = responseHandler;
+
+      // allocate vad if we are delaying connecting to the recognizer until we detect speech
+      if (switch_channel_var_true(channel, "START_RECOGNIZING_ON_VAD")) {
+        cb->vad = switch_vad_init(sampleRate, channels);
+        if (cb->vad) {
+          const char* var;
+          int mode = 2;
+          int silence_ms = 150;
+          int voice_ms = 250;
+          int debug = 0;
+
+          if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_MODE")) {
+            mode = atoi(var);
+          }
+          if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_SILENCE_MS")) {
+            silence_ms = atoi(var);
+          }
+          if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_VOICE_MS")) {
+            voice_ms = atoi(var);
+          }
+          if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_VOICE_MS")) {
+            voice_ms = atoi(var);
+          }
+          switch_vad_set_mode(cb->vad, mode);
+          switch_vad_set_param(cb->vad, "silence_ms", silence_ms);
+          switch_vad_set_param(cb->vad, "voice_ms", voice_ms);
+          switch_vad_set_param(cb->vad, "debug", debug);
+        }
+      }
 
       GStreamer *streamer = NULL;
       try {
-        streamer = new GStreamer(session, channels, lang, interim, single_utterance, separate_recognition, max_alternatives,
+        streamer = new GStreamer(session, channels, lang, interim, sampleRate, single_utterance, separate_recognition, max_alternatives,
          profanity_filter, word_time_offset, punctuation, model, enhanced, hints);
         cb->streamer = streamer;
       } catch (std::exception& e) {
@@ -441,7 +540,7 @@ extern "C" {
         return SWITCH_STATUS_FALSE;
       }
 
-      cb->responseHandler = responseHandler;
+      if (!cb->vad) streamer->connect();
 
       // create the read thread
       switch_threadattr_t *thd_attr = NULL;
@@ -463,6 +562,14 @@ extern "C" {
         struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
         switch_mutex_lock(cb->mutex);
 
+        if (!switch_channel_get_private(channel, MY_BUG_NAME)) {
+          // race condition
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s Bug is not attached (race).\n", switch_channel_get_name(channel));
+          switch_mutex_unlock(cb->mutex);
+          return SWITCH_STATUS_FALSE;
+        }
+        switch_channel_set_private(channel, MY_BUG_NAME, NULL);
+
       // stop playback if available
        if (cb->play_file == 1){ 
           if (switch_channel_test_flag(channel, CF_BROADCAST)) {
@@ -478,10 +585,10 @@ extern "C" {
         if (streamer) {
           streamer->writesDone();
 
-          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_speech_session_cleanup: waiting for read thread to complete\n");
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "google_speech_session_cleanup: GStreamer (%p) waiting for read thread to complete\n", (void*)streamer);
           switch_status_t st;
           switch_thread_join(&st, cb->thread);
-          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_speech_session_cleanup: read thread completed\n");
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "google_speech_session_cleanup:  GStreamer (%p) read thread completed\n", (void*)streamer);
 
           delete streamer;
           cb->streamer = NULL;
@@ -490,15 +597,18 @@ extern "C" {
         if (cb->resampler) {
           speex_resampler_destroy(cb->resampler);
         }
-
-        switch_channel_set_private(channel, MY_BUG_NAME, NULL);
-			  switch_mutex_unlock(cb->mutex);
-
+        if (cb->vad) {
+          switch_vad_destroy(&cb->vad);
+          cb->vad = nullptr;
+        }
         if (!channelIsClosing) {
           switch_core_media_bug_remove(session, &bug);
         }
 
-			  switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "google_speech_session_cleanup: Closed stream\n");
+			  switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "google_speech_session_cleanup: Closed stream\n");
+
+			  switch_mutex_unlock(cb->mutex);
+
 
 			  return SWITCH_STATUS_SUCCESS;
       }
@@ -520,6 +630,13 @@ extern "C" {
         if (switch_mutex_trylock(cb->mutex) == SWITCH_STATUS_SUCCESS) {
           while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
             if (frame.datalen) {
+              if (cb->vad && !streamer->isConnected()) {
+                switch_vad_state_t state = switch_vad_process(cb->vad, (int16_t*) frame.data, frame.samples);
+                if (state == SWITCH_VAD_STATE_START_TALKING) {
+                  switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to google speech now\n");
+                  streamer->connect();
+                }
+              }
 
               if (cb->resampler) {
                 spx_int16_t out[SWITCH_RECOMMENDED_BUFFER_SIZE];
@@ -532,10 +649,8 @@ extern "C" {
                   (spx_uint32_t *) &in_len,
                   &out[0],
                   &out_len);
-
                 streamer->write( &out[0], sizeof(spx_int16_t) * out_len);
               }
-
               else {
                 streamer->write( frame.data, sizeof(spx_int16_t) * frame.samples);
               }

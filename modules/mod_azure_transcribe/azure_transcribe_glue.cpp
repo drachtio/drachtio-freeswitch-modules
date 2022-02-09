@@ -15,6 +15,9 @@
 #include <speechapi_cxx.h>
 
 #include "mod_azure_transcribe.h"
+#include "simple_buffer.h"
+
+#define CHUNKSIZE (320)
 
 using namespace Microsoft::CognitiveServices::Speech;
 using namespace Microsoft::CognitiveServices::Speech::Audio;
@@ -30,10 +33,12 @@ public:
 		u_int16_t channels,
     char *lang, 
     int interim,
+		uint32_t samples_per_second,
 		const char* region, 
 		const char* subscriptionKey, 
 		responseHandler_t responseHandler
   ) : m_sessionId(sessionId), m_finished(false), m_stopped(false), m_interim(interim), 
+	 m_connected(false), m_connecting(false), m_audioBuffer(320 * (samples_per_second == 8000 ? 1 : 2), 15),
 	m_responseHandler(responseHandler) {
 
 		switch_core_session_t* psession = switch_core_session_locate(sessionId);
@@ -82,14 +87,6 @@ public:
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(psession), SWITCH_LOG_DEBUG, "added %d hints\n", argc);
 		}
 
-		auto onSessionStarted = [this](const SessionEventArgs& args) {
-			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
-			if (psession) {
-				auto sessionId = args.SessionId;
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer got session started from microsoft\n");
-				switch_core_session_rwunlock(psession);
-			}
-		};
 		auto onSessionStopped = [this](const SessionEventArgs& args) {
 			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
 			m_stopped = true;
@@ -153,15 +150,12 @@ public:
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer recognition canceled, error %d: %s\n", code, details.c_str());
 		};
 
-		m_recognizer->SessionStarted += onSessionStarted;
 		m_recognizer->SessionStopped += onSessionStopped;
 		m_recognizer->SpeechStartDetected += onSpeechStartDetected;
 		m_recognizer->SpeechEndDetected += onSpeechEndDetected;
 		if (interim) m_recognizer->Recognizing += onRecognitionEvent;
 		m_recognizer->Recognized += onRecognitionEvent;
 		m_recognizer->Canceled += onCanceled;
-
-		m_recognizer->StartContinuousRecognitionAsync();
 
 		switch_core_session_rwunlock(psession);
 	}
@@ -170,11 +164,52 @@ public:
 		//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::~GStreamer %p\n", this);		
 	}
 
+	void connect() {
+		if (m_connecting) return;
+		m_connecting = true;
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer:connect %p connecting to azure speech..\n", this);
+
+		auto onSessionStarted = [this](const SessionEventArgs& args) {
+			m_connected = true;
+			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
+			if (psession) {
+				auto sessionId = args.SessionId;
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer got session started from microsoft\n");
+
+				// send any buffered audio
+				int nFrames = m_audioBuffer.getNumItems();
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p got session started from azure, %d buffered frames\n", this, nFrames);	
+				if (nFrames) {
+					char *p;
+					do {
+						p = m_audioBuffer.getNextChunk();
+						if (p) {
+							write(p, CHUNKSIZE);
+						}
+					} while (p);
+				}
+				switch_core_session_rwunlock(psession);
+			}
+		};
+		m_recognizer->SessionStarted += onSessionStarted;
+		m_recognizer->StartContinuousRecognitionAsync();
+
+	}
+
 	bool write(void* data, uint32_t datalen) {
 		if (m_finished) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::write not writing because we are finished, %p\n", this);
 			return false;
 		}
+		if (!m_connected) {
+      if (datalen % CHUNKSIZE == 0) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::write queuing %d bytes\n", datalen);
+        m_audioBuffer.add(data, datalen);
+      }
+      return true;
+    }
+
     m_pushStream->Write(static_cast<uint8_t*>(data), datalen);
 		return true;
 	}
@@ -191,6 +226,10 @@ public:
 		return m_stopped;
 	}
 
+	bool isConnecting() {
+    return m_connecting;
+  }
+
 private:
 	std::string m_sessionId;
 	std::string  m_region;
@@ -200,7 +239,10 @@ private:
 	responseHandler_t m_responseHandler;
 	bool m_interim;
 	bool m_finished;
+	bool m_connected;
+	bool m_connecting;
 	bool m_stopped;
+	SimpleBuffer m_audioBuffer;
 };
 
 static void reaper(struct cap_cb *cb) {
@@ -224,6 +266,10 @@ static void killcb(struct cap_cb* cb) {
 		if (cb->resampler) {
 				speex_resampler_destroy(cb->resampler);
 				cb->resampler = NULL;
+		}
+		if (cb->vad) {
+			switch_vad_destroy(&cb->vad);
+			cb->vad = nullptr;
 		}
 	}
 }
@@ -252,6 +298,7 @@ extern "C" {
 	switch_status_t azure_transcribe_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
           uint32_t samples_per_second, uint32_t channels, char* lang, int interim, void **ppUserData
 	) {
+		GStreamer *streamer = NULL;
 		switch_status_t status = SWITCH_STATUS_SUCCESS;
 		switch_channel_t *channel = switch_core_session_get_channel(session);
 		int err;
@@ -281,16 +328,6 @@ extern "C" {
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "No channel vars or env vars for azure authentication..will use default profile if found\n");
 		}
 
-		GStreamer *streamer = NULL;
-		try {
-			streamer = new GStreamer(sessionId, channels, lang, interim, region, subscriptionKey, responseHandler);
-			cb->streamer = streamer;
-		} catch (std::exception& e) {
-			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing gstreamer: %s.\n", 
-				switch_channel_get_name(channel), e.what());
-			return SWITCH_STATUS_FALSE;
-		}
-
 		cb->responseHandler = responseHandler;
 
 		if (switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, pool) != SWITCH_STATUS_SUCCESS) {
@@ -312,6 +349,48 @@ extern "C" {
 				goto done;
 			}
 		}
+
+		// allocate vad if we are delaying connecting to the recognizer until we detect speech
+		if (switch_channel_var_true(channel, "START_RECOGNIZING_ON_VAD")) {
+			cb->vad = switch_vad_init(sampleRate, 1);
+			if (cb->vad) {
+				const char* var;
+				int mode = 2;
+				int silence_ms = 150;
+				int voice_ms = 250;
+				int debug = 0;
+
+				if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_MODE")) {
+					mode = atoi(var);
+				}
+				if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_SILENCE_MS")) {
+					silence_ms = atoi(var);
+				}
+				if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_VOICE_MS")) {
+					voice_ms = atoi(var);
+				}
+				if (var = switch_channel_get_variable(channel, "RECOGNIZER_VAD_DEBUG")) {
+					debug = atoi(var);
+				}
+				switch_vad_set_mode(cb->vad, mode);
+				switch_vad_set_param(cb->vad, "silence_ms", silence_ms);
+				switch_vad_set_param(cb->vad, "voice_ms", voice_ms);
+				switch_vad_set_param(cb->vad, "debug", debug);
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s: delaying connection until vad, voice_ms %d, mode %d\n", 
+					switch_channel_get_name(channel), voice_ms, mode);
+			}
+		}
+
+		try {
+			streamer = new GStreamer(sessionId, channels, lang, interim, sampleRate, region, subscriptionKey, responseHandler);
+			cb->streamer = streamer;
+			if (!cb->vad) streamer->connect();
+		} catch (std::exception& e) {
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing gstreamer: %s.\n", 
+				switch_channel_get_name(channel), e.what());
+			return SWITCH_STATUS_FALSE;
+		}
+
 
 		*ppUserData = cb;
 	
@@ -361,6 +440,14 @@ extern "C" {
 			if (streamer) {
 				while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
 					if (frame.datalen) {
+						if (cb->vad && !streamer->isConnecting()) {
+							switch_vad_state_t state = switch_vad_process(cb->vad, (int16_t*) frame.data, frame.samples);
+							if (state == SWITCH_VAD_STATE_START_TALKING) {
+								switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to azure speech now\n");
+								streamer->connect();
+							}
+						}
+
 						if (cb->resampler) {
 							spx_int16_t out[SWITCH_RECOMMENDED_BUFFER_SIZE];
 							spx_uint32_t out_len = SWITCH_RECOMMENDED_BUFFER_SIZE;

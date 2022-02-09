@@ -2,6 +2,8 @@
 
 A Freeswitch module that generates real-time transcriptions on a Freeswitch channel by using Google's Speech-to-Text API.
 
+Optionally, the connection to the google cloud recognizer can be delayed until voice activity has been detected.  This can be useful in cases where it is desired to minimize the costs of streaming audio for transcription.  This setting is governed by the channel variables starting with 1RECOGNIZER_VAD`, as described below.
+
 ## API
 
 ### Commands
@@ -60,8 +62,11 @@ Additional google speech options can be set through freeswitch channel variables
 | GOOGLE_SPEECH_METADATA_INDUSTRY_NAICS_CODE | [read this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.RecognitionMetadata) |
 | GOOGLE_SPEECH_METADATA_MICROPHONE_DISTANCE | set to 'nearfield', 'midfield', or 'farfield' [per this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.RecognitionMetadata.MicrophoneDistance) |
 | GOOGLE_SPEECH_METADATA_ORIGINAL_MEDIA_TYPE | set to 'audio', or 'video' [per this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.RecognitionMetadata.OriginalMediaType) |
-| GOOGLE_SPEECH_METADATA_RECORDING_DEVICE_TYPE | set to 'smartphone', 'pc', 'phone_line', 'vehicle', 'other_outdoor_device', or 'other_indoor_device' [per this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.RecognitionMetadata.RecordingDeviceType)
-
+| GOOGLE_SPEECH_METADATA_RECORDING_DEVICE_TYPE | set to 'smartphone', 'pc', 'phone_line', 'vehicle', 'other_outdoor_device', or 'other_indoor_device' [per this](https://cloud.google.com/speech-to-text/docs/reference/rpc/google.cloud.speech.v1p1beta1#google.cloud.speech.v1p1beta1.RecognitionMetadata.RecordingDeviceType)|
+| START_RECOGNIZING_ON_VAD | if set to 1 or true, do not begin streaming audio to google cloud until voice activity is detected.|
+| RECOGNIZER_VAD_MODE | An integer value 0-3 from less to more aggressive vad detection (default: 2).|
+| RECOGNIZER_VAD_VOICE_MS | The number of milliseconds of voice activity that is required to trigger the connection to google cloud, when START_RECOGNIZING_ON_VAD is set (default: 250).|
+| RECOGNIZER_VAD_DEBUG | if >0 vad debug logs will be generated (default: 0).|
 
 
 ### Events

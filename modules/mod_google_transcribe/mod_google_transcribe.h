@@ -46,6 +46,8 @@ struct cap_cb {
 	switch_thread_t* thread;
 	int end_of_utterance;
 	int play_file;
+	switch_vad_t * vad;
+	uint32_t samples_per_second;
 };
 #endif
 
