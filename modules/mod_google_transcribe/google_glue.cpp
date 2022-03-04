@@ -368,10 +368,21 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       cJSON * jAlternatives = cJSON_CreateArray();
       cJSON * jStability = cJSON_CreateNumber(result.stability());
       cJSON * jIsFinal = cJSON_CreateBool(result.is_final());
+      cJSON * jLanguageCode = cJSON_CreateString(result.language_code().c_str());
+      cJSON * jChannelTag = cJSON_CreateNumber(result.channel_tag());
+
+      auto duration = result.result_end_time();
+      int32_t seconds = duration.seconds();
+      int64_t nanos = duration.nanos();
+      int span = (int) trunc(seconds * 1000. + ((float) nanos / 1000000.));
+      cJSON * jResultEndTime = cJSON_CreateNumber(span);
 
       cJSON_AddItemToObject(jResult, "stability", jStability);
       cJSON_AddItemToObject(jResult, "is_final", jIsFinal);
       cJSON_AddItemToObject(jResult, "alternatives", jAlternatives);
+      cJSON_AddItemToObject(jResult, "language_code", jLanguageCode);
+      cJSON_AddItemToObject(jResult, "channel_tag", jChannelTag);
+      cJSON_AddItemToObject(jResult, "result_end_time", jResultEndTime);
 
       for (int a = 0; a < result.alternatives_size(); ++a) {
         auto alternative = result.alternatives(a);
