@@ -161,9 +161,17 @@ public:
     if (hints != NULL) {
       auto* adaptation = config->mutable_adaptation();
       auto* phrase_set = adaptation->add_phrase_sets();
-
       char *phrases[500] = { 0 };
       auto *context = config->add_speech_contexts();
+      float boost = -1;
+
+      // get boost setting for the phrase set in its entirety
+      if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_HINTS_BOOST"))) {
+     	  boost = (float) atof(switch_channel_get_variable(channel, "GOOGLE_SPEECH_HINTS_BOOST"));
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", boost);
+        phrase_set->set_boost(boost);
+      }
+
       int argc = switch_separate_string((char *) hints, ',', phrases, 500);
       for (int i = 0; i < argc; i++) {
         auto* phrase = phrase_set->add_phrases();
