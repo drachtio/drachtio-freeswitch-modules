@@ -48,10 +48,14 @@ public:
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::GStreamer(%p) region %s, language %s\n", 
 			this, region, lang);
 
+		const char* endpoint = switch_channel_get_variable(channel, "AZURE_SERVICE_ENDPOINT");
+
 		auto sourceLanguageConfig = SourceLanguageConfig::FromLanguage(lang);
 		auto format = AudioStreamFormat::GetWaveFormatPCM(8000, 16, 1);
 		auto options = AudioProcessingOptions::Create(AUDIO_INPUT_PROCESSING_ENABLE_DEFAULT);
-		auto speechConfig = SpeechConfig::FromSubscription(subscriptionKey, region);
+		auto speechConfig = nullptr != endpoint ? 
+			SpeechConfig::FromEndpoint(endpoint, subscriptionKey) :		
+			SpeechConfig::FromSubscription(subscriptionKey, region);
 		if (switch_true(switch_channel_get_variable(channel, "AZURE_USE_OUTPUT_FORMAT_DETAILED"))) {
 			speechConfig->SetOutputFormat(OutputFormat::Detailed);
 		}
@@ -74,6 +78,15 @@ public:
 		// initial speech timeout in milliseconds
 		const char* timeout = switch_channel_get_variable(channel, "AZURE_INITIAL_SPEECH_TIMEOUT_MS");
 		if (timeout) properties.SetProperty(PropertyId::SpeechServiceConnection_InitialSilenceTimeoutMs, timeout);
+
+		// recognition mode - readonly according to Azure docs: 
+		// https://docs.microsoft.com/en-us/javascript/api/microsoft-cognitiveservices-speech-sdk/propertyid?view=azure-node-latest
+		/*
+		const char* recoMode = switch_channel_get_variable(channel, "AZURE_RECOGNITION_MODE");
+		if (recoMode) {
+			properties.SetProperty(PropertyId::SpeechServiceConnection_RecoMode, recoMode);
+		}
+		*/
 
 		// hints
 		const char* hints = switch_channel_get_variable(channel, "AZURE_SPEECH_HINTS");
