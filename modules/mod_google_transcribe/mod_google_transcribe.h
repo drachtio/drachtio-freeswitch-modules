@@ -16,6 +16,7 @@
 #define TRANSCRIBE_EVENT_NO_AUDIO_DETECTED "google_transcribe::no_audio_detected"
 #define TRANSCRIBE_EVENT_MAX_DURATION_EXCEEDED "google_transcribe::max_duration_exceeded"
 #define TRANSCRIBE_EVENT_PLAY_INTERRUPT "google_transcribe::play_interrupt"
+#define TRANSCRIBE_EVENT_VAD_DETECTED "google_transcribe::vad_detected"
 
 
 // simply write a wave file

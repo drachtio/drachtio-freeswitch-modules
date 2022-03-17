@@ -18,7 +18,12 @@ static void responseHandler(switch_core_session_t* session, const char * json) {
 	switch_event_t *event;
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 
-	if (0 == strcmp("end_of_transcript", json)) {
+	if (0 == strcmp("vad_detected", json)) {
+		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_VAD_DETECTED);
+		switch_channel_event_set_data(channel, event);
+		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "aws");
+	}
+	else if (0 == strcmp("end_of_transcript", json)) {
 		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_END_OF_TRANSCRIPT);
 		switch_channel_event_set_data(channel, event);
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "aws");

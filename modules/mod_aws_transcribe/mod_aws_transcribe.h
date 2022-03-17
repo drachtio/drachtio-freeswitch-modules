@@ -11,6 +11,7 @@
 #define TRANSCRIBE_EVENT_END_OF_TRANSCRIPT "aws_transcribe::end_of_transcript"
 #define TRANSCRIBE_EVENT_NO_AUDIO_DETECTED "aws_transcribe::no_audio_detected"
 #define TRANSCRIBE_EVENT_MAX_DURATION_EXCEEDED "aws_transcribe::max_duration_exceeded"
+#define TRANSCRIBE_EVENT_VAD_DETECTED "aws_transcribe::vad_detected"
 
 #define MAX_LANG (12)
 #define MAX_REGION (32)

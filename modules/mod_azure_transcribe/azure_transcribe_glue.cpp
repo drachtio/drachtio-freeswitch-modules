@@ -458,6 +458,7 @@ extern "C" {
 							if (state == SWITCH_VAD_STATE_START_TALKING) {
 								switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to azure speech now\n");
 								streamer->connect();
+								cb->responseHandler(session, TRANSCRIBE_EVENT_VAD_DETECTED, NULL);
 							}
 						}
 

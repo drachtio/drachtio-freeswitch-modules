@@ -654,6 +654,7 @@ extern "C" {
                 if (state == SWITCH_VAD_STATE_START_TALKING) {
                   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to google speech now\n");
                   streamer->connect();
+                  cb->responseHandler(session, "vad_detected");
                 }
               }
 

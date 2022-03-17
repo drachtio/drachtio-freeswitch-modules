@@ -11,6 +11,7 @@
 #define TRANSCRIBE_EVENT_START_OF_UTTERANCE "azure_transcribe::start_of_utterance"
 #define TRANSCRIBE_EVENT_END_OF_UTTERANCE "azure_transcribe::end_of_utterance"
 #define TRANSCRIBE_EVENT_NO_SPEECH_DETECTED "azure_transcribe::no_speech_detected"
+#define TRANSCRIBE_EVENT_VAD_DETECTED "azure_transcribe::vad_detected"
 
 #define MAX_LANG (12)
 #define MAX_REGION (32)
