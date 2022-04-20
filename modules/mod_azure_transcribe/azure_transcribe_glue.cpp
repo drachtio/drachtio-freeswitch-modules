@@ -217,7 +217,6 @@ public:
 		}
 		if (!m_connected) {
       if (datalen % CHUNKSIZE == 0) {
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::write queuing %d bytes\n", datalen);
         m_audioBuffer.add(data, datalen);
       }
       return true;
