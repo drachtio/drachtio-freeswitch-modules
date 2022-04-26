@@ -61,7 +61,27 @@ public:
 		}
 		m_pushStream = AudioInputStream::CreatePushStream(format);
 		auto audioConfig = AudioConfig::FromStreamInput(m_pushStream);
-		m_recognizer = SpeechRecognizer::FromConfig(speechConfig, sourceLanguageConfig, audioConfig);
+
+    // alternative language
+		const char* var;
+    if (var = switch_channel_get_variable(channel, "AZURE_SPEECH_ALTERNATIVE_LANGUAGE_CODES")) {
+			std::vector<std::string> languages;
+			char *alt_langs[3] = { 0 };
+      int argc = switch_separate_string((char *) var, ',', alt_langs, 3);
+
+			languages.push_back(lang); // primary language
+      for (int i = 0; i < argc; i++) {
+				languages.push_back( alt_langs[i]);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(psession), SWITCH_LOG_DEBUG, "added alternative lang %s\n", alt_langs[i]);
+      }
+			auto autoDetectSourceLanguageConfig = AutoDetectSourceLanguageConfig::FromLanguages(languages);
+			m_recognizer = SpeechRecognizer::FromConfig(speechConfig, autoDetectSourceLanguageConfig, audioConfig);
+    }
+		else {
+			auto sourceLanguageConfig = SourceLanguageConfig::FromLanguage(lang);
+			m_recognizer = SpeechRecognizer::FromConfig(speechConfig, sourceLanguageConfig, audioConfig);
+		}
+
 
 		// set properties 
 		auto &properties = m_recognizer->Properties;
