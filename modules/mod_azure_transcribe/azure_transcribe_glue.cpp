@@ -51,7 +51,7 @@ public:
 		const char* endpoint = switch_channel_get_variable(channel, "AZURE_SERVICE_ENDPOINT");
 
 		auto sourceLanguageConfig = SourceLanguageConfig::FromLanguage(lang);
-		auto format = AudioStreamFormat::GetWaveFormatPCM(8000, 16, 1);
+		auto format = AudioStreamFormat::GetWaveFormatPCM(8000, 16, channels);
 		auto options = AudioProcessingOptions::Create(AUDIO_INPUT_PROCESSING_ENABLE_DEFAULT);
 		auto speechConfig = nullptr != endpoint ? 
 			SpeechConfig::FromEndpoint(endpoint, subscriptionKey) :		
