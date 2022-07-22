@@ -41,6 +41,7 @@ class GStreamer {
 public:
 	GStreamer(
     const char *sessionId,
+		const char *bugname,
 		u_int16_t channels,
     char *lang, 
     int interim,
@@ -49,7 +50,7 @@ public:
 		const char* awsAccessKeyId, 
 		const char* awsSecretAccessKey,
 		responseHandler_t responseHandler
-  ) : m_sessionId(sessionId), m_finished(false), m_interim(interim), m_finishing(false), m_connected(false), m_connecting(false),
+  ) : m_sessionId(sessionId), m_bugname(bugname), m_finished(false), m_interim(interim), m_finishing(false), m_connected(false), m_connecting(false),
 	 		m_packets(0), m_responseHandler(responseHandler), m_pStream(nullptr), 
 			m_audioBuffer(320 * (samples_per_second == 8000 ? 1 : 2), 15) {
 		Aws::String key(awsAccessKeyId);
@@ -246,7 +247,7 @@ public:
 					s << "]";
 					if (0 != s.str().compare("[]") && (isFinal || m_interim)) {
 						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::writing transcript %p: %s\n", this, s.str().c_str() );
-						m_responseHandler(psession, s.str().c_str());
+						m_responseHandler(psession, s.str().c_str(), m_bugname.c_str());
 					}
 					TranscriptEvent empty;
 					m_transcript = empty; 
@@ -282,6 +283,7 @@ public:
 
 private:
 	std::string m_sessionId;
+	std::string m_bugname;
 	std::string  m_region;
 	Aws::UniquePtr<TranscribeStreamingServiceClient> m_client;
 	AudioStream* m_pStream;
@@ -305,7 +307,7 @@ static void *SWITCH_THREAD_FUNC aws_transcribe_thread(switch_thread_t *thread, v
 	struct cap_cb *cb = (struct cap_cb *) obj;
 	bool ok = true;
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "transcribe_thread: starting cb %p\n", (void *) cb);
-	GStreamer* pStreamer = new GStreamer(cb->sessionId, cb->channels, cb->lang, cb->interim, cb->samples_per_second, cb->region, cb->awsAccessKeyId, cb->awsSecretAccessKey, 
+	GStreamer* pStreamer = new GStreamer(cb->sessionId, cb->bugname, cb->channels, cb->lang, cb->interim, cb->samples_per_second, cb->region, cb->awsAccessKeyId, cb->awsSecretAccessKey, 
 		cb->responseHandler);
 	if (!pStreamer) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "transcribe_thread: Error allocating streamer\n");
@@ -379,7 +381,7 @@ extern "C" {
 
 	// start transcribe on a channel
 	switch_status_t aws_transcribe_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
-          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, void **ppUserData
+          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, char* bugname, void **ppUserData
 	) {
 		switch_status_t status = SWITCH_STATUS_SUCCESS;
 		switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -401,7 +403,8 @@ extern "C" {
 			status = SWITCH_STATUS_FALSE;
 			goto done;
 		}
-		strncpy(cb->sessionId, switch_core_session_get_uuid(session), 256);
+		strncpy(cb->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
+		strncpy(cb->bugname, bugname, MAX_BUG_LEN);
 
 		if (awsAccessKeyId && awsSecretAccessKey && awsRegion) {
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Using channel vars for aws authentication\n");
@@ -486,9 +489,9 @@ extern "C" {
 		return status;
 	}
 
-	switch_status_t aws_transcribe_session_stop(switch_core_session_t *session, int channelIsClosing) {
+	switch_status_t aws_transcribe_session_stop(switch_core_session_t *session, int channelIsClosing, char* bugname) {
 		switch_channel_t *channel = switch_core_session_get_channel(session);
-		switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+		switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
 
 		if (bug) {
 			struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
@@ -498,19 +501,19 @@ extern "C" {
 			switch_mutex_lock(cb->mutex);
 			GStreamer* streamer = (GStreamer *) cb->streamer;
 			if (streamer) {
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "aws_transcribe_session_stop: finish..\n");
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "aws_transcribe_session_stop: finish..%s\n", bugname);
 				streamer->finish();
 			}
 			if (cb->thread) {
 				switch_status_t retval;
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: waiting for read thread to complete\n");
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: waiting for read thread to complete %s\n", bugname);
 				switch_thread_join(&retval, cb->thread);
 				cb->thread = NULL;
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: read thread completed\n");
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: read thread completed %s\n", bugname);
 			}
 			killcb(cb);
 
-			switch_channel_set_private(channel, MY_BUG_NAME, NULL);
+			switch_channel_set_private(channel, bugname, NULL);
 			if (!channelIsClosing) switch_core_media_bug_remove(session, &bug);
 
 			switch_mutex_unlock(cb->mutex);
@@ -547,7 +550,7 @@ extern "C" {
 							if (state == SWITCH_VAD_STATE_START_TALKING) {
 								switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to aws speech now\n");
 								streamer->connect();
-								cb->responseHandler(session, "vad_detected");
+								cb->responseHandler(session, "vad_detected", cb->bugname);
 							}
 						}
 

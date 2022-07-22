@@ -7,6 +7,8 @@
 #include <unistd.h>
 
 #define MY_BUG_NAME "aws_transcribe"
+#define MAX_BUG_LEN (64)
+#define MAX_SESSION_ID (256)
 #define TRANSCRIBE_EVENT_RESULTS "aws_transcribe::transcription"
 #define TRANSCRIBE_EVENT_END_OF_TRANSCRIPT "aws_transcribe::end_of_transcript"
 #define TRANSCRIBE_EVENT_NO_AUDIO_DETECTED "aws_transcribe::no_audio_detected"
@@ -17,11 +19,12 @@
 #define MAX_REGION (32)
 
 /* per-channel data */
-typedef void (*responseHandler_t)(switch_core_session_t* session, const char * json);
+typedef void (*responseHandler_t)(switch_core_session_t* session, const char * json, const char* bugname);
 
 struct cap_cb {
 	switch_mutex_t *mutex;
-	char sessionId[256];
+	char bugname[MAX_BUG_LEN+1];
+	char sessionId[MAX_SESSION_ID+1];
   char awsAccessKeyId[128];
   char awsSecretAccessKey[128];
 	uint32_t channels;
