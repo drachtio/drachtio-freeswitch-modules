@@ -367,7 +367,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     }
     
     if (cb->play_file == 1){
-      cb->responseHandler(session, "play_interrupt");
+      cb->responseHandler(session, "play_interrupt", cb->bugname);
     }
     
     for (int r = 0; r < response.results_size(); ++r) {
@@ -430,7 +430,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       }
 
       char* json = cJSON_PrintUnformatted(jResult);
-      cb->responseHandler(session, (const char *) json);
+      cb->responseHandler(session, (const char *) json, cb->bugname);
       free(json);
 
       cJSON_Delete(jResult);
@@ -439,7 +439,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     if (speech_event_type == StreamingRecognizeResponse_SpeechEventType_END_OF_SINGLE_UTTERANCE) {
       // we only get this when we have requested it, and recognition stops after we get this
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: got end_of_utterance\n") ;
-      cb->responseHandler(session, "end_of_utterance");
+      cb->responseHandler(session, "end_of_utterance", cb->bugname);
       cb->end_of_utterance = 1;
       streamer->writesDone();
     }
@@ -451,15 +451,15 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
     if (session) {
       if (1 == cb->end_of_utterance) {
-        cb->responseHandler(session, "end_of_transcript");
+        cb->responseHandler(session, "end_of_transcript", cb->bugname);
       }
       grpc::Status status = streamer->finish();
       if (11 == status.error_code()) {
         if (std::string::npos != status.error_message().find("Exceeded maximum allowed stream duration")) {
-          cb->responseHandler(session, "max_duration_exceeded");
+          cb->responseHandler(session, "max_duration_exceeded", cb->bugname);
         }
         else {
-          cb->responseHandler(session, "no_audio");
+          cb->responseHandler(session, "no_audio", cb->bugname);
         }
       }
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: finish() status %s (%d)\n", status.error_message().c_str(), status.error_code()) ;
@@ -489,7 +489,7 @@ extern "C" {
       return SWITCH_STATUS_SUCCESS;
     }
     switch_status_t google_speech_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
-          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, int single_utterance,
+          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, char *bugname, int single_utterance,
           int separate_recognition, int max_alternatives, int profanity_filter, int word_time_offset,
           int punctuation, char* model, int enhanced, char* hints, char* play_file, void **ppUserData) {
 
@@ -501,6 +501,7 @@ extern "C" {
 
       cb =(struct cap_cb *) switch_core_session_alloc(session, sizeof(*cb));
       strncpy(cb->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
+      strncpy(cb->bugname, bugname, MAX_BUG_LEN);
       cb->end_of_utterance = 0;
       if (play_file != NULL){
         cb->play_file = 1;
@@ -573,21 +574,20 @@ extern "C" {
       return SWITCH_STATUS_SUCCESS;
     }
 
-    switch_status_t google_speech_session_cleanup(switch_core_session_t *session, int channelIsClosing) {
+    switch_status_t google_speech_session_cleanup(switch_core_session_t *session, int channelIsClosing, switch_media_bug_t *bug) {
       switch_channel_t *channel = switch_core_session_get_channel(session);
-      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
 
       if (bug) {
         struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
         switch_mutex_lock(cb->mutex);
 
-        if (!switch_channel_get_private(channel, MY_BUG_NAME)) {
+        if (!switch_channel_get_private(channel, cb->bugname)) {
           // race condition
           switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s Bug is not attached (race).\n", switch_channel_get_name(channel));
           switch_mutex_unlock(cb->mutex);
           return SWITCH_STATUS_FALSE;
         }
-        switch_channel_set_private(channel, MY_BUG_NAME, NULL);
+        switch_channel_set_private(channel, cb->bugname, NULL);
 
       // stop playback if available
        if (cb->play_file == 1){ 
@@ -654,7 +654,7 @@ extern "C" {
                 if (state == SWITCH_VAD_STATE_START_TALKING) {
                   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to google speech now\n");
                   streamer->connect();
-                  cb->responseHandler(session, "vad_detected");
+                  cb->responseHandler(session, "vad_detected", cb->bugname);
                 }
               }
 

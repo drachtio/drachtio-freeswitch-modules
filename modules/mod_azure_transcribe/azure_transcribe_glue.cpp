@@ -30,6 +30,7 @@ class GStreamer {
 public:
 	GStreamer(
     const char *sessionId,
+		const char *bugname,
 		u_int16_t channels,
     char *lang, 
     int interim,
@@ -37,7 +38,7 @@ public:
 		const char* region, 
 		const char* subscriptionKey, 
 		responseHandler_t responseHandler
-  ) : m_sessionId(sessionId), m_finished(false), m_stopped(false), m_interim(interim), 
+  ) : m_sessionId(sessionId), m_bugname(bugname), m_finished(false), m_stopped(false), m_interim(interim), 
 	 m_connected(false), m_connecting(false), m_audioBuffer(320 * (samples_per_second == 8000 ? 1 : 2), 15),
 	m_responseHandler(responseHandler) {
 
@@ -133,7 +134,7 @@ public:
 			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
 			if (psession) {
 				auto sessionId = args.SessionId;
-				responseHandler(psession, TRANSCRIBE_EVENT_START_OF_UTTERANCE, NULL);
+				responseHandler(psession, TRANSCRIBE_EVENT_START_OF_UTTERANCE, NULL, m_bugname.c_str());
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer start of speech\n");
 				switch_core_session_rwunlock(psession);
 			}
@@ -142,7 +143,7 @@ public:
 			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
 			if (psession) {
 				auto sessionId = args.SessionId;
-				responseHandler(psession, TRANSCRIBE_EVENT_END_OF_UTTERANCE, NULL);
+				responseHandler(psession, TRANSCRIBE_EVENT_END_OF_UTTERANCE, NULL, m_bugname.c_str());
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer end of speech\n");
 				switch_core_session_rwunlock(psession);
 			}
@@ -160,10 +161,10 @@ public:
 					case ResultReason::RecognizingSpeech:
 					case ResultReason::RecognizedSpeech:
 						// note: interim results don't have "RecognitionStatus": "Success"
-						responseHandler(psession, TRANSCRIBE_EVENT_RESULTS, json.c_str());
+						responseHandler(psession, TRANSCRIBE_EVENT_RESULTS, json.c_str(), m_bugname.c_str());
 					break;
 					case ResultReason::NoMatch:
-						responseHandler(psession, TRANSCRIBE_EVENT_NO_SPEECH_DETECTED, json.c_str());
+						responseHandler(psession, TRANSCRIBE_EVENT_NO_SPEECH_DETECTED, json.c_str(), m_bugname.c_str());
 					break;
 
 					default:
@@ -264,6 +265,7 @@ public:
 
 private:
 	std::string m_sessionId;
+	std::string m_bugname;
 	std::string  m_region;
 	std::shared_ptr<SpeechRecognizer> m_recognizer;
 	std::shared_ptr<PushAudioInputStream> m_pushStream;
@@ -328,7 +330,7 @@ extern "C" {
 
 	// start transcribe on a channel
 	switch_status_t azure_transcribe_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
-          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, void **ppUserData
+          uint32_t samples_per_second, uint32_t channels, char* lang, int interim, char* bugname, void **ppUserData
 	) {
 		GStreamer *streamer = NULL;
 		switch_status_t status = SWITCH_STATUS_SUCCESS;
@@ -344,7 +346,8 @@ extern "C" {
 		const char* subscriptionKey = switch_channel_get_variable(channel, "AZURE_SUBSCRIPTION_KEY");
 		const char* region = switch_channel_get_variable(channel, "AZURE_REGION");
 		cb->channels = channels;
-		strncpy(cb->sessionId, sessionId, 256);
+		strncpy(cb->sessionId, sessionId, MAX_SESSION_ID);
+		strncpy(cb->bugname, bugname, MAX_BUG_LEN);
 
 		if (subscriptionKey && region) {
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Using channel vars for azure authentication\n");
@@ -414,7 +417,9 @@ extern "C" {
 		}
 
 		try {
-			streamer = new GStreamer(sessionId, channels, lang, interim, sampleRate, region, subscriptionKey, responseHandler);
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s: initializing gstreamer with %s\n", 
+					switch_channel_get_name(channel), bugname);
+			streamer = new GStreamer(sessionId, bugname, channels, lang, interim, sampleRate, cb->region, subscriptionKey, responseHandler);
 			cb->streamer = streamer;
 			if (!cb->vad) streamer->connect();
 		} catch (std::exception& e) {
@@ -430,9 +435,9 @@ extern "C" {
 		return status;
 	}
 
-	switch_status_t azure_transcribe_session_stop(switch_core_session_t *session, int channelIsClosing) {
+	switch_status_t azure_transcribe_session_stop(switch_core_session_t *session, int channelIsClosing, char* bugname) {
 		switch_channel_t *channel = switch_core_session_get_channel(session);
-		switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+		switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
 
 		if (bug) {
 			struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
@@ -442,7 +447,7 @@ extern "C" {
 			switch_mutex_lock(cb->mutex);
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "azure_transcribe_session_stop: locked session\n");
 
-			switch_channel_set_private(channel, MY_BUG_NAME, NULL);
+			switch_channel_set_private(channel, bugname, NULL);
 			if (!channelIsClosing) switch_core_media_bug_remove(session, &bug);
 
 			GStreamer* streamer = (GStreamer *) cb->streamer;
@@ -477,7 +482,7 @@ extern "C" {
 							if (state == SWITCH_VAD_STATE_START_TALKING) {
 								switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to azure speech now\n");
 								streamer->connect();
-								cb->responseHandler(session, TRANSCRIBE_EVENT_VAD_DETECTED, NULL);
+								cb->responseHandler(session, TRANSCRIBE_EVENT_VAD_DETECTED, NULL, cb->bugname);
 							}
 						}
 

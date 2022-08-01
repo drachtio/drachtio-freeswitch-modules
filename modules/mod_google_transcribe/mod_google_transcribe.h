@@ -7,7 +7,7 @@
 #include <unistd.h>
 
 #define MAX_SESSION_ID (256)
-
+#define MAX_BUG_LEN (64)
 #define MY_BUG_NAME "google_transcribe"
 #define TRANSCRIBE_EVENT_RESULTS "google_transcribe::transcription"
 #define TRANSCRIBE_EVENT_END_OF_UTTERANCE "google_transcribe::end_of_utterance"
@@ -35,11 +35,12 @@ struct cap_cb {
 };
 #else
 /* per-channel data */
-typedef void (*responseHandler_t)(switch_core_session_t* session, const char* json);
+typedef void (*responseHandler_t)(switch_core_session_t* session, const char* json, const char* bugname);
 
 struct cap_cb {
 	switch_mutex_t *mutex;
-	char sessionId[MAX_SESSION_ID];
+	char bugname[MAX_BUG_LEN+1];
+	char sessionId[MAX_SESSION_ID+1];
 	char *base;
   SpeexResamplerState *resampler;
 	void* streamer;

@@ -12,9 +12,9 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aws_transcribe_load);
 
 SWITCH_MODULE_DEFINITION(mod_aws_transcribe, mod_aws_transcribe_load, mod_aws_transcribe_shutdown, NULL);
 
-static switch_status_t do_stop(switch_core_session_t *session);
+static switch_status_t do_stop(switch_core_session_t *session, char* bugname);
 
-static void responseHandler(switch_core_session_t* session, const char * json) {
+static void responseHandler(switch_core_session_t* session, const char * json, const char* bugname) {
 	switch_event_t *event;
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 
@@ -46,6 +46,7 @@ static void responseHandler(switch_core_session_t* session, const char * json) {
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "aws");
 		switch_event_add_body(event, "%s", json);
 	}
+	if (bugname) switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "media-bugname", bugname);
 	switch_event_fire(&event);
 }
 
@@ -61,10 +62,10 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 
 	case SWITCH_ABC_TYPE_CLOSE:
 		{
+			struct cap_cb* cb = (struct cap_cb*) switch_core_media_bug_get_user_data(bug);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Got SWITCH_ABC_TYPE_CLOSE.\n");
-
-			aws_transcribe_session_stop(session, 1);
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Finished SWITCH_ABC_TYPE_CLOSE.\n");
+			aws_transcribe_session_stop(session, 1, cb->bugname);
+			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Finished SWITCH_ABC_TYPE_CLOSE.\n");
 		}
 		break;
 	
@@ -82,7 +83,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 }
 
 static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, 
-  char* lang, int interim)
+  char* lang, int interim, char* bugname)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
@@ -91,9 +92,9 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	void *pUserData;
 	uint32_t samples_per_second;
 
-	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
+	if (switch_channel_get_private(channel, bugname)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
-		do_stop(session);
+		do_stop(session, bugname);
 	}
 
 	switch_core_session_get_read_impl(session, &read_impl);
@@ -104,39 +105,39 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
-	if (SWITCH_STATUS_FALSE == aws_transcribe_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == aws_transcribe_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing aws speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
-	if ((status = switch_core_media_bug_add(session, "aws_transcribe", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
+	if ((status = switch_core_media_bug_add(session, bugname, NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
 		return status;
 	}
-  switch_channel_set_private(channel, MY_BUG_NAME, bug);
+  switch_channel_set_private(channel, bugname, bug);
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "added media bug for aws transcribe\n");
 
 	return SWITCH_STATUS_SUCCESS;
 }
 
-static switch_status_t do_stop(switch_core_session_t *session)
+static switch_status_t do_stop(switch_core_session_t *session, char* bugname)
 {
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
 	switch_channel_t *channel = switch_core_session_get_channel(session);
-	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
+	switch_media_bug_t *bug = switch_channel_get_private(channel, bugname);
 
 	if (bug) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command to stop transcribe.\n");
-		status = aws_transcribe_session_stop(session, 0);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command to stop transcribe on %s.\n", bugname);
+		status = aws_transcribe_session_stop(session, 0, bugname);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "stopped transcribe.\n");
 	}
 
 	return status;
 }
 
-#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] lang-code [interim] [stereo|mono]"
+#define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] lang-code [interim] [stereo|mono] [bugname]"
 SWITCH_STANDARD_API(aws_transcribe_function)
 {
-	char *mycmd = NULL, *argv[5] = { 0 };
+	char *mycmd = NULL, *argv[6] = { 0 };
 	int argc = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_media_bug_flag_t flags = SMBF_READ_STREAM /* | SMBF_WRITE_STREAM | SMBF_READ_PING */;
@@ -157,17 +158,19 @@ SWITCH_STANDARD_API(aws_transcribe_function)
 
 		if ((lsession = switch_core_session_locate(argv[0]))) {
 			if (!strcasecmp(argv[1], "stop")) {
+				char *bugname = argc > 2 ? argv[2] : MY_BUG_NAME;
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "stop transcribing\n");
-				status = do_stop(lsession);
+				status = do_stop(lsession, bugname);
 			} else if (!strcasecmp(argv[1], "start")) {
         char* lang = argv[2];
         int interim = argc > 3 && !strcmp(argv[3], "interim");
+				char *bugname = argc > 5 ? argv[5] : MY_BUG_NAME;
 				if (argc > 4 && !strcmp(argv[4], "stereo")) {
           flags |= SMBF_WRITE_STREAM ;
           flags |= SMBF_STEREO;
 				}
-    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
-				status = start_capture(lsession, flags, lang, interim);
+    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s %s\n", lang, interim ? "interim": "complete", bugname);
+				status = start_capture(lsession, flags, lang, interim, bugname);
 			}
 			switch_core_session_rwunlock(lsession);
 		}
