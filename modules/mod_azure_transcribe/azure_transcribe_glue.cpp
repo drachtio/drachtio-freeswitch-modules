@@ -18,7 +18,7 @@
 #include "simple_buffer.h"
 
 #define CHUNKSIZE (320)
-#define DEFAULT_SPEECH_TIMEOUT (180000)
+#define DEFAULT_SPEECH_TIMEOUT "180000"
 
 using namespace Microsoft::CognitiveServices::Speech;
 using namespace Microsoft::CognitiveServices::Speech::Audio;
