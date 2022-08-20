@@ -18,6 +18,7 @@
 #include "simple_buffer.h"
 
 #define CHUNKSIZE (320)
+#define DEFAULT_SPEECH_TIMEOUT (180000)
 
 using namespace Microsoft::CognitiveServices::Speech;
 using namespace Microsoft::CognitiveServices::Speech::Audio;
@@ -25,6 +26,8 @@ using namespace Microsoft::CognitiveServices::Speech::Audio;
 const char ALLOC_TAG[] = "drachtio";
 
 static bool hasDefaultCredentials = false;
+static bool sdkInitialized = false;
+static const char* sdkLog = std::getenv("AZURE_SDK_LOGFILE");
 
 class GStreamer {
 public:
@@ -49,6 +52,7 @@ public:
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::GStreamer(%p) region %s, language %s\n", 
 			this, region, lang);
 
+
 		const char* endpoint = switch_channel_get_variable(channel, "AZURE_SERVICE_ENDPOINT");
 
 		auto sourceLanguageConfig = SourceLanguageConfig::FromLanguage(lang);
@@ -60,6 +64,12 @@ public:
 		if (switch_true(switch_channel_get_variable(channel, "AZURE_USE_OUTPUT_FORMAT_DETAILED"))) {
 			speechConfig->SetOutputFormat(OutputFormat::Detailed);
 		}
+
+		if (!sdkInitialized && sdkLog) {
+			sdkInitialized = true;
+			speechConfig->SetProperty(PropertyId::Speech_LogFilename, sdkLog);
+		}
+
 		m_pushStream = AudioInputStream::CreatePushStream(format);
 		auto audioConfig = AudioConfig::FromStreamInput(m_pushStream);
 
@@ -99,7 +109,7 @@ public:
 		// initial speech timeout in milliseconds
 		const char* timeout = switch_channel_get_variable(channel, "AZURE_INITIAL_SPEECH_TIMEOUT_MS");
 		if (timeout) properties.SetProperty(PropertyId::SpeechServiceConnection_InitialSilenceTimeoutMs, timeout);
-
+		else properties.SetProperty(PropertyId::SpeechServiceConnection_InitialSilenceTimeoutMs, DEFAULT_SPEECH_TIMEOUT);
 		// recognition mode - readonly according to Azure docs: 
 		// https://docs.microsoft.com/en-us/javascript/api/microsoft-cognitiveservices-speech-sdk/propertyid?view=azure-node-latest
 		/*
@@ -318,9 +328,7 @@ extern "C" {
 		}
 		else {
 			hasDefaultCredentials = true;
-
 		}
-
 		return SWITCH_STATUS_SUCCESS;
 	}
 	
