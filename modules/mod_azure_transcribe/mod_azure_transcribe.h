@@ -20,7 +20,7 @@
 #define MAX_SUBSCRIPTION_KEY_LEN (256)
 
 /* per-channel data */
-typedef void (*responseHandler_t)(switch_core_session_t* session, const char* event, const char * json, const char* bugname);
+typedef void (*responseHandler_t)(switch_core_session_t* session, const char* event, const char * json, const char* bugname, int finished);
 
 struct cap_cb {
 	switch_mutex_t *mutex;

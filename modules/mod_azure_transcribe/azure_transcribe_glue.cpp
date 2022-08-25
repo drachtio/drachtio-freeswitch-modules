@@ -144,7 +144,7 @@ public:
 			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
 			if (psession) {
 				auto sessionId = args.SessionId;
-				responseHandler(psession, TRANSCRIBE_EVENT_START_OF_UTTERANCE, NULL, m_bugname.c_str());
+				responseHandler(psession, TRANSCRIBE_EVENT_START_OF_UTTERANCE, NULL, m_bugname.c_str(), m_finished);
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer start of speech\n");
 				switch_core_session_rwunlock(psession);
 			}
@@ -153,7 +153,7 @@ public:
 			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
 			if (psession) {
 				auto sessionId = args.SessionId;
-				responseHandler(psession, TRANSCRIBE_EVENT_END_OF_UTTERANCE, NULL, m_bugname.c_str());
+				responseHandler(psession, TRANSCRIBE_EVENT_END_OF_UTTERANCE, NULL, m_bugname.c_str(), m_finished);
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer end of speech\n");
 				switch_core_session_rwunlock(psession);
 			}
@@ -171,10 +171,10 @@ public:
 					case ResultReason::RecognizingSpeech:
 					case ResultReason::RecognizedSpeech:
 						// note: interim results don't have "RecognitionStatus": "Success"
-						responseHandler(psession, TRANSCRIBE_EVENT_RESULTS, json.c_str(), m_bugname.c_str());
+						responseHandler(psession, TRANSCRIBE_EVENT_RESULTS, json.c_str(), m_bugname.c_str(), m_finished);
 					break;
 					case ResultReason::NoMatch:
-						responseHandler(psession, TRANSCRIBE_EVENT_NO_SPEECH_DETECTED, json.c_str(), m_bugname.c_str());
+						responseHandler(psession, TRANSCRIBE_EVENT_NO_SPEECH_DETECTED, json.c_str(), m_bugname.c_str(), m_finished);
 					break;
 
 					default:
@@ -490,7 +490,7 @@ extern "C" {
 							if (state == SWITCH_VAD_STATE_START_TALKING) {
 								switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to azure speech now\n");
 								streamer->connect();
-								cb->responseHandler(session, TRANSCRIBE_EVENT_VAD_DETECTED, NULL, cb->bugname);
+								cb->responseHandler(session, TRANSCRIBE_EVENT_VAD_DETECTED, NULL, cb->bugname, 0);
 							}
 						}
 
