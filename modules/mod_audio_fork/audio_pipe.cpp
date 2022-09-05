@@ -324,12 +324,20 @@ void AudioPipe::processPendingWrites() {
 AudioPipe* AudioPipe::findAndRemovePendingConnect(struct lws *wsi) {
   AudioPipe* ap = NULL;
   std::lock_guard<std::mutex> guard(mutex_connects);
+  std::list<AudioPipe* > toRemove;
 
   for (auto it = pendingConnects.begin(); it != pendingConnects.end() && !ap; ++it) {
     int state = (*it)->m_state;
+
+    if ((*it)->m_wsi == nullptr)
+      toRemove.push_back(*it);
+
     if ((state == LWS_CLIENT_CONNECTING) &&
       (*it)->m_wsi == wsi) ap = *it;
   }
+
+  for (auto it = toRemove.begin(); it != toRemove.end(); ++it)
+    pendingConnects.remove(*it);
 
   if (ap) {
     pendingConnects.remove(ap);
