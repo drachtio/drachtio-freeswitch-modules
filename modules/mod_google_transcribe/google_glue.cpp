@@ -614,7 +614,7 @@ extern "C" {
         }
 
         if (cb->resampler) {
-          speex_resampler_destroy(cb->resampler);
+          switch_resample_destroy(&cb->resampler);
         }
         if (cb->vad) {
           switch_vad_destroy(&cb->vad);
