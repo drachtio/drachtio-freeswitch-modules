@@ -613,8 +613,8 @@ extern "C" {
           cb->streamer = NULL;
         }
 
-        if (cb->resampler) {
-          switch_resample_destroy(&cb->resampler);
+        if (cb->resampler && !switch_core_media_bug_test_flag(bug, SMBF_STATUS_CHECK)) {
+          speex_resampler_destroy(cb->resampler);
         }
         if (cb->vad) {
           switch_vad_destroy(&cb->vad);
