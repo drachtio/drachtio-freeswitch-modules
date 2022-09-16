@@ -144,6 +144,10 @@ public:
       config->set_enable_automatic_punctuation(true);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_automatic_punctuation\n");
     }
+    else {
+      config->set_enable_automatic_punctuation(false);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "disable_automatic_punctuation\n");
+    }
 
     // speech model
     if (model != NULL) {
