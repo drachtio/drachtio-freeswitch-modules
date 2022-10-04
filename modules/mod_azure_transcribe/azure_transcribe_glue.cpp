@@ -54,6 +54,7 @@ public:
 
 
 		const char* endpoint = switch_channel_get_variable(channel, "AZURE_SERVICE_ENDPOINT");
+		const char* endpointId = switch_channel_get_variable(channel, "AZURE_SERVICE_ENDPOINT_ID");
 
 		auto sourceLanguageConfig = SourceLanguageConfig::FromLanguage(lang);
 		auto format = AudioStreamFormat::GetWaveFormatPCM(8000, 16, channels);
@@ -63,6 +64,11 @@ public:
 			SpeechConfig::FromSubscription(subscriptionKey, region);
 		if (switch_true(switch_channel_get_variable(channel, "AZURE_USE_OUTPUT_FORMAT_DETAILED"))) {
 			speechConfig->SetOutputFormat(OutputFormat::Detailed);
+		}
+
+		if (nullptr != endpointId) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(psession), SWITCH_LOG_DEBUG, "setting endpoint id: %s\n", endpointId);
+			speechConfig->SetEndpointId(endpointId);
 		}
 
 		if (!sdkInitialized && sdkLog) {
