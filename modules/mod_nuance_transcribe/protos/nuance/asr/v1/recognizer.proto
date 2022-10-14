@@ -1,0 +1,188 @@
+//  Copyright (C) 2020 - 2022 Nuance Communications, Inc. All Rights Reserved.
+//
+//  The copyright to the computer program(s) herein is the property of
+//  Nuance Communications, Inc. The program(s) may be used and/or copied
+//  only with the written permission from Nuance Communications, Inc.
+//  or in accordance with the terms and conditions stipulated in the
+//  agreement/contract under which the program(s) have been supplied.
+
+syntax = "proto3";
+
+package nuance.asr.v1;
+
+import "nuance/asr/v1/resource.proto";
+import "nuance/asr/v1/result.proto";
+
+option java_multiple_files = true;
+option java_package = "com.nuance.rpc.asr.v1";
+option java_outer_classname = "RecognizerProto";
+
+/*
+Streaming recognition service API.  
+*/
+service Recognizer {
+  rpc Recognize (stream RecognitionRequest) returns (stream RecognitionResponse); // Starts a recognition request and returns a response. 
+}
+
+/*
+Input stream messages that request recognition, sent one at a time in a specific order. The first mandatory field sends recognition parameters and resources, the final field sends audio to be recognized. Included in Recognizer:  Recognize service.
+*/
+message RecognitionRequest {
+  oneof request_union {
+    RecognitionInitMessage recognition_init_message = 1; // Required first message in the RPC input stream, sends parameters and resources for recognition.
+    ControlMessage control_message = 2;                  // Optional second message in the RPC input stream, for timer control.
+    bytes audio = 3;                                     // Audio samples in the selected encoding for recognition.
+  }
+}
+
+/*
+Input message that initiates a new recognition turn. Included in RecognitionRequest.
+*/
+message RecognitionInitMessage {
+  RecognitionParameters parameters = 1;       // Language, audio format, and other recognition parameters.
+  repeated RecognitionResource resources = 2; // Repeated. Optional resources (DLMs, wordsets, builtins) to improve recognition. 
+  map<string, string> client_data = 3;        // Repeated. Optional client-supplied key, value pairs to inject into the call log.  
+  string user_id = 4;                         // Identifies a specific user in the application.
+}
+
+/* 
+Input message that defines parameters for the recognition process. Included in RecognitionInitMessage. The language and audio_format parameters are required. All others are optional. 
+*/
+message RecognitionParameters {
+  string language = 1;                        // Mandatory. Language and country (locale) code as xx-XX, e.g. en-US.
+  string topic = 2;                           // Specialized language model in data pack. Default is 'GEN' (general).
+  AudioFormat audio_format = 3;               // Mandatory. Audio codec type and sample rate. 
+  EnumUtteranceDetectionMode utterance_detection_mode = 4; // How end of utterance is determined. Default SINGLE. 
+  EnumResultType result_type = 5;             // The level of transcription results. Default FINAL. 
+  RecognitionFlags recognition_flags = 6;     // Boolean recognition parameters. 
+  uint32 no_input_timeout_ms = 7;             // Maximum silence, in ms, allowed while waiting for user input after recognition timers are started. Default (0) means server default, usually no timeout. 
+  uint32 recognition_timeout_ms = 8;          // Maximum duration, in ms, of recognition turn. Default (0) means means server default, usually no timeout. 
+  uint32 utterance_end_silence_ms = 9;        // Minimum silence, in ms, that determines the end of an utterance. Default (0) means server default, usually 500 ms or half a second.
+  oneof optional_speech_detection_sensitivity {
+    float speech_detection_sensitivity = 10; // A balance between detecting speech and noise (breathing, etc.), 0 to 1. 0 means ignore all noise, 1 means interpret all noise as speech. Default is 0.5. 
+  }
+  uint32 max_hypotheses = 11;                 // Maximum number of n-best hypotheses to return. Default (0) means a server default.
+  string speech_domain = 15;                  // Mapping to internal weight sets for language models in the data pack. Values depend on the data pack. 
+  Formatting formatting = 16;                 // Formatting keyword. 
+}
+
+/*
+Mandatory input message containing the audio format of the audio to transcribe. Included in RecognitionParameters.
+*/
+message AudioFormat {
+  oneof audio_format_union {
+    PCM pcm = 1;          // Signed 16-bit little endian PCM, 8kHz or 16kHz
+    ALaw alaw = 2;        // G.711 A-law, 8kHz
+    ULaw ulaw = 3;        // G.711 Mu-law, 8kHz
+    Opus opus = 4;        // RFC6716 Opus, 8kHz or 16kHz
+    OggOpus ogg_opus = 5; // RFC7845 Opus, 8kHz or 16kHz
+  }
+}
+
+/* 
+Input message defining PCM sample rate.  
+*/
+message PCM { 
+  uint32 sample_rate_hz = 1; // Audio sample rate: 0, 8000, 16000. Default 0, meaning 8000.
+}
+
+/* 
+Input message defining ALaw audio format. G.711 audio formats are set to 8kHz.
+*/
+message ALaw {}
+
+/* 
+Input message defining ULaw audio format. G.711 audio formats are set to 8kHz.
+*/
+message ULaw {}
+
+/*
+Input message defining Opus packet stream decoding parameters.
+*/ 
+message Opus {
+  uint32 decode_rate_hz = 1; // Decoder output rate: 0, 8000, 16000. Default 0, meaning 8000.
+  uint32 preskip_samples = 2; // Decoder 48KHz output samples to skip.
+  uint32 source_rate_hz = 3; // Optional: input source sample rate
+}
+
+/*
+Input message defining Ogg-encapsulated Opus audio stream parameters.
+*/ 
+message OggOpus {
+  uint32 decode_rate_hz = 1; // Decoder output rate: 0, 8000, 16000. Default 0, meaning 8000.
+}
+
+/* 
+Input field specifying how utterances should be detected and transcribed within the audio stream.  Included in RecognitionParameters. The default is SINGLE. When the detection mode is DISABLED, the recognition ends only when the client stops sending audio or hits the maximum audio length.  
+*/
+enum EnumUtteranceDetectionMode {
+  SINGLE = 0;     // Return recognition results for one utterance only, ignoring any trailing audio. Default.
+  MULTIPLE = 1;   // Return results for all utterances detected in the audio stream.
+  DISABLED = 2;   // Return recognition results for all audio provided by the client, without separating it into utterances.
+}
+
+/* 
+Input message containing boolean recognition parameters. Included in RecognitionParameters. The default is false in all cases.
+*/
+message RecognitionFlags {
+  bool auto_punctuate = 1;             // Whether to enable auto punctuation, if available for the language.
+  bool filter_profanity = 2;           // Whether to mask known profanities as *** in transcription, if available for the language.
+  bool include_tokenization = 3;       // Whether to include tokenized recognition result. 
+  bool stall_timers = 4;               // Whether to disable recognition timers. By default, timers start when recognition begins. 
+  bool discard_speaker_adaptation = 5; // If speaker profiles are used, whether to discard updated speaker data. By default, data is stored. 
+  bool suppress_call_recording = 6;    // Whether to disable recording to Call Log Aggregator (CLAG). By default, call logs, metadata, and audio are collected by CLAG. Call recording may also be disabled at the server level, in which case this parameter has no effect. 
+  bool mask_load_failures = 7;         // When true, errors loading external resources are not reflected in the Status message and do not terminate recognition. They are still reflected in logs.
+  bool suppress_initial_capitalization = 8;	// When true, the first word in a sentence is not automatically capitalized.
+  bool allow_zero_base_lm_weight = 9;  // When true, custom resources (DLMs, wordsets, etc.) can use the entire weight space, disabling the base LM contribution. By default, the base LM uses at least 10% of the weight space. Even when true, words from base LM are still recognizable (with lower probability).
+  bool filter_wakeup_word = 10;        // Whether to remove the wakeup word in the final result.
+}
+
+/*
+Input message specifying how the transcription results are presented, using a keyword for a formatting type supported by the data pack.  Included in RecognitionParameters.
+*/
+message Formatting {
+  string scheme = 1;                   // Keyword for a formatting type defined in the data pack. Default is data pack dependent. 
+  map<string,bool> options = 2;        // Repeated. Map of key, value pairs of formatting options and values defined in the data pack.
+}
+
+/* 
+Input message that starts the recognition no-input timer. Included in RecognitionRequest. This setting is only effective if timers are disabled in the recognition request.
+*/
+message ControlMessage {
+  oneof control_message_union {
+    StartTimersControlMessage start_timers_message = 1; // Starts the recognition no-input timer. 
+  }
+}
+
+/* 
+Input message the client sends when starting the no-input timer. Included in ControlMessage.
+*/
+message StartTimersControlMessage {
+}
+
+/*
+Output stream of messages in response to a recognize request. Included in Recognizer: Recognize service.
+*/
+message RecognitionResponse {
+  oneof response_union {
+    Status status = 1;                 // Always the first message returned, indicating whether recognition was initiated successfully.
+    StartOfSpeech start_of_speech = 2; // When speech was detected. 
+    Result result = 3;                 // The partial or final recognition result. A series of partial results may preceed the final result.
+  }
+}
+
+/*
+Output message indicating the status of the transcription. The message and details are developer-facing error messages in English. User-facing messages should be localized by the client based on the status code. Included in RecognitionResponse.
+*/
+message Status {
+  uint32 code = 1;      // HTTP-style return code: 100, 200, 4xx, or 5xx as appropriate.
+  string message = 2;   // Brief description of the status.
+  string details = 3;   // Longer description if available.
+}
+
+/*
+Output message containing the start-of-speech message. Included in RecognitionResponse.
+*/
+message StartOfSpeech {
+  uint32 first_audio_to_start_of_speech_ms = 1; // Offset from start of audio stream to start of speech detected.
+}

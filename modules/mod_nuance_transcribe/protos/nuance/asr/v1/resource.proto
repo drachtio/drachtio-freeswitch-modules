@@ -1,0 +1,83 @@
+//  Copyright (C) 2020 - 2022 Nuance Communications, Inc. All Rights Reserved.
+//
+//  The copyright to the computer program(s) herein is the property of
+//  Nuance Communications, Inc. The program(s) may be used and/or copied
+//  only with the written permission from Nuance Communications, Inc.
+//  or in accordance with the terms and conditions stipulated in the
+//  agreement/contract under which the program(s) have been supplied.
+
+syntax = "proto3";
+
+package nuance.asr.v1;
+
+option java_multiple_files = true;
+option java_package = "com.nuance.rpc.asr.v1";
+option java_outer_classname = "ResourceProto";
+
+/*
+Input message defining one or more recognition resources (domain LMs, wordsets, speaker profiles, builtins) to improve recognition.  Included in RecognitionInitMessage. Domain LMs and speaker profiles must be external references but wordsets may also be provided inline.
+*/
+message RecognitionResource {  
+  oneof resource_union {
+    ResourceReference external_reference = 1; // The resource is an external file. Mandatory for DLMs and speaker profiles. 
+    string inline_wordset = 2;                // Inline wordset JSON resource. Default blank, meaning no inline wordset.
+    string builtin = 3;                       // Name of a builtin resource in the data pack. Default blank, meaning no builtins.
+    string inline_grammar = 4;                // Inline grammar, SRGS XML format. Default blank, meaning no inline grammar.
+    WakeupWord wakeup_word = 8;               // List of wakeup word(s).
+  } 
+  oneof weight_union {                        // Weight applies to DLMs and builtins only. 
+    EnumWeight weight_enum = 5;               // Keyword for weight of DLM or builtin relative to data pack. If DEFAULT_WEIGHT or not supplied, defaults to MEDIUM (0.25). 
+    float weight_value = 6;                   // Weight of DLM or builtin relative to data pack as value from 0 to 1. If 0.0 or not supplied, defaults to 0.25 (MEDIUM).  
+  }
+  EnumResourceReuse reuse = 7;                // Whether the resource will be used multiple times. Default LOW_REUSE.  
+}
+
+/*
+Input message for fetching an external recognition resource. Included in RecognitionResource. For Nuance-hosted Krypton, the uri for DLMs is a URN, e.g. urn:nuance:mix/eng-USA/A2_C70/mix.asr. 
+*/
+message ResourceReference {
+  EnumResourceType type = 1;           // Resource type. Default UNDEFINED_RESOURCE_TYPE.
+  string uri = 2;                      // Location of the resource as a URN reference. 
+  bool mask_load_failures = 3;         // When true, errors loading wordset package are not reflected in the Status message and do not terminate recognition. They are still reflected in logs.
+  uint32 request_timeout_ms = 7;       // Time to wait when downloading resources. Default (0) means server default, usually 10000 ms or 10 seconds.  
+  map<string, string> headers = 8;     // Optional header name, value pairs.
+}
+
+/*
+Input field defining the content type of a recognition resource: a domain LM, wordset (plain text or compiled) or speaker profile. Included in ResourceReference.
+*/
+enum EnumResourceType {
+  UNDEFINED_RESOURCE_TYPE = 0;      // Resource type is not specified. Client must always specify a type.  
+  WORDSET = 1;                      // Resource is a plain-text JSON wordset, provided inline or referenced as a file. 
+  COMPILED_WORDSET = 2;             // Resource is a compiled wordset zip file. 
+  DOMAIN_LM = 3;                    // Resource is a domain LM zip file.
+  SPEAKER_PROFILE = 4;              // Resource is a speaker profile defined in a Minio endpoint.
+  GRAMMAR = 5;                      // Resource is a SRGS XML file.
+  SETTINGS = 6;                     // Resource is ASR settings metadata.  
+}
+
+message WakeupWord {
+  repeated string words = 1;        // Wakeup word(s). Each entry must be distinct.
+}
+
+/*
+Input field specifying whether the domain LMs or wordset will be used for one or many recognition turns. Included in RecognitionResource. 
+*/
+enum EnumResourceReuse {
+  UNDEFINED_REUSE = 0;              // Not specified: currently defaults to LOW_REUSE.
+  LOW_REUSE = 1;                    // The resource will be used for only one recognition turn.
+  HIGH_REUSE = 5;                   // The resource will be used for a sequence of recognition turns.
+  reserved 2,3,4;
+}
+
+/*
+Input field setting the relative weight of the DLM or builtin to the data pack, as a keyword. Included in RecognitionResource. Wordsets and speaker profiles do not have a weight. See also weight_value to specify a numeric value.
+*/
+enum EnumWeight {
+  DEFAULT_WEIGHT = 0; // Same effect as MEDIUM.
+  LOWEST = 1;         // The resource has minimal influence on the recognition process, equivalent to weight_value 0.05.
+  LOW = 2;            // The resource has noticeable influence, equivalent to 0.1.
+  MEDIUM = 3;         // The resource has roughly an equal effect compared to the data pack, equivalent to 0.25. 
+  HIGH = 4;           // Words from the resource may be favored over words from the data pack, equivalent to 0.5.
+  HIGHEST = 5;        // The resource has the greatest influence on the recognition, equivalent to 0.9.
+}

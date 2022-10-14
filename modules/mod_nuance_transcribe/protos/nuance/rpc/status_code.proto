@@ -1,0 +1,88 @@
+// Copyright (C) 2021 Nuance Communications Inc. All Rights Reserved.
+
+// The copyright to the computer program(s) herein is the property of  
+// Nuance Communications Inc. The program(s) may be used and/or copied
+// only with the written permission from Nuance Communications Inc.
+// or in accordance with the terms and conditions stipulated in the
+// agreement/contract under which the program(s) have been supplied.
+syntax = "proto3";
+
+package nuance.rpc;
+ 
+option java_multiple_files = true;
+option java_package = "com.nuance.rpc";
+
+// A set of global status codes to be commonly used by compliant Nuance APIs. 
+// These codes are purposely misaligned with HTTP status codes to avoid any 
+// unwanted associations.
+//
+// For some of these codes, you may prefer to use a method-specific response. 
+// For example, instead of the generic NOT_FOUND or ALREADY_EXISTS, you may 
+// return a more specific message.
+enum StatusCode {
+  // Unspecified status.
+  UNSPECIFIED = 0;
+
+  // Success.
+  OK = 1;
+
+  // Invalid message type: the server cannot understand the request. 
+  BAD_REQUEST = 2;
+
+  // The request has an invalid value, is missing a mandatory field, etc.
+  INVALID_REQUEST = 3;
+
+  // Operation terminated by client. The remote system may have changed.
+  CANCELLED_CLIENT = 4;
+
+  // Operation terminated by server. The remote system may have changed.
+  CANCELLED_SERVER = 5;
+
+  // The deadline set for the operation has expired.
+  DEADLINE_EXCEEDED = 6;
+
+  // The client does not have authorization to perform the operation.
+  NOT_AUTHORIZED = 7;
+
+  // The client does not have authorization to perform the operation on the 
+  // requested entities.
+  PERMISSION_DENIED = 8;
+
+  // The requested entity was not found.
+  NOT_FOUND = 9;
+
+  // Cannot create entity as it already exists.
+  ALREADY_EXISTS = 10;
+
+  // Unsupported operation or parameter, e.g. an unsupported media type.
+  NOT_IMPLEMENTED = 11;
+
+  // Result does not map to any defined status. Other response values 
+  // may provide request-specific additional information.
+  UNKNOWN = 15;
+
+  // Status codes 51 and up are less frequently used.
+  
+  // A field is too large to be processed due to technical limitations e.g. a
+  // large audio or other binary block. For arbitrary limitations (e.g. name 
+  // must be n characters or less), use INVALID_REQUEST.
+  TOO_LARGE = 51;
+
+  // Server understood the request but could not process it due to lack of 
+  // resources. Retry the request as is later.
+  BUSY = 52;
+
+  // A message type in the request is no longer supported.
+  OBSOLETE = 53;
+
+  // Similar to BUSY. The client has exceeded the limit of operations per 
+  // time unit. Retry request as is later.
+  RATE_EXCEEDED = 54;
+
+  // The client has exceeded quotas related to licensing or payment. See your 
+  // client representative for additional quotas. 
+  QUOTA_EXCEEDED = 55;
+
+  // An internal system error occurred while processing the request.
+  INTERNAL_ERROR = 56;
+}
