@@ -7,6 +7,8 @@
 #include "nuance_glue.h"
 #include <stdlib.h>
 #include <switch.h>
+#include <switch_curl.h>
+
 
 /* Prototypes */
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown);
@@ -15,8 +17,8 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load);
 
 SWITCH_MODULE_DEFINITION(mod_nuance_transcribe, mod_transcribe_load, mod_transcribe_shutdown, NULL);
 
-static switch_status_t do_stop(switch_core_session_t *session, char* bugname);
 
+static switch_status_t do_stop(switch_core_session_t *session, char* bugname);
 
 static void responseHandler(switch_core_session_t* session, const char * json, const char* bugname) {
 	switch_event_t *event;
@@ -135,58 +137,10 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	switch_codec_implementation_t read_impl = { 0 };
 	void *pUserData;
 	uint32_t samples_per_second;
-	int single_utterance = 0, separate_recognition = 0, max_alternatives = 0, profanity_filter = 0, word_time_offset = 0, punctuation = 0, enhanced = 0;
-	char* hints = NULL;
-  char* model = NULL;
 
 	if (switch_channel_get_private(channel, bugname)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
 		do_stop(session, bugname);
-	}
-
-	if (switch_true(switch_channel_get_variable(channel, "NUANCE_SPEECH_SINGLE_UTTERANCE"))) {
-      single_utterance = 1;
-    }
-
-	// transcribe each separately?
-	if (switch_true(switch_channel_get_variable(channel, "NUANCE_SPEECH_SEPARATE_RECOGNITION_PER_CHANNEL"))) {
-      separate_recognition = 1;
-    }
-
-	// max alternatives
-	if (switch_true(switch_channel_get_variable(channel, "NUANCE_SPEECH_MAX_ALTERNATIVES"))) {
-     	max_alternatives = atoi(switch_channel_get_variable(channel, "NUANCE_SPEECH_MAX_ALTERNATIVES"));
-    }
-
-	// profanity filter
-	if (switch_true(switch_channel_get_variable(channel, "NUANCE_SPEECH_PROFANITY_FILTER"))) {
-      profanity_filter = 1;
-    }
-
-	// enable word offsets
-	if (switch_true(switch_channel_get_variable(channel, "NUANCE_SPEECH_ENABLE_WORD_TIME_OFFSETS"))) {
-      word_time_offset = 1;
-    }
-
-	// enable automatic punctuation
-	if (switch_true(switch_channel_get_variable(channel, "NUANCE_SPEECH_ENABLE_AUTOMATIC_PUNCTUATION"))) {
-      punctuation = 1;
-    }
-
-    // speech model
-	if (switch_true(switch_channel_get_variable(channel, "NUANCE_SPEECH_MODEL"))) {	
-		model = (char *)switch_channel_get_variable(channel, "NUANCE_SPEECH_MODEL");    
-	}
-    
-
-    // use enhanced model
-    if (switch_true(switch_channel_get_variable(channel, "NUANCE_SPEECH_USE_ENHANCED"))) {
-      enhanced = 1;
-    }
-
-	// hints
-	if (switch_true(switch_channel_get_variable(channel, "NUANCE_SPEECH_HINTS"))) {	
-	  hints = (char *)switch_channel_get_variable_dup(channel, "NUANCE_SPEECH_HINTS", SWITCH_TRUE, -1);
 	}
 
 	switch_core_session_get_read_impl(session, &read_impl);
@@ -195,10 +149,14 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 		return SWITCH_STATUS_FALSE;
 	}
 
+	/* required channel vars */
+  if (!switch_channel_get_variable(channel, "NUANCE_ACCESS_TOKEN")) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "NUANCE_ACCESS_TOKEN channel var has not been set\n");
+	}
+
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
-	if (SWITCH_STATUS_FALSE == nuance_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, single_utterance,
-	 separate_recognition, max_alternatives, profanity_filter, word_time_offset, punctuation, model, enhanced, hints, NULL, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == nuance_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing nuance speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
