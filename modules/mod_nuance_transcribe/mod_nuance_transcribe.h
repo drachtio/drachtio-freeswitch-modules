@@ -10,17 +10,15 @@
 #define MAX_BUG_LEN (64)
 #define MY_BUG_NAME "nuance_transcribe"
 #define TRANSCRIBE_EVENT_RESULTS "nuance_transcribe::transcription"
-#define TRANSCRIBE_EVENT_END_OF_UTTERANCE "nuance_transcribe::end_of_utterance"
-#define TRANSCRIBE_EVENT_START_OF_TRANSCRIPT "nuance_transcribe::start_of_transcript"
-#define TRANSCRIBE_EVENT_END_OF_TRANSCRIPT "nuance_transcribe::end_of_transcript"
-#define TRANSCRIBE_EVENT_NO_AUDIO_DETECTED "nuance_transcribe::no_audio_detected"
-#define TRANSCRIBE_EVENT_MAX_DURATION_EXCEEDED "nuance_transcribe::max_duration_exceeded"
-#define TRANSCRIBE_EVENT_PLAY_INTERRUPT "nuance_transcribe::play_interrupt"
+#define TRANSCRIBE_EVENT_START_OF_SPEECH "nuance_transcribe::start_of_speech"
+#define TRANSCRIBE_EVENT_ERROR "nuance_transcribe::error"
 #define TRANSCRIBE_EVENT_VAD_DETECTED "nuance_transcribe::vad_detected"
 
 
 /* per-channel data */
-typedef void (*responseHandler_t)(switch_core_session_t* session, const char* json, const char* bugname);
+typedef void (*responseHandler_t)(switch_core_session_t* session, 
+	const char* json, const char* bugname, 
+	const char* message, const char* details);
 
 struct cap_cb {
 	switch_mutex_t *mutex;

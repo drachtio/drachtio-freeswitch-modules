@@ -240,16 +240,21 @@ public:
   void connect() {
     assert(!m_connected);
     // Begin a stream.
+
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p creating initial nuance message\n", this);	
     createInitMessage();
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p creating streamer\n", this);	
   	m_streamer = m_stub->Recognize(&m_context);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p connected to nuance\n", this);	
     m_connected = true;
 
     // read thread is waiting on this
     m_promise.set_value();
 
   	// Write the first request, containing the config only.
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p sending initial message\n", this);	
   	m_streamer->Write(m_request);
-    m_request.clear_recognition_init_message();
+    //m_request.clear_recognition_init_message();
 
     // send any buffered audio
     int nFrames = m_audioBuffer.getNumItems();
@@ -352,34 +357,91 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     count++;
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "response counter:  %d\n",count) ;
 
-    // 3 types of reponses: status, start of speech, result
+    switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
+    if (!session) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: session %s is gone!\n", cb->sessionId) ;
+    }
+
+    // 3 types of responses: status, start of speech, result
+    bool processed = false;
     if (response.has_status()) {
+      processed = true;
       Status status = response.status();
       uint32_t code = status.code();
-      if (code == 100 || code == 200) return nullptr;
+      if (code == 100 || code == 200) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p got status code %d\n", streamer, code);
+      }
       else {
         auto message = status.message();
         auto details = status.details();
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer %p got non-success code %d - %s : %s\n", streamer, code, message.c_str(), details.c_str());
+        cb->responseHandler(session, "error", cb->bugname, message.c_str(), details.c_str());
       }
     }
-    else if (response.has_start_of_speech()) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer %p got start of speech\n", streamer);	
+    if (response.has_start_of_speech()) {
+        processed = true;
+        auto start_of_speech = response.start_of_speech();
+        auto first_audio_to_start_of_speech_ms = start_of_speech.first_audio_to_start_of_speech_ms();
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer %p got start of speech %d\n", streamer, first_audio_to_start_of_speech_ms);	
+        cb->responseHandler(session, "start_of_speech", cb->bugname, NULL, NULL);
     }
-    else if (response.has_result()){
-      // results
+    if (response.has_result()){
+      processed = true;
       const Result& result = response.result();
       EnumResultType type = result.result_type();
       bool is_final = type == EnumResultType::FINAL;
       int nAlternatives = result.hypotheses_size();
+
+      cJSON * jResult = cJSON_CreateObject();
+      cJSON * jAlternatives = cJSON_CreateArray();
+      cJSON * jIsFinal = cJSON_CreateBool(is_final);
+
+      cJSON_AddItemToObject(jResult, "is_final", jIsFinal);
+      cJSON_AddItemToObject(jResult, "alternatives", jAlternatives);
+
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p got a %s result with %d hypotheses\n", streamer, is_final ? "final" : "interim", nAlternatives);	
       for (int i = 0; i < nAlternatives; i++) {
         auto hypothesis = result.hypotheses(i);
         auto formatted_text = hypothesis.formatted_text();
-        auto confidence = hypothesis.confidence();
+        auto minimally_formatted_text = hypothesis.minimally_formatted_text();
+        auto encrypted_tokenization = hypothesis.encrypted_tokenization();
+        auto average_confidence = hypothesis.average_confidence();
         auto rejected = hypothesis.rejected();
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer %p got hypothesis %s with confidence %d %s\n", streamer, 
-          formatted_text.c_str(), confidence, rejected ? "rejected" : "accepted");
+        auto grammar_id = hypothesis.grammar_id();
+
+        cJSON* jAlt = cJSON_CreateObject();
+        cJSON* jConfidence = cJSON_CreateNumber(hypothesis.confidence());
+        cJSON* jAverageConfidence = cJSON_CreateNumber(hypothesis.average_confidence());
+        cJSON* jTranscript = cJSON_CreateString(hypothesis.formatted_text().c_str());
+        cJSON* jMinimallyFormattedText = cJSON_CreateString(hypothesis.minimally_formatted_text().c_str());
+        cJSON* jEncryptedTokenization = cJSON_CreateString(hypothesis.encrypted_tokenization().c_str());
+        if (hypothesis.has_grammar_id()) {
+          cJSON* jGrammarId = cJSON_CreateString(hypothesis.grammar_id().c_str());
+          cJSON_AddItemToObject(jAlt, "grammar_id", jGrammarId);
+        }
+        cJSON* jRejected = cJSON_CreateBool(hypothesis.rejected());
+        if (hypothesis.has_detected_wakeup_word()) {
+          cJSON* jDetectedWakeupWord = cJSON_CreateString(hypothesis.detected_wakeup_word().c_str());
+          cJSON_AddItemToObject(jAlt, "detectedWakeupWord", jDetectedWakeupWord);
+        }
+
+        cJSON_AddItemToObject(jAlt, "confidence", jConfidence);
+        cJSON_AddItemToObject(jAlt, "averageConfidence", jAverageConfidence);
+        cJSON_AddItemToObject(jAlt, "transcript", jTranscript);
+        cJSON_AddItemToObject(jAlt, "rejected", jRejected);
+        cJSON_AddItemToObject(jAlt, "minimallyFormattedText", jMinimallyFormattedText);
+        if (!encrypted_tokenization.empty()) cJSON_AddItemToObject(jAlt, "encryptedTokenization", jEncryptedTokenization);
+        cJSON_AddItemToArray(jAlternatives, jAlt);
       }
+      char* json = cJSON_PrintUnformatted(jResult);
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p result %s\n", streamer, json);
+      cb->responseHandler(session, (const char *) json, cb->bugname, NULL, NULL);
+      free(json);
+
+      cJSON_Delete(jResult);
+    }
+    if (!processed) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer %p got unknown response\n", streamer);	
     }
 
     /*
@@ -493,6 +555,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       switch_core_session_rwunlock(session);
     }
   */
+    switch_core_session_rwunlock(session);
   }
   return nullptr;
 }
@@ -521,6 +584,7 @@ extern "C" {
       
       switch_mutex_init(&cb->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
       if (sampleRate != 8000) {
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "nuance_speech_session_init:  initializing resampler\n");
           cb->resampler = speex_resampler_init(channels, sampleRate, 8000, SWITCH_RESAMPLE_QUALITY, &err);
         if (0 != err) {
            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "%s: Error initializing resampler: %s.\n",
@@ -534,6 +598,7 @@ extern "C" {
 
       // allocate vad if we are delaying connecting to the recognizer until we detect speech
       if (switch_channel_var_true(channel, "START_RECOGNIZING_ON_VAD")) {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "nuance_speech_session_init:  initializing vad\n");
         cb->vad = switch_vad_init(sampleRate, channels);
         if (cb->vad) {
           const char* var;
@@ -563,6 +628,7 @@ extern "C" {
 
       GStreamer *streamer = NULL;
       try {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "nuance_speech_session_init:  allocating streamer\n");
         streamer = new GStreamer(session, channels, lang, interim);
         cb->streamer = streamer;
       } catch (std::exception& e) {
@@ -571,7 +637,10 @@ extern "C" {
         return SWITCH_STATUS_FALSE;
       }
 
-      if (!cb->vad) streamer->connect();
+      if (!cb->vad) {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "nuance_speech_session_init:  no vad so connecting to nuance immediately\n");
+        streamer->connect();
+      }
 
       // create the read thread
       switch_threadattr_t *thd_attr = NULL;
@@ -655,7 +724,7 @@ extern "C" {
                 if (state == SWITCH_VAD_STATE_START_TALKING) {
                   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to google speech now\n");
                   streamer->connect();
-                  cb->responseHandler(session, "vad_detected", cb->bugname);
+                  cb->responseHandler(session, "vad_detected", cb->bugname, NULL, NULL);
                 }
               }
 
