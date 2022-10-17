@@ -143,7 +143,7 @@ public:
 				auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
 				auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
 				m_channel = grpc::CreateChannel(endpoint, creds);
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer json credentials are %s\n", var); 
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer json credentials are %s\n", var); 
 		}
 		else {
 			auto creds = grpc::GoogleDefaultCredentials();
