@@ -11,6 +11,7 @@
 #define MY_BUG_NAME "nuance_transcribe"
 #define TRANSCRIBE_EVENT_RESULTS "nuance_transcribe::transcription"
 #define TRANSCRIBE_EVENT_START_OF_SPEECH "nuance_transcribe::start_of_speech"
+#define TRANSCRIBE_EVENT_TRANSCRIPTION_COMPLETE "nuance_transcribe::end_of_transcription"
 #define TRANSCRIBE_EVENT_ERROR "nuance_transcribe::error"
 #define TRANSCRIBE_EVENT_VAD_DETECTED "nuance_transcribe::vad_detected"
 
@@ -18,7 +19,7 @@
 /* per-channel data */
 typedef void (*responseHandler_t)(switch_core_session_t* session, 
 	const char* json, const char* bugname, 
-	const char* message, const char* details);
+	const char* details);
 
 struct cap_cb {
 	switch_mutex_t *mutex;

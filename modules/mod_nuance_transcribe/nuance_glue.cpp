@@ -30,6 +30,7 @@ using nuance::asr::v1::Result;
 using nuance::asr::v1::EnumResultType;
 using nuance::asr::v1::Hypothesis;
 
+
 #define CHUNKSIZE (320)
 
 namespace {
@@ -67,13 +68,27 @@ public:
   void createInitMessage() {
     switch_channel_t *channel = switch_core_session_get_channel(m_session);
 
-    const char* var = switch_channel_get_variable(channel, "NUANCE_ACCESS_TOKEN");
-    assert(var); // we should not get here unless we have a valid access token
+    std::shared_ptr<grpc::Channel> grpcChannel ;
+    const char* var = switch_channel_get_variable(channel, "NUANCE_KRYPTON_ENDPOINT");
+    if (var) {
+      //auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
+      //grpcChannel = grpc::CreateChannel(var, channelCreds);
+      grpcChannel = grpc::CreateChannel(var, grpc::InsecureChannelCredentials());
+    }
+    else {
+      var = switch_channel_get_variable(channel, "NUANCE_ACCESS_TOKEN");
+      assert(var); // we should not get here unless we have a valid access token
 
-    auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
-    auto callCreds = grpc::AccessTokenCredentials(var);
-    auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
-    std::shared_ptr<grpc::Channel> grpcChannel = grpc::CreateChannel("asr.api.nuance.com:443", creds);
+      auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
+      auto callCreds = grpc::AccessTokenCredentials(var);
+      auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
+      grpcChannel = grpc::CreateChannel("asr.api.nuance.com:443", creds);
+    }
+
+    if (!grpcChannel) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "GStreamer %p failed creating grpc channel to %s\n", this, var);	
+      throw std::runtime_error(std::string("Error creating grpc channel to ") + var);
+    }
 
     m_stub = std::move(Recognizer::NewStub(grpcChannel));
 
@@ -185,9 +200,13 @@ public:
       msg->mutable_parameters()->mutable_recognition_flags()->set_filter_wakeup_word(false);
     }
 
-    // TODO: is there a need to control this setting?
-    msg->mutable_parameters()->mutable_recognition_flags()->set_stall_timers(false);
-
+    if (switch_true(switch_channel_get_variable(channel, "NUANCE_STALL_TIMERS"))) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p setting stall timers to true\n", this);	
+      msg->mutable_parameters()->mutable_recognition_flags()->set_stall_timers(true);
+    }
+    else {
+      msg->mutable_parameters()->mutable_recognition_flags()->set_stall_timers(false);
+    }
 
     if (var = switch_channel_get_variable(channel, "NUANCE_NO_INPUT_TIMEOUT_MS")) {
       int ms = atoi(var);
@@ -221,13 +240,115 @@ public:
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p setting speech domain to %s\n", this, var);	
       msg->mutable_parameters()->set_speech_domain(var);
     }
+
+    msg->clear_resources();
+    if (var = switch_channel_get_variable(channel, "NUANCE_RESOURCES")) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p setting resources %s\n", this, var);	
+      cJSON* json = cJSON_Parse(var);
+      if (json) {
+        if (cJSON_IsArray(json)) {
+          int count = cJSON_GetArraySize(json);
+          for (int i = 0; i < count; i++) {
+            cJSON* obj = cJSON_GetArrayItem(json, i);
+            if (obj && cJSON_IsObject(obj)) {
+              bool added = false;
+
+              /* inline wordset */
+              cJSON* cInlineWordSet = cJSON_GetObjectItem(obj, "inlineWordset");
+              if (cInlineWordSet && cJSON_IsString(cInlineWordSet)) {
+                const char* inlineWordSet = cJSON_GetStringValue(cInlineWordSet);
+                cJSON* test = cJSON_Parse(inlineWordSet);
+                if (test) {
+                  added = true;
+                  auto resource = msg->add_resources();
+                  resource->set_inline_wordset(inlineWordSet);
+                  cJSON_Delete(test);
+                  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p adding inlineWordset: %s\n", this, inlineWordSet);	
+                }
+                else {
+                  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "GStreamer %p an inline wordset must be valid JSON: '%s' is not.\n", this, inlineWordSet);
+                }
+              }
+
+              /* builtins */
+              cJSON* cBuiltin = cJSON_GetObjectItem(obj, "builtin");
+              if (cBuiltin && cJSON_IsString(cBuiltin)) {
+                const char* builtin = cJSON_GetStringValue(cBuiltin);
+                added = true;
+                auto resource = msg->add_resources();
+                resource->set_builtin(builtin);
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p adding builtin: %s\n", this, builtin);	
+              }
+
+              if (added) {
+                auto idx = msg->resources_size() - 1;
+                auto resource = msg->mutable_resources(idx);
+                cJSON* cReuse = cJSON_GetObjectItem(obj, "reuse");
+                if (cReuse && cJSON_IsString(cReuse)) {
+                  const char* reuse = cJSON_GetStringValue(cReuse);
+                  if (0 == strcmp(reuse, "low_reuse")) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p reuse to: %s\n", this, reuse);	
+                    resource->set_reuse(EnumResourceReuse::LOW_REUSE);
+                  }
+                  else if (0 == strcmp(reuse, "high_reuse")) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p reuse to: %s\n", this, reuse);	
+                    resource->set_reuse(EnumResourceReuse::HIGH_REUSE);
+                  }
+                }
+
+                cJSON* cWeightName = cJSON_GetObjectItem(obj, "weightName");
+                if (cWeightName && cJSON_IsString(cWeightName)) {
+                  const char* weightName = cJSON_GetStringValue(cWeightName);
+                  if (0 == strcmp(weightName, "defaultWeight")) {
+                    resource->set_weight_enum(EnumWeight::DEFAULT_WEIGHT);
+                  }
+                  else if (0 == strcmp(weightName, "lowest")) {
+                    resource->set_weight_enum(EnumWeight::LOWEST);                  
+                  }
+                  else if (0 == strcmp(weightName, "low")) {
+                    resource->set_weight_enum(EnumWeight::LOW);
+                  }
+                  else if (0 == strcmp(weightName, "medium")) {
+                    resource->set_weight_enum(EnumWeight::MEDIUM);
+                    
+                  }
+                  else if (0 == strcmp(weightName, "high")) {
+                    resource->set_weight_enum(EnumWeight::HIGH);
+                    
+                  }
+                  else if (0 == strcmp(weightName, "highest")) {
+                    resource->set_weight_enum(EnumWeight::HIGHEST);
+                    
+                  }
+                  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p weightName to: %s\n", this, weightName);	
+                }
+
+                cJSON* cWeightValue = cJSON_GetObjectItem(obj, "weightValue");
+                if (cWeightValue && cJSON_IsNumber(cWeightValue)) {
+                  double weightValue = cWeightValue->valuedouble;
+                  resource->set_weight_value(weightValue);
+                  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p weightName to: %.2f\n", this, weightValue);	
+                }
+              }
+            }
+          }
+        }
+        else {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "GStreamer %p resources must be an array: %s\n", this, var);
+        }
+        cJSON_Delete(json);
+      }
+      else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "GStreamer %p invalid resources json: %s\n", this, var);
+      }
+    }
     
     /*
 
     TBD: add support for the following parameters
     msg->mutable_parameters()->mutable_formatting();
 
-    auto resources = msg->add_resources();
+    auto resource = msg->add_resources();
     resources->set_inline_wordset("words and phrases");
     resources->set_builtin("builtin");
     resources->set_inline_grammar("grammar");
@@ -296,6 +417,13 @@ public:
 	grpc::Status finish() {
 		return m_streamer->Finish();
 	}
+
+  void startTimers() {
+    RecognitionRequest request;
+    auto msg = request.mutable_control_message()->mutable_start_timers_message();
+    m_streamer->Write(request);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p sent start timers control message\n", this);	
+  }
 
 	void writesDone() {
     // grpc crashes if we call this twice on a stream
@@ -368,14 +496,27 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       processed = true;
       Status status = response.status();
       uint32_t code = status.code();
-      if (code == 100 || code == 200) {
+      if (code <= 200) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p got status code %d\n", streamer, code);
+        if (code == 200) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer %p transcription complete\n", streamer);
+          cb->responseHandler(session, "end_of_transcription", cb->bugname, NULL);
+        }
       }
       else {
         auto message = status.message();
         auto details = status.details();
+        cJSON* jError = cJSON_CreateObject();
+        cJSON_AddNumberToObject(jError, "code", code);
+        cJSON_AddStringToObject(jError, "error", status.message().c_str());
+        cJSON_AddStringToObject(jError, "details", status.details().c_str());        
+        char* error = cJSON_PrintUnformatted(jError);
+
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer %p got non-success code %d - %s : %s\n", streamer, code, message.c_str(), details.c_str());
-        cb->responseHandler(session, "error", cb->bugname, message.c_str(), details.c_str());
+        cb->responseHandler(session, "error", cb->bugname, error);
+
+        free(error);
+        cJSON_Delete(jError);
       }
     }
     if (response.has_start_of_speech()) {
@@ -383,7 +524,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
         auto start_of_speech = response.start_of_speech();
         auto first_audio_to_start_of_speech_ms = start_of_speech.first_audio_to_start_of_speech_ms();
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer %p got start of speech %d\n", streamer, first_audio_to_start_of_speech_ms);	
-        cb->responseHandler(session, "start_of_speech", cb->bugname, NULL, NULL);
+        cb->responseHandler(session, "start_of_speech", cb->bugname, NULL);
     }
     if (response.has_result()){
       processed = true;
@@ -434,7 +575,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
         cJSON_AddItemToArray(jAlternatives, jAlt);
       }
       char* json = cJSON_PrintUnformatted(jResult);
-      cb->responseHandler(session, (const char *) json, cb->bugname, NULL, NULL);
+      cb->responseHandler(session, (const char *) json, cb->bugname, NULL);
       free(json);
 
       cJSON_Delete(jResult);
@@ -538,6 +679,19 @@ extern "C" {
       return SWITCH_STATUS_SUCCESS;
     }
 
+    switch_status_t nuance_speech_session_start_timers(switch_core_session_t *session, switch_media_bug_t *bug) {
+      if (bug) {
+        struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
+        switch_mutex_lock(cb->mutex);
+        GStreamer* streamer = (GStreamer *) cb->streamer;
+
+        if (streamer) streamer->startTimers();
+        switch_mutex_unlock(cb->mutex);
+        return SWITCH_STATUS_SUCCESS;
+      }
+      return SWITCH_STATUS_FALSE;
+    }
+
     switch_status_t nuance_speech_session_cleanup(switch_core_session_t *session, int channelIsClosing, switch_media_bug_t *bug) {
       switch_channel_t *channel = switch_core_session_get_channel(session);
 
@@ -588,7 +742,8 @@ extern "C" {
       }
 
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s Bug is not attached.\n", switch_channel_get_name(channel));
-      return SWITCH_STATUS_FALSE;    }
+      return SWITCH_STATUS_FALSE;
+    }
 
     switch_bool_t nuance_speech_frame(switch_media_bug_t *bug, void* user_data) {
     	switch_core_session_t *session = switch_core_media_bug_get_session(bug);
@@ -608,7 +763,7 @@ extern "C" {
                 if (state == SWITCH_VAD_STATE_START_TALKING) {
                   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "detected speech, connect to google speech now\n");
                   streamer->connect();
-                  cb->responseHandler(session, "vad_detected", cb->bugname, NULL, NULL);
+                  cb->responseHandler(session, "vad_detected", cb->bugname, NULL);
                 }
               }
 

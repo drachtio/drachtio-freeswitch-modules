@@ -21,7 +21,7 @@ SWITCH_MODULE_DEFINITION(mod_nuance_transcribe, mod_transcribe_load, mod_transcr
 static switch_status_t do_stop(switch_core_session_t *session, char* bugname);
 
 static void responseHandler(switch_core_session_t* session, const char * json, const char* bugname, 
-	const char* message, const char* details) {
+	const char* details) {
 	switch_event_t *event;
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 
@@ -35,10 +35,15 @@ static void responseHandler(switch_core_session_t* session, const char * json, c
 		switch_channel_event_set_data(channel, event);
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "nuance");
 	}
+	else if (0 == strcmp("end_of_transcription", json)) {
+		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_TRANSCRIPTION_COMPLETE);
+		switch_channel_event_set_data(channel, event);
+		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "nuance");
+	}
 	else if (0 == strcmp("error", json)) {
 		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_ERROR);
 		switch_channel_event_set_data(channel, event);
-		//TODO: add error details
+		switch_event_add_body(event, "%s", details);
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "nuance");
 	}
 	else {
@@ -107,6 +112,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	switch_codec_implementation_t read_impl = { 0 };
 	void *pUserData;
 	uint32_t samples_per_second;
+	const char* var;
 
 	if (switch_channel_get_private(channel, bugname)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
@@ -120,8 +126,12 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	}
 
 	/* required channel vars */
-  if (!switch_channel_get_variable(channel, "NUANCE_ACCESS_TOKEN")) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "NUANCE_ACCESS_TOKEN channel var has not been set\n");
+	var = switch_channel_get_variable(channel, "NUANCE_KRYPTON_ENDPOINT");
+
+  if (!var && !switch_channel_get_variable(channel, "NUANCE_ACCESS_TOKEN")) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
+			"either NUANCE_ACCESS_TOKEN or NUANCE_KRYPTON_ENDPOINT channel var must be defined\n");
+		return SWITCH_STATUS_FALSE;
 	}
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
@@ -167,7 +177,16 @@ SWITCH_STANDARD_API(transcribe_function)
 				char *bugname = argc > 2 ? argv[2] : MY_BUG_NAME;
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "stop transcribing\n");
 				status = do_stop(lsession, bugname);
-			} else if (!strcasecmp(argv[1], "start")) {
+			} 
+			else if (!strcasecmp(argv[1], "start_timers")) {
+				char *bugname = argc > 2 ? argv[2] : MY_BUG_NAME;
+				switch_channel_t *channel = switch_core_session_get_channel(lsession);
+				switch_media_bug_t *bug = switch_channel_get_private(channel, bugname);
+
+    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s start timers\n", bugname);
+				status = nuance_speech_session_start_timers(lsession, bug);
+			}
+			else if (!strcasecmp(argv[1], "start")) {
         char* lang = argv[2];
         int interim = argc > 3 && !strcmp(argv[3], "interim");
 				char *bugname = argc > 5 ? argv[5] : MY_BUG_NAME;
@@ -207,8 +226,16 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass %s!\n", TRANSCRIBE_EVENT_START_OF_SPEECH);
 		return SWITCH_STATUS_TERM;
 	}
+	if (switch_event_reserve_subclass(TRANSCRIBE_EVENT_TRANSCRIPTION_COMPLETE) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass %s!\n", TRANSCRIBE_EVENT_TRANSCRIPTION_COMPLETE);
+		return SWITCH_STATUS_TERM;
+	}
 	if (switch_event_reserve_subclass(TRANSCRIBE_EVENT_ERROR) != SWITCH_STATUS_SUCCESS) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass %s!\n", TRANSCRIBE_EVENT_ERROR);
+		return SWITCH_STATUS_TERM;
+	}
+	if (switch_event_reserve_subclass(TRANSCRIBE_EVENT_VAD_DETECTED) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass %s!\n", TRANSCRIBE_EVENT_VAD_DETECTED);
 		return SWITCH_STATUS_TERM;
 	}
 
@@ -239,7 +266,9 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown)
 	nuance_speech_cleanup();
 	switch_event_free_subclass(TRANSCRIBE_EVENT_RESULTS);
 	switch_event_free_subclass(TRANSCRIBE_EVENT_START_OF_SPEECH);
+	switch_event_free_subclass(TRANSCRIBE_EVENT_TRANSCRIPTION_COMPLETE);
 	switch_event_free_subclass(TRANSCRIBE_EVENT_ERROR);
+	switch_event_free_subclass(TRANSCRIBE_EVENT_VAD_DETECTED);
 	return SWITCH_STATUS_SUCCESS;
 }
 
