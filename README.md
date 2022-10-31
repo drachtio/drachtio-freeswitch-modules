@@ -22,7 +22,7 @@ Adds a Freeswitch API call to start (or stop) real-time transcription on a Frees
 
 # Installation
 
-These modules have dependencies that require a custom version of freeswitch to be built that has support for [grpc](https://github.com/grpc/grpc) (if any of the google modules are built) and [libwebsockets](libwebsockets.org). Specifically, mod_google_tts, mod_google_transcribe and mod_dialogflow require grpc, and mod_audio_fork requires libwebsockets.
+These modules have dependencies that require a custom version of freeswitch to be built that has support for [grpc](https://github.com/grpc/grpc) (if any of the google modules are built) and [libwebsockets](https://libwebsockets.org). Specifically, mod_google_tts, mod_google_transcribe and mod_dialogflow require grpc, and mod_audio_fork requires libwebsockets.
 
 #### Building from source
 [This ansible role](https://github.com/davehorton/ansible-role-fsmrf) can be used to build a freeswitch 1.8 with support for these modules.  Even if you don't want to use ansible for some reason, the [task files](https://github.com/davehorton/ansible-role-fsmrf/tree/master/tasks), and the [patchfiles](https://github.com/davehorton/ansible-role-fsmrf/tree/master/files) should let you work out how to build it yourself manually or through your preferred automation (but why not just use ansible!)
