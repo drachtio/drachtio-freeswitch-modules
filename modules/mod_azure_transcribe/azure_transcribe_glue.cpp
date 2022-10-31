@@ -65,15 +65,16 @@ public:
 		if (switch_true(switch_channel_get_variable(channel, "AZURE_USE_OUTPUT_FORMAT_DETAILED"))) {
 			speechConfig->SetOutputFormat(OutputFormat::Detailed);
 		}
-
 		if (nullptr != endpointId) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(psession), SWITCH_LOG_DEBUG, "setting endpoint id: %s\n", endpointId);
 			speechConfig->SetEndpointId(endpointId);
 		}
-
 		if (!sdkInitialized && sdkLog) {
 			sdkInitialized = true;
 			speechConfig->SetProperty(PropertyId::Speech_LogFilename, sdkLog);
+		}
+		if (switch_true(switch_channel_get_variable(channel, "AZURE_AUDIO_LOGGING"))) {
+			speechConfig->EnableAudioLogging();
 		}
 
 		m_pushStream = AudioInputStream::CreatePushStream(format);
