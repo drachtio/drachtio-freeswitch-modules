@@ -140,7 +140,7 @@ static switch_status_t do_stop(switch_core_session_t *session, char *bugname)
 
 static switch_status_t start_capture2(switch_core_session_t *session, switch_media_bug_flag_t flags, 
   char* lang, int interim, int single_utterance, int separate_recognition, int max_alternatives,
-  int profinity_filter, int word_time_offset, int punctuation, char* model, int enhanced, char* hints, char* play_file)
+  int profinity_filter, int word_time_offset, int punctuation, const char* model, int enhanced, const char* hints, char* play_file)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
@@ -193,8 +193,9 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	void *pUserData;
 	uint32_t samples_per_second;
 	int single_utterance = 0, separate_recognition = 0, max_alternatives = 0, profanity_filter = 0, word_time_offset = 0, punctuation = 0, enhanced = 0;
-	char* hints = NULL;
-  char* model = NULL;
+	const char* hints = NULL;
+  const char* model = NULL;
+	const char* var;
 
 	if (switch_channel_get_private(channel, bugname)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
@@ -211,8 +212,8 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
     }
 
 	// max alternatives
-	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_MAX_ALTERNATIVES"))) {
-     	max_alternatives = atoi(switch_channel_get_variable(channel, "GOOGLE_SPEECH_MAX_ALTERNATIVES"));
+	if ((var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_MAX_ALTERNATIVES"))) {
+     	max_alternatives = atoi(var);
     }
 
 	// profanity filter
@@ -231,19 +232,18 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
     }
 
     // speech model
-	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_MODEL"))) {	
-		model = (char *)switch_channel_get_variable(channel, "GOOGLE_SPEECH_MODEL");    
+	if ((var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_MODEL"))) {	
+		model = var;    
 	}
-    
 
-    // use enhanced model
-    if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_USE_ENHANCED"))) {
-      enhanced = 1;
-    }
+	// use enhanced model
+	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_USE_ENHANCED"))) {
+		enhanced = 1;
+	}
 
 	// hints
-	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_HINTS"))) {	
-	  hints = (char *)switch_channel_get_variable_dup(channel, "GOOGLE_SPEECH_HINTS", SWITCH_TRUE, -1);
+	if ((var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_HINTS"))) {
+	  hints = var;
 	}
 
 	switch_core_session_get_read_impl(session, &read_impl);
@@ -275,8 +275,8 @@ SWITCH_STANDARD_API(transcribe2_function)
 {
 	char *mycmd = NULL, *argv[20] = { 0 };
 	int argc = 0, enhanced = 0;
-	char* hints = NULL;
-	char* model = NULL;
+	const char* hints = NULL;
+	const char* model = NULL;
 	char* play_file = NULL;
 	
 	switch_status_t status = SWITCH_STATUS_FALSE;

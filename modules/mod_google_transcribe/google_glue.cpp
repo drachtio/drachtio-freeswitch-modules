@@ -70,9 +70,9 @@ public:
     int profanity_filter, 
     int word_time_offset, 
     int punctuation, 
-    char* model, 
+    const char* model, 
     int enhanced, 
-		char* hints) : m_session(session), m_writesDone(false), m_connected(false), 
+		const char* hints) : m_session(session), m_writesDone(false), m_connected(false), 
       m_audioBuffer(CHUNKSIZE, 15) {
   
     const char* var;
@@ -495,7 +495,7 @@ extern "C" {
     switch_status_t google_speech_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
           uint32_t samples_per_second, uint32_t channels, char* lang, int interim, char *bugname, int single_utterance,
           int separate_recognition, int max_alternatives, int profanity_filter, int word_time_offset,
-          int punctuation, char* model, int enhanced, char* hints, char* play_file, void **ppUserData) {
+          int punctuation, const char* model, int enhanced, const char* hints, char* play_file, void **ppUserData) {
 
       switch_channel_t *channel = switch_core_session_get_channel(session);
       auto read_codec = switch_core_session_get_read_codec(session);
