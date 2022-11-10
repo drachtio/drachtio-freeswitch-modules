@@ -8,7 +8,6 @@
 
 #define MY_BUG_NAME "deepgram_transcribe"
 #define TRANSCRIBE_EVENT_RESULTS "deepgram_transcribe::transcription"
-#define TRANSCRIBE_EVENT_END_OF_TRANSCRIPT "deepgram_transcribe::end_of_transcript"
 #define TRANSCRIBE_EVENT_NO_AUDIO_DETECTED "deepgram_transcribe::no_audio_detected"
 #define TRANSCRIBE_EVENT_VAD_DETECTED "deepgram_transcribe::vad_detected"
 #define TRANSCRIBE_EVENT_CONNECT_SUCCESS "deepgram_transcribe::connect"
