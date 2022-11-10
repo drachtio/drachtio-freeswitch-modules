@@ -29,9 +29,10 @@ static void responseHandler(switch_core_session_t* session, const char* eventNam
 		hasEvent = 1;
 	}
 	else if (0 == strcmp(TRANSCRIBE_EVENT_CONNECT_FAIL, eventName)) {
-		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_CONNECT_SUCCESS);
+		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_CONNECT_FAIL);
 		switch_channel_event_set_data(channel, event);
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "deepgram");
+		switch_event_add_body(event, "%s", json);
 		hasEvent = 1;
 	}
 	else if (0 == strcmp(TRANSCRIBE_EVENT_RESULTS, eventName)) {

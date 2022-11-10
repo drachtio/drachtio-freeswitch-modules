@@ -180,9 +180,6 @@ namespace {
           switch (event) {
             case AudioPipe::CONNECT_SUCCESS:
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "connection successful\n");
- 
- 
- 
               tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_CONNECT_SUCCESS, NULL);
             break;
             case AudioPipe::CONNECT_FAIL:
