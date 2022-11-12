@@ -8,6 +8,7 @@
 #define MAX_RECV_BUF_SIZE (65 * 1024 * 10)
 #define RECV_BUF_REALLOC_SIZE (8 * 1024)
 
+using namespace deepgram;
 
 namespace {
   static const char *requestedTcpKeepaliveSecs = std::getenv("MOD_AUDIO_FORK_TCP_KEEPALIVE_SECS");
@@ -69,7 +70,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
         AudioPipe* ap = findAndRemovePendingConnect(wsi);
         if (ap) {
           ap->m_state = LWS_CLIENT_FAILED;
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_FAIL, (char *) in);
+          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_FAIL, (char *) in, ap->isFinished());
         }
         else {
           lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_CONNECTION_ERROR unable to find wsi %p..\n", wsi); 
@@ -84,7 +85,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
           *ppAp = ap;
           ap->m_vhd = vhd;
           ap->m_state = LWS_CLIENT_CONNECTED;
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_SUCCESS, NULL);
+          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_SUCCESS, NULL,  ap->isFinished());
         }
         else {
           lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_ESTABLISHED %s unable to find wsi %p..\n", ap->m_uuid.c_str(), wsi); 
@@ -100,21 +101,23 @@ int AudioPipe::lws_callback(struct lws *wsi,
         }
         if (ap->m_state == LWS_CLIENT_DISCONNECTING) {
           // closed by us
+
           lwsl_debug("%s socket closed by us\n", ap->m_uuid.c_str());
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECTION_CLOSED_GRACEFULLY, NULL);
+          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECTION_CLOSED_GRACEFULLY, NULL,  ap->isFinished());
         }
         else if (ap->m_state == LWS_CLIENT_CONNECTED) {
           // closed by far end
           lwsl_info("%s socket closed by far end\n", ap->m_uuid.c_str());
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECTION_DROPPED, NULL);
+          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECTION_DROPPED, NULL,  ap->isFinished());
         }
         ap->m_state = LWS_CLIENT_DISCONNECTED;
-
+        ap->setClosed();
+    
         //NB: after receiving any of the events above, any holder of a 
         //pointer or reference to this object must treat is as no longer valid
 
-        *ppAp = NULL;
-        delete ap;
+        //*ppAp = NULL;
+        //delete ap;
       }
       break;
 
@@ -167,7 +170,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
           if (lws_is_final_fragment(wsi)) {
             if (nullptr != ap->m_recv_buf) {
               std::string msg((char *)ap->m_recv_buf, ap->m_recv_buf_ptr - ap->m_recv_buf);
-              ap->m_callback(ap->m_uuid.c_str(), AudioPipe::MESSAGE, msg.c_str());
+              ap->m_callback(ap->m_uuid.c_str(), AudioPipe::MESSAGE, msg.c_str(),  ap->isFinished());
               if (nullptr != ap->m_recv_buf) free(ap->m_recv_buf);
             }
             ap->m_recv_buf = ap->m_recv_buf_ptr = nullptr;
@@ -182,14 +185,6 @@ int AudioPipe::lws_callback(struct lws *wsi,
         AudioPipe* ap = *ppAp;
         if (!ap) {
           lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_WRITEABLE %s unable to find wsi %p..\n", ap->m_uuid.c_str(), wsi); 
-          return 0;
-        }
-
-        // check for graceful close - send a zero length binary frame
-        if (ap->isGracefulShutdown()) {
-          lwsl_debug("%s graceful shutdown - sending zero length binary frame to flush any final responses\n", ap->m_uuid.c_str());
-          std::lock_guard<std::mutex> lk(ap->m_audio_mutex);
-          int sent = lws_write(wsi, (unsigned char *) ap->m_audio_buffer + LWS_PRE, 0, LWS_WRITE_BINARY);
           return 0;
         }
 
@@ -456,7 +451,7 @@ bool AudioPipe::deinitialize() {
 // instance members
 AudioPipe::AudioPipe(const char* uuid, const char* host, unsigned int port, const char* path,
   size_t bufLen, size_t minFreespace, const char* apiKey, notifyHandler_t callback) :
-  m_uuid(uuid), m_host(host), m_port(port), m_path(path),
+  m_uuid(uuid), m_host(host), m_port(port), m_path(path), m_finished(false),
   m_audio_buffer_min_freespace(minFreespace), m_audio_buffer_max_len(bufLen), m_gracefulShutdown(false),
   m_audio_buffer_write_offset(LWS_PRE), m_recv_buf(nullptr), m_recv_buf_ptr(nullptr), 
   m_state(LWS_CLIENT_IDLE), m_wsi(nullptr), m_vhd(nullptr), m_apiKey(apiKey), m_callback(callback) {
@@ -516,7 +511,14 @@ void AudioPipe::close() {
   addPendingDisconnect(this);
 }
 
-void AudioPipe::do_graceful_shutdown() {
-  m_gracefulShutdown = true;
-  addPendingWrite(this);
+void AudioPipe::finish() {
+  if (m_finished || m_state != LWS_CLIENT_CONNECTED) return;
+  m_finished = true;
+  bufferForSending("{\"type\": \"CloseStream\"}");
+}
+
+void AudioPipe::waitForClose() {
+  std::shared_future<void> sf(m_promise.get_future());
+  sf.wait();
+  return;
 }

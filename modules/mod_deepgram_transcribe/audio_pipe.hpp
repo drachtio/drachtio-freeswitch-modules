@@ -4,8 +4,11 @@
 #include <string>
 #include <list>
 #include <mutex>
+#include <future>
 
 #include <libwebsockets.h>
+
+namespace deepgram {
 
 class AudioPipe {
 public:
@@ -25,7 +28,7 @@ public:
     MESSAGE
   };
   typedef void (*log_emit_function)(int level, const char *line);
-  typedef void (*notifyHandler_t)(const char *sessionId, NotifyEvent_t event, const char* message);
+  typedef void (*notifyHandler_t)(const char *sessionId, NotifyEvent_t event, const char* message, bool finished);
 
   struct lws_per_vhost_data {
     struct lws_context *context;
@@ -68,12 +71,11 @@ public:
   }
   void unlockAudioBuffer(void) ;
 
-  void do_graceful_shutdown();
-  bool isGracefulShutdown(void) {
-    return m_gracefulShutdown;
-  }
-
   void close() ;
+  void finish();
+  void waitForClose();
+  void setClosed() { m_promise.set_value(); }
+  bool isFinished() { return m_finished;}
 
   // no default constructor or copying
   AudioPipe() = delete;
@@ -130,6 +132,10 @@ private:
   log_emit_function m_logger;
   std::string m_apiKey;
   bool m_gracefulShutdown;
+  bool m_finished;
+  std::string m_bugname;
+  std::promise<void> m_promise;
 };
 
+} // namespace deepgram
 #endif

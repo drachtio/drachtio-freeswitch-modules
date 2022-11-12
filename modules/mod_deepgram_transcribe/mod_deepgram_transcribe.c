@@ -12,50 +12,23 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_deepgram_transcribe_load);
 
 SWITCH_MODULE_DEFINITION(mod_deepgram_transcribe, mod_deepgram_transcribe_load, mod_deepgram_transcribe_shutdown, NULL);
 
-static switch_status_t do_stop(switch_core_session_t *session, int graceful);
+static switch_status_t do_stop(switch_core_session_t *session, char* bugname);
 
-static void responseHandler(switch_core_session_t* session, const char* eventName, const char * json) {
+static void responseHandler(switch_core_session_t* session, 
+	const char* eventName, const char * json, const char* bugname, int finished) {
 	switch_event_t *event;
 	switch_channel_t *channel = switch_core_session_get_channel(session);
-	int hasEvent = 0;
 
-	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "event %s json %s\n", eventName, json);
-
-
-	if (0 == strcmp(TRANSCRIBE_EVENT_CONNECT_SUCCESS, eventName)) {
-		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_CONNECT_SUCCESS);
-		switch_channel_event_set_data(channel, event);
-		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "deepgram");
-		hasEvent = 1;
+	switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
+	switch_channel_event_set_data(channel, event);
+	switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "deepgram");
+	switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-session-finished", finished ? "true" : "false");
+	if (finished) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "responseHandler returning event %s, from finished recognition session\n", eventName);
 	}
-	else if (0 == strcmp(TRANSCRIBE_EVENT_CONNECT_FAIL, eventName)) {
-		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_CONNECT_FAIL);
-		switch_channel_event_set_data(channel, event);
-		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "deepgram");
-		switch_event_add_body(event, "%s", json);
-		hasEvent = 1;
-	}
-	else if (0 == strcmp(TRANSCRIBE_EVENT_RESULTS, eventName)) {
-		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_RESULTS);
-		switch_channel_event_set_data(channel, event);
-		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "deepgram");
-		switch_event_add_body(event, "%s", json);
-		hasEvent = 1;
-	}
-	else {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "unknown event %s in responseHandler\n", eventName);
-	}
-	/*
-	else {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "json payload: %s.\n", json);
-
-		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_RESULTS);
-		switch_channel_event_set_data(channel, event);
-		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "deepgram");
-		switch_event_add_body(event, "%s", json);
-	}
-	*/
-	if (hasEvent) switch_event_fire(&event);
+	if (json) switch_event_add_body(event, "%s", json);
+	if (bugname) switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "media-bugname", bugname);
+	switch_event_fire(&event);
 }
 
 
@@ -70,9 +43,10 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 
 	case SWITCH_ABC_TYPE_CLOSE:
 		{
+			private_t *tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Got SWITCH_ABC_TYPE_CLOSE.\n");
 
-			dg_transcribe_session_stop(session, 1);
+			dg_transcribe_session_stop(session, 1,  tech_pvt->bugname);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Finished SWITCH_ABC_TYPE_CLOSE.\n");
 		}
 		break;
@@ -91,7 +65,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 }
 
 static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, 
-  char* lang, int interim)
+  char* lang, int interim, char* bugname)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
@@ -102,7 +76,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 
 	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
-		do_stop(session, 0);
+		do_stop(session, bugname);
 	}
 
 	switch_core_session_get_read_impl(session, &read_impl);
@@ -113,7 +87,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
-	if (SWITCH_STATUS_FALSE == dg_transcribe_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == dg_transcribe_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing dg speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
@@ -126,7 +100,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	return SWITCH_STATUS_SUCCESS;
 }
 
-static switch_status_t do_stop(switch_core_session_t *session, int graceful)
+static switch_status_t do_stop(switch_core_session_t *session,  char* bugname)
 {
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
@@ -135,7 +109,7 @@ static switch_status_t do_stop(switch_core_session_t *session, int graceful)
 
 	if (bug) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command to stop transcribe.\n");
-		status = dg_transcribe_session_stop(session, 0);
+		status = dg_transcribe_session_stop(session, 0, bugname);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "stopped transcribe.\n");
 	}
 
@@ -166,17 +140,19 @@ SWITCH_STANDARD_API(dg_transcribe_function)
 
 		if ((lsession = switch_core_session_locate(argv[0]))) {
 			if (!strcasecmp(argv[1], "stop")) {
+				char *bugname = argc > 2 ? argv[2] : MY_BUG_NAME;
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "stop transcribing\n");
-				status = do_stop(lsession, 0);
+				status = do_stop(lsession, bugname);
 			} else if (!strcasecmp(argv[1], "start")) {
         char* lang = argv[2];
         int interim = argc > 3 && !strcmp(argv[3], "interim");
+				char *bugname = argc > 5 ? argv[5] : MY_BUG_NAME;
 				if (argc > 4 && !strcmp(argv[4], "stereo")) {
           flags |= SMBF_WRITE_STREAM ;
           flags |= SMBF_STEREO;
 				}
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
-				status = start_capture(lsession, flags, lang, interim);
+				status = start_capture(lsession, flags, lang, interim, bugname);
 			}
 			switch_core_session_rwunlock(lsession);
 		}

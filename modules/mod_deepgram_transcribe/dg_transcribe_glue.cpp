@@ -31,6 +31,41 @@ namespace {
   static unsigned int idxCallCount = 0;
   static uint32_t playCount = 0;
 
+  static void reaper(private_t *tech_pvt) {
+    std::shared_ptr<deepgram::AudioPipe> pAp;
+    pAp.reset((deepgram::AudioPipe *)tech_pvt->pAudioPipe);
+    tech_pvt->pAudioPipe = nullptr;
+
+    std::thread t([pAp, tech_pvt]{
+      pAp->finish();
+      pAp->waitForClose();
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "%s (%u) got remote close\n", tech_pvt->sessionId, tech_pvt->id);
+    });
+    t.detach();
+  }
+
+  static void destroy_tech_pvt(private_t *tech_pvt) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s (%u) destroy_tech_pvt\n", tech_pvt->sessionId, tech_pvt->id);
+    if (tech_pvt) {
+      if (tech_pvt->pAudioPipe) {
+        deepgram::AudioPipe* p = (deepgram::AudioPipe *) tech_pvt->pAudioPipe;
+        delete p;
+        tech_pvt->pAudioPipe = nullptr;
+      }
+      if (tech_pvt->resampler) {
+          speex_resampler_destroy(tech_pvt->resampler);
+          tech_pvt->resampler = NULL;
+      }
+
+      /*
+      if (tech_pvt->vad) {
+        switch_vad_destroy(&tech_pvt->vad);
+        tech_pvt->vad = nullptr;
+      }
+      */
+    }
+  }
+
   std::string encodeURIComponent(std::string decoded)
   {
 
@@ -115,7 +150,6 @@ namespace {
     if (switch_true(switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_NUMERALS"))) {
      oss <<  "&numerals=true";
     }
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "path: %s\n", path.c_str());
 
 		const char* hints = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_SEARCH");
 		if (hints) {
@@ -135,7 +169,6 @@ namespace {
        oss <<  encodeURIComponent(phrases[i]);
       }
 		}
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "path: %s\n", path.c_str());
 		const char* replace = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_REPLACE");
 		if (replace) {
 			char *phrases[500] = { 0 };
@@ -164,49 +197,51 @@ namespace {
    oss <<  "&encoding=linear16";
    oss <<  "&sample_rate=8000";
    path = oss.str();
-   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "path: %s\n", path.c_str());
    return path;
   }
 
-  static void eventCallback(const char* sessionId, AudioPipe::NotifyEvent_t event, const char* message) {
+  static void eventCallback(const char* sessionId, deepgram::AudioPipe::NotifyEvent_t event, const char* message, bool finished) {
     switch_core_session_t* session = switch_core_session_locate(sessionId);
     if (session) {
       switch_channel_t *channel = switch_core_session_get_channel(session);
       switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "got msg from deepgram %s\n", message);
       if (bug) {
         private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
         if (tech_pvt) {
           switch (event) {
-            case AudioPipe::CONNECT_SUCCESS:
+            case deepgram::AudioPipe::CONNECT_SUCCESS:
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "connection successful\n");
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_CONNECT_SUCCESS, NULL);
+              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_CONNECT_SUCCESS, NULL, tech_pvt->bugname, finished);
             break;
-            case AudioPipe::CONNECT_FAIL:
+            case deepgram::AudioPipe::CONNECT_FAIL:
             {
               // first thing: we can no longer access the AudioPipe
               std::stringstream json;
               json << "{\"reason\":\"" << message << "\"}";
               tech_pvt->pAudioPipe = nullptr;
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_CONNECT_FAIL, (char *) json.str().c_str());
+              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_CONNECT_FAIL, (char *) json.str().c_str(), tech_pvt->bugname, finished);
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "connection failed: %s\n", message);
             }
             break;
-            case AudioPipe::CONNECTION_DROPPED:
+            case deepgram::AudioPipe::CONNECTION_DROPPED:
               // first thing: we can no longer access the AudioPipe
               tech_pvt->pAudioPipe = nullptr;
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_DISCONNECT, NULL);
+              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_DISCONNECT, NULL, tech_pvt->bugname, finished);
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection dropped from far end\n");
             break;
-            case AudioPipe::CONNECTION_CLOSED_GRACEFULLY:
+            case deepgram::AudioPipe::CONNECTION_CLOSED_GRACEFULLY:
               // first thing: we can no longer access the AudioPipe
               tech_pvt->pAudioPipe = nullptr;
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection closed gracefully\n");
             break;
-            case AudioPipe::MESSAGE:
+            case deepgram::AudioPipe::MESSAGE:
               
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message);
+              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
             break;
+
+            default:
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "got unexpected msg from deepgram %d:%s\n", event, message);
+              break;
           }
         }
       }
@@ -215,7 +250,7 @@ namespace {
   }
   switch_status_t fork_data_init(private_t *tech_pvt, switch_core_session_t *session, 
     int sampling, int desiredSampling, int channels, char *lang, int interim, 
-    responseHandler_t responseHandler) {
+    char* bugname, responseHandler_t responseHandler) {
 
     int err;
     switch_codec_implementation_t read_impl;
@@ -238,7 +273,6 @@ namespace {
     tech_pvt->channels = channels;
     tech_pvt->id = ++idxCallCount;
     tech_pvt->buffer_overrun_notified = 0;
-    tech_pvt->graceful_shutdown = 0;
     
     size_t buflen = LWS_PRE + (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
 
@@ -249,7 +283,7 @@ namespace {
       return SWITCH_STATUS_FALSE;
     }
 
-    AudioPipe* ap = new AudioPipe(tech_pvt->sessionId, tech_pvt->host, tech_pvt->port, tech_pvt->path, 
+    deepgram::AudioPipe* ap = new deepgram::AudioPipe(tech_pvt->sessionId, tech_pvt->host, tech_pvt->port, tech_pvt->path, 
       buflen, read_impl.decoded_bytes_per_packet, apiKey, eventCallback);
     if (!ap) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error allocating AudioPipe\n");
@@ -277,18 +311,6 @@ namespace {
     return SWITCH_STATUS_SUCCESS;
   }
 
-  void destroy_tech_pvt(private_t* tech_pvt) {
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s (%u) destroy_tech_pvt\n", tech_pvt->sessionId, tech_pvt->id);
-    if (tech_pvt->resampler) {
-      speex_resampler_destroy(tech_pvt->resampler);
-      tech_pvt->resampler = nullptr;
-    }
-    if (tech_pvt->mutex) {
-      switch_mutex_destroy(tech_pvt->mutex);
-      tech_pvt->mutex = nullptr;
-    }
-  }
-
   void lws_logger(int level, const char *line) {
     switch_log_level_t llevel = SWITCH_LOG_DEBUG;
 
@@ -299,7 +321,7 @@ namespace {
       case LLL_INFO: llevel = SWITCH_LOG_INFO; break;
       break;
     }
-	  switch_log_printf(SWITCH_CHANNEL_LOG, llevel, "%s\n", line);
+	  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "%s\n", line);
   }
 }
 
@@ -311,7 +333,7 @@ extern "C" {
  
     int logs = LLL_ERR | LLL_WARN | LLL_NOTICE || LLL_INFO | LLL_PARSER | LLL_HEADER | LLL_EXT | LLL_CLIENT  | LLL_LATENCY | LLL_DEBUG ;
     
-    AudioPipe::initialize(nServiceThreads, logs, lws_logger);
+    deepgram::AudioPipe::initialize(nServiceThreads, logs, lws_logger);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "AudioPipe::initialize completed\n");
 
 		const char* apiKey = std::getenv("DEEPGRAM_API_KEY");
@@ -328,7 +350,7 @@ extern "C" {
 
   switch_status_t dg_transcribe_cleanup() {
     bool cleanup = false;
-    cleanup = AudioPipe::deinitialize();
+    cleanup = deepgram::AudioPipe::deinitialize();
     if (cleanup == true) {
         return SWITCH_STATUS_SUCCESS;
     }
@@ -337,7 +359,7 @@ extern "C" {
 	
   switch_status_t dg_transcribe_session_init(switch_core_session_t *session, 
     responseHandler_t responseHandler, uint32_t samples_per_second, uint32_t channels, 
-    char* lang, int interim, void **ppUserData)
+    char* lang, int interim, char* bugname, void **ppUserData)
   {    	
     int err;
 
@@ -348,21 +370,21 @@ extern "C" {
       return SWITCH_STATUS_FALSE;
     }
 
-    if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, samples_per_second, 8000, channels, lang, interim, responseHandler)) {
+    if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, samples_per_second, 8000, channels, lang, interim, bugname, responseHandler)) {
       destroy_tech_pvt(tech_pvt);
       return SWITCH_STATUS_FALSE;
     }
 
     *ppUserData = tech_pvt;
 
-    AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
+    deepgram::AudioPipe *pAudioPipe = static_cast<deepgram::AudioPipe *>(tech_pvt->pAudioPipe);
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connecting now\n");
     pAudioPipe->connect();
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection in progress\n");
     return SWITCH_STATUS_SUCCESS;
   }
 
-	switch_status_t dg_transcribe_session_stop(switch_core_session_t *session, int channelIsClosing) {
+	switch_status_t dg_transcribe_session_stop(switch_core_session_t *session,int channelIsClosing, char* bugname) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
     if (!bug) {
@@ -375,38 +397,19 @@ extern "C" {
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) dg_transcribe_session_stop\n", id);
 
     if (!tech_pvt) return SWITCH_STATUS_FALSE;
-    AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
       
+    // close connection and get final responses
     switch_mutex_lock(tech_pvt->mutex);
+    switch_channel_set_private(channel, bugname, NULL);
+    if (!channelIsClosing) switch_core_media_bug_remove(session, &bug);
 
-    // for deepgram to process the last audio, we need to send a final message
-    // note: not sure whether we want to do this, but here is what we would do
-    // preferably, I suppose we could do this when the timeout elaoses, to see if
-    // we can force a transcript.  Though we should probaly add a spedcific API for that
-
-    /*
-    if (!channelIsClosing) {
-      pAudioPipe->bufferForSending("{\"type\": \"CloseStream\"}");
-      switch_mutex_unlock(tech_pvt->mutex);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "dg_transcribe_session_stop: no bug - sending close command to deepgram\n");
-      return SWITCH_STATUS_SUCCESS;
-    }
-    */
-
-    // get the bug again, now that we are under lock
-    {
-      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
-      if (bug) {
-        switch_channel_set_private(channel, MY_BUG_NAME, NULL);
-        if (!channelIsClosing) {
-          switch_core_media_bug_remove(session, &bug);
-        }
-      }
-    }
-    if (pAudioPipe) pAudioPipe->close();
-
+    deepgram::AudioPipe *pAudioPipe = static_cast<deepgram::AudioPipe *>(tech_pvt->pAudioPipe);
+    if (pAudioPipe) reaper(tech_pvt);
     destroy_tech_pvt(tech_pvt);
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "(%u) fork_session_cleanup: connection closed\n", id);
+    switch_mutex_unlock(tech_pvt->mutex);
+    switch_mutex_destroy(tech_pvt->mutex);
+    tech_pvt->mutex = nullptr;
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) dg_transcribe_session_stop\n", id);
     return SWITCH_STATUS_SUCCESS;
   }
 	
@@ -416,15 +419,15 @@ extern "C" {
     bool dirty = false;
     char *p = (char *) "{\"msg\": \"buffer overrun\"}";
 
-    if (!tech_pvt || tech_pvt->graceful_shutdown) return SWITCH_TRUE;
+    if (!tech_pvt) return SWITCH_TRUE;
     
     if (switch_mutex_trylock(tech_pvt->mutex) == SWITCH_STATUS_SUCCESS) {
       if (!tech_pvt->pAudioPipe) {
         switch_mutex_unlock(tech_pvt->mutex);
         return SWITCH_TRUE;
       }
-      AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
-      if (pAudioPipe->getLwsState() != AudioPipe::LWS_CLIENT_CONNECTED) {
+      deepgram::AudioPipe *pAudioPipe = static_cast<deepgram::AudioPipe *>(tech_pvt->pAudioPipe);
+      if (pAudioPipe->getLwsState() != deepgram::AudioPipe::LWS_CLIENT_CONNECTED) {
         switch_mutex_unlock(tech_pvt->mutex);
         return SWITCH_TRUE;
       }
@@ -441,7 +444,7 @@ extern "C" {
           if (available < pAudioPipe->binaryMinSpace()) {
             if (!tech_pvt->buffer_overrun_notified) {
               tech_pvt->buffer_overrun_notified = 1;
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_BUFFER_OVERRUN, NULL);
+              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_BUFFER_OVERRUN, NULL, tech_pvt->bugname, 0);
             }
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets!\n", 
               tech_pvt->id);
@@ -489,7 +492,7 @@ extern "C" {
                 tech_pvt->buffer_overrun_notified = 1;
                 switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets!\n", 
                   tech_pvt->id);
-                tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_BUFFER_OVERRUN, NULL);
+                tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_BUFFER_OVERRUN, NULL, tech_pvt->bugname, 0);
               }
               break;
             }
