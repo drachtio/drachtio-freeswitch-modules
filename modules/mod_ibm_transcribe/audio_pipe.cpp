@@ -8,7 +8,7 @@
 #define MAX_RECV_BUF_SIZE (65 * 1024 * 10)
 #define RECV_BUF_REALLOC_SIZE (8 * 1024)
 
-using namespace deepgram;
+using namespace ibm;
 
 namespace {
   static const char *requestedTcpKeepaliveSecs = std::getenv("MOD_AUDIO_FORK_TCP_KEEPALIVE_SECS");
@@ -45,19 +45,6 @@ int AudioPipe::lws_callback(struct lws *wsi,
       break;
 
     case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER:
-      {
-        AudioPipe* ap = findPendingConnect(wsi);
-        if (ap) {
-          std::string apiKey = ap->getApiKey();
-          unsigned char **p = (unsigned char **)in, *end = (*p) + len;
-          char b[256];
-          memset(b, 0, sizeof(b));
-          strcpy(b,"Token ");
-          strcpy(b + 6, apiKey.c_str());
-
-          if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_AUTHORIZATION, (unsigned char *)b, strlen(b), p, end)) return -1;
-        }
-      }
       break;
 
     case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
@@ -85,6 +72,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
           *ppAp = ap;
           ap->m_vhd = vhd;
           ap->m_state = LWS_CLIENT_CONNECTED;
+          ap->bufferForSending("{\"action\": \"start\", \"content-type\": \"audio/l16;rate=8000\"}");
           ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_SUCCESS, NULL,  ap->isFinished());
         }
         else {
@@ -116,8 +104,8 @@ int AudioPipe::lws_callback(struct lws *wsi,
         //NB: after receiving any of the events above, any holder of a 
         //pointer or reference to this object must treat is as no longer valid
 
-        //*ppAp = NULL;
-        //delete ap;
+        *ppAp = NULL;
+        delete ap;
       }
       break;
 
@@ -386,7 +374,7 @@ bool AudioPipe::lws_service_thread(unsigned int nServiceThread) {
   info.port = CONTEXT_PORT_NO_LISTEN; 
   info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
   info.protocols = protocols;
-  info.ka_time = nTcpKeepaliveSecs;                    // tcp keep-alive timer
+  info.ka_time = nTcpKeepaliveSecs;     // tcp keep-alive timer
   info.ka_probes = 4;                   // number of times to try ka before closing connection
   info.ka_interval = 5;                 // time between ka's
   info.timeout_secs = 10;                // doc says timeout for "various processes involving network roundtrips"
@@ -395,7 +383,6 @@ bool AudioPipe::lws_service_thread(unsigned int nServiceThread) {
   info.timeout_secs_ah_idle = 10;       // secs to allow a client to hold an ah without using it
 
   lwsl_notice("AudioPipe::lws_service_thread creating context in service thread %d.\n", nServiceThread);
-
   contexts[nServiceThread] = lws_create_context(&info);
   if (!contexts[nServiceThread]) {
     lwsl_err("AudioPipe::lws_service_thread failed creating context in service thread %d..\n", nServiceThread); 
@@ -416,7 +403,7 @@ void AudioPipe::initialize(unsigned int nThreads, int loglevel, log_emit_functio
   assert(nThreads > 0 && nThreads <= 10);
 
   numContexts = nThreads;
-  lws_set_log_level(loglevel, logger);
+  //lws_set_log_level(loglevel, logger);
 
   lwsl_notice("AudioPipe::initialize starting %d threads\n", nThreads); 
   for (unsigned int i = 0; i < numContexts; i++) {
@@ -446,6 +433,7 @@ bool AudioPipe::deinitialize() {
     lws_context_destroy(contexts[i]);
   }
   std::this_thread::sleep_for(std::chrono::seconds(2));
+  lwsl_notice("AudioPipe::deinitialize contexts destroyed\n");
   return true;
 }
 
@@ -515,7 +503,7 @@ void AudioPipe::close() {
 void AudioPipe::finish() {
   if (m_finished || m_state != LWS_CLIENT_CONNECTED) return;
   m_finished = true;
-  bufferForSending("{\"type\": \"CloseStream\"}");
+  bufferForSending("{\"action\": \"stop\"}");
 }
 
 void AudioPipe::waitForClose() {
