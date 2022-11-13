@@ -42,13 +42,10 @@ public:
 
   // constructor
   AudioPipe(const char* uuid, const char* host, unsigned int port, const char* path, 
-    size_t bufLen, size_t minFreespace, const char* apiKey, notifyHandler_t callback);
+    size_t bufLen, size_t minFreespace, notifyHandler_t callback);
   ~AudioPipe();  
 
   LwsState_t getLwsState(void) { return m_state; }
-  std::string& getApiKey(void) {
-    return m_apiKey;
-  }
   void connect(void);
   void bufferForSending(const char* text);
   size_t binarySpaceAvailable(void) {
@@ -130,7 +127,6 @@ private:
   struct lws_per_vhost_data* m_vhd;
   notifyHandler_t m_callback;
   log_emit_function m_logger;
-  std::string m_apiKey;
   bool m_gracefulShutdown;
   bool m_finished;
   std::string m_bugname;

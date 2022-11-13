@@ -92,7 +92,10 @@ namespace {
     // model = voice
     if (var = switch_channel_get_variable(channel, "IBM_SPEECH_MODEL")) {
       oss <<  "&model=" <<  var;
-    } 
+    }
+    else {
+      oss <<  "&model=" << language;
+    }
 
     if (var = switch_channel_get_variable(channel, "IBM_SPEECH_LANGUAGE_CUSTOMIZATION_ID")) {
       oss <<  "&language_customization_id=" <<  var;
@@ -119,6 +122,7 @@ namespace {
     if (session) {
       switch_channel_t *channel = switch_core_session_get_channel(session);
       switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "received message %s\n", message);
       if (bug) {
         private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
         if (tech_pvt) {
@@ -183,13 +187,14 @@ namespace {
     memset(tech_pvt, 0, sizeof(private_t));
   
     std::ostringstream oss;
-    oss << "wss://api." << region << "speech-to-text.watson.cloud.ibm.com";
+    oss << "api." << region << ".speech-to-text.watson.cloud.ibm.com";
+    std::string host = oss.str();
     std::string path;
     constructPath(session, path, desiredSampling, channels, lang, interim);
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "path: %s\n", path.c_str());
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "host: %s, path: %s\n", host.c_str(), path.c_str());
 
     strncpy(tech_pvt->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
-    strncpy(tech_pvt->host,oss.str().c_str(), MAX_WS_URL_LEN);
+    strncpy(tech_pvt->host,host.c_str(), MAX_WS_URL_LEN);
     tech_pvt->port = 443;
     strncpy(tech_pvt->path, path.c_str(), MAX_PATH_LEN);    
     tech_pvt->sampling = desiredSampling;
@@ -200,15 +205,8 @@ namespace {
     
     size_t buflen = LWS_PRE + (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
 
-    const char* apiKey = switch_channel_get_variable(channel, "DEEPGRAM_API_KEY");
-    if (!apiKey && defaultApiKey) apiKey = defaultApiKey;
-    else if (!apiKey) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "no ibm api key provided\n");
-      return SWITCH_STATUS_FALSE;
-    }
-
     ibm::AudioPipe* ap = new ibm::AudioPipe(tech_pvt->sessionId, tech_pvt->host, tech_pvt->port, tech_pvt->path, 
-      buflen, read_impl.decoded_bytes_per_packet, apiKey, eventCallback);
+      buflen, read_impl.decoded_bytes_per_packet, eventCallback);
     if (!ap) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error allocating AudioPipe\n");
       return SWITCH_STATUS_FALSE;
@@ -260,15 +258,6 @@ extern "C" {
     ibm::AudioPipe::initialize(nServiceThreads, logs, lws_logger);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "AudioPipe::initialize completed\n");
 
-		const char* apiKey = std::getenv("DEEPGRAM_API_KEY");
-		if (NULL == apiKey) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, 
-				"\"DEEPGRAM_API_KEY\" env var not set; authentication will expect channel variables of same names to be set\n");
-		}
-		else {
-			hasDefaultCredentials = true;
-      defaultApiKey = apiKey;
-		}
 		return SWITCH_STATUS_SUCCESS;
   }
 

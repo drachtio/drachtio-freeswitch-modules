@@ -15,17 +15,6 @@ namespace {
   static int nTcpKeepaliveSecs = requestedTcpKeepaliveSecs ? ::atoi(requestedTcpKeepaliveSecs) : 55;
 }
 
-static int dch_lws_http_basic_auth_gen(const char *apiKey, char *buf, size_t len) {
-	size_t n = strlen(apiKey);
-
-	if (len < n + 7)
-		return 1;
-
-	strcpy(buf,"Token ");
-  strcpy(buf + 6, apiKey);
-	return 0;
-}
-
 int AudioPipe::lws_callback(struct lws *wsi, 
   enum lws_callback_reasons reason,
   void *user, void *in, size_t len) {
@@ -439,11 +428,11 @@ bool AudioPipe::deinitialize() {
 
 // instance members
 AudioPipe::AudioPipe(const char* uuid, const char* host, unsigned int port, const char* path,
-  size_t bufLen, size_t minFreespace, const char* apiKey, notifyHandler_t callback) :
+  size_t bufLen, size_t minFreespace, notifyHandler_t callback) :
   m_uuid(uuid), m_host(host), m_port(port), m_path(path), m_finished(false),
   m_audio_buffer_min_freespace(minFreespace), m_audio_buffer_max_len(bufLen), m_gracefulShutdown(false),
   m_audio_buffer_write_offset(LWS_PRE), m_recv_buf(nullptr), m_recv_buf_ptr(nullptr), 
-  m_state(LWS_CLIENT_IDLE), m_wsi(nullptr), m_vhd(nullptr), m_apiKey(apiKey), m_callback(callback) {
+  m_state(LWS_CLIENT_IDLE), m_wsi(nullptr), m_vhd(nullptr), m_callback(callback) {
 
   m_audio_buffer = new uint8_t[m_audio_buffer_max_len];
 }
