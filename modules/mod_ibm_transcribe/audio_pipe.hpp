@@ -68,6 +68,20 @@ public:
   }
   void unlockAudioBuffer(void) ;
 
+  void enableInterimTranscripts(bool interim) {
+    m_interim = interim;
+  }
+  bool isInterimTranscriptsEnabled(void) {
+    return m_interim;
+  }
+
+  void setAccessToken(const char* accessToken) {
+    m_access_token = accessToken;
+  }
+  std::string& getAccessToken(void) {
+    return m_access_token;
+  }
+
   void close() ;
   void finish();
   void waitForClose();
@@ -104,6 +118,7 @@ private:
   static void processPendingConnects(lws_per_vhost_data *vhd);
   static void processPendingDisconnects(lws_per_vhost_data *vhd);
   static void processPendingWrites(void);
+
   
   bool connect_client(struct lws_per_vhost_data *vhd);
 
@@ -129,6 +144,8 @@ private:
   log_emit_function m_logger;
   bool m_gracefulShutdown;
   bool m_finished;
+  bool m_interim;
+  std::string m_access_token;
   std::string m_bugname;
   std::promise<void> m_promise;
 };

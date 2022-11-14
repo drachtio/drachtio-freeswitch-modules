@@ -153,8 +153,10 @@ namespace {
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection closed gracefully\n");
             break;
             case ibm::AudioPipe::MESSAGE:
-              
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
+              if (NULL != strstr(message, "\"state\": \"listening\"")) {
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "ibm service is listening\n");
+              }
+              else tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
             break;
 
             default:
@@ -211,6 +213,10 @@ namespace {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error allocating AudioPipe\n");
       return SWITCH_STATUS_FALSE;
     }
+    
+    const char* access_token = switch_channel_get_variable(channel, "IBM_ACCESS_TOKEN");
+    ap->setAccessToken(access_token);
+    if (interim) ap->enableInterimTranscripts(true);
 
     tech_pvt->pAudioPipe = static_cast<void *>(ap);
 
@@ -283,7 +289,7 @@ extern "C" {
       return SWITCH_STATUS_FALSE;
     }
 
-    if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, samples_per_second, 8000, channels, lang, interim, bugname, responseHandler)) {
+    if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, samples_per_second, /*8000*/ 16000, channels, lang, interim, bugname, responseHandler)) {
       destroy_tech_pvt(tech_pvt);
       return SWITCH_STATUS_FALSE;
     }
@@ -398,7 +404,7 @@ extern "C" {
 
             if (out_len > 0) {
               // bytes written = num samples * 2 * num channels
-              size_t bytes_written = out_len << tech_pvt->channels;
+              size_t bytes_written = 2 * out_len * tech_pvt->channels;
               pAudioPipe->binaryWritePtrAdd(bytes_written);
               available = pAudioPipe->binarySpaceAvailable();
               dirty = true;

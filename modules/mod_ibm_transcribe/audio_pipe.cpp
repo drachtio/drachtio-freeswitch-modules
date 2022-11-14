@@ -2,6 +2,7 @@
 
 #include <thread>
 #include <cassert>
+#include <sstream>
 #include <iostream>
 
 /* discard incoming text messages over the socket that are longer than this */
@@ -58,10 +59,21 @@ int AudioPipe::lws_callback(struct lws *wsi,
       {
         AudioPipe* ap = findAndRemovePendingConnect(wsi);
         if (ap) {
+          std::ostringstream oss;
           *ppAp = ap;
           ap->m_vhd = vhd;
           ap->m_state = LWS_CLIENT_CONNECTED;
-          ap->bufferForSending("{\"action\": \"start\", \"content-type\": \"audio/l16;rate=8000\"}");
+
+          oss << "{\"action\": \"start\", \"content-type\": \"audio/l16;rate=16000\"";
+          if (ap->isInterimTranscriptsEnabled()) {
+            oss << ",\"interim_results\": true";
+          }
+          else {
+            oss << ",\"interim_results\": false";
+          }
+          oss << "}";
+          //std::cerr << "Sending: " << oss.str() << std::endl;
+          ap->bufferForSending(oss.str().c_str());
           ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_SUCCESS, NULL,  ap->isFinished());
         }
         else {
@@ -147,6 +159,8 @@ int AudioPipe::lws_callback(struct lws *wsi,
           if (lws_is_final_fragment(wsi)) {
             if (nullptr != ap->m_recv_buf) {
               std::string msg((char *)ap->m_recv_buf, ap->m_recv_buf_ptr - ap->m_recv_buf);
+              //std::cerr << "Recv: " << msg << std::endl;
+
               ap->m_callback(ap->m_uuid.c_str(), AudioPipe::MESSAGE, msg.c_str(),  ap->isFinished());
               if (nullptr != ap->m_recv_buf) free(ap->m_recv_buf);
             }
@@ -392,7 +406,7 @@ void AudioPipe::initialize(unsigned int nThreads, int loglevel, log_emit_functio
   assert(nThreads > 0 && nThreads <= 10);
 
   numContexts = nThreads;
-  //lws_set_log_level(loglevel, logger);
+  lws_set_log_level(loglevel, logger);
 
   lwsl_notice("AudioPipe::initialize starting %d threads\n", nThreads); 
   for (unsigned int i = 0; i < numContexts; i++) {
@@ -431,7 +445,7 @@ AudioPipe::AudioPipe(const char* uuid, const char* host, unsigned int port, cons
   size_t bufLen, size_t minFreespace, notifyHandler_t callback) :
   m_uuid(uuid), m_host(host), m_port(port), m_path(path), m_finished(false),
   m_audio_buffer_min_freespace(minFreespace), m_audio_buffer_max_len(bufLen), m_gracefulShutdown(false),
-  m_audio_buffer_write_offset(LWS_PRE), m_recv_buf(nullptr), m_recv_buf_ptr(nullptr), 
+  m_audio_buffer_write_offset(LWS_PRE), m_recv_buf(nullptr), m_recv_buf_ptr(nullptr), m_interim(false),
   m_state(LWS_CLIENT_IDLE), m_wsi(nullptr), m_vhd(nullptr), m_callback(callback) {
 
   m_audio_buffer = new uint8_t[m_audio_buffer_max_len];
