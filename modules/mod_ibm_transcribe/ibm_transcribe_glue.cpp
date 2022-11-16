@@ -13,6 +13,8 @@
 #include <sstream>
 #include <regex>
 
+#include <iostream>
+
 #include "mod_ibm_transcribe.h"
 #include "simple_buffer.h"
 #include "parser.hpp"
@@ -25,7 +27,7 @@ namespace {
   static bool hasDefaultCredentials = false;
   static const char* defaultApiKey = nullptr;
   static const char *requestedBufferSecs = std::getenv("MOD_AUDIO_FORK_BUFFER_SECS");
-  static int nAudioBufferSecs = std::max(1, std::min(requestedBufferSecs ? ::atoi(requestedBufferSecs) : 2, 5));
+  static int nAudioBufferSecs = std::max(1, std::min(requestedBufferSecs ? ::atoi(requestedBufferSecs) : 2, 7));
   static const char *requestedNumServiceThreads = std::getenv("MOD_AUDIO_FORK_SERVICE_THREADS");
   static unsigned int nServiceThreads = std::max(1, std::min(requestedNumServiceThreads ? ::atoi(requestedNumServiceThreads) : 1, 5));
   static unsigned int idxCallCount = 0;
@@ -155,6 +157,9 @@ namespace {
             case ibm::AudioPipe::MESSAGE:
               if (NULL != strstr(message, "\"state\": \"listening\"")) {
                 switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "ibm service is listening\n");
+              }
+              else if (NULL != strstr(message, "\"final\": false")) {
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "got interim transcript: %s\n", message);
               }
               else tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
             break;
@@ -289,7 +294,7 @@ extern "C" {
       return SWITCH_STATUS_FALSE;
     }
 
-    if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, samples_per_second, /*8000*/ 16000, channels, lang, interim, bugname, responseHandler)) {
+    if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, samples_per_second, 16000, channels, lang, interim, bugname, responseHandler)) {
       destroy_tech_pvt(tech_pvt);
       return SWITCH_STATUS_FALSE;
     }
@@ -404,9 +409,11 @@ extern "C" {
 
             if (out_len > 0) {
               // bytes written = num samples * 2 * num channels
-              size_t bytes_written = 2 * out_len * tech_pvt->channels;
+              size_t bytes_written = out_len * 2 * tech_pvt->channels;
+              //std::cerr << "read " << in_len << " samples, wrote " << out_len << " samples, wrote " << bytes_written << " bytes " << std::endl;
               pAudioPipe->binaryWritePtrAdd(bytes_written);
               available = pAudioPipe->binarySpaceAvailable();
+              
               dirty = true;
             }
             if (available < pAudioPipe->binaryMinSpace()) {

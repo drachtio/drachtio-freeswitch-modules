@@ -1,6 +1,6 @@
 /* 
  *
- * mod_ibm_transcribe.c -- Freeswitch module for using dg streaming transcribe api
+ * mod_ibm_transcribe.c -- Freeswitch module for using ibm streaming transcribe api
  *
  */
 #include "mod_ibm_transcribe.h"
@@ -88,14 +88,14 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
 	if (SWITCH_STATUS_FALSE == ibm_transcribe_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, &pUserData)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing dg speech session.\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing ibm speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
 	if ((status = switch_core_media_bug_add(session, "ibm_transcribe", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
 		return status;
 	}
   switch_channel_set_private(channel, MY_BUG_NAME, bug);
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "added media bug for dg transcribe\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "added media bug for ibm transcribe\n");
 
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -211,7 +211,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_ibm_transcribe_load)
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "IBM Speech Transcription API loading..\n");
 
   if (SWITCH_STATUS_FALSE == ibm_transcribe_init()) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Failed initializing dg speech interface\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Failed initializing ibm speech interface\n");
 	}
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "IBM Speech Transcription API successfully loaded\n");

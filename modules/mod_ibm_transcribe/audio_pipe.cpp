@@ -64,15 +64,12 @@ int AudioPipe::lws_callback(struct lws *wsi,
           ap->m_vhd = vhd;
           ap->m_state = LWS_CLIENT_CONNECTED;
 
-          oss << "{\"action\": \"start\", \"content-type\": \"audio/l16;rate=16000\"";
-          if (ap->isInterimTranscriptsEnabled()) {
-            oss << ",\"interim_results\": true";
-          }
-          else {
-            oss << ",\"interim_results\": false";
-          }
-          oss << "}";
-          //std::cerr << "Sending: " << oss.str() << std::endl;
+          oss << "{\"action\": \"start\",";
+          oss << "\"content-type\": \"audio/l16;rate=16000\"";
+          oss << ",\"interim_results\": true";
+          oss << ",\"low_latency\": false}";
+
+          std::cerr << "Sending: " << oss.str() << std::endl;
           ap->bufferForSending(oss.str().c_str());
           ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_SUCCESS, NULL,  ap->isFinished());
         }
@@ -159,7 +156,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
           if (lws_is_final_fragment(wsi)) {
             if (nullptr != ap->m_recv_buf) {
               std::string msg((char *)ap->m_recv_buf, ap->m_recv_buf_ptr - ap->m_recv_buf);
-              //std::cerr << "Recv: " << msg << std::endl;
+              std::cerr << "Recv: " << msg << std::endl;
 
               ap->m_callback(ap->m_uuid.c_str(), AudioPipe::MESSAGE, msg.c_str(),  ap->isFinished());
               if (nullptr != ap->m_recv_buf) free(ap->m_recv_buf);
