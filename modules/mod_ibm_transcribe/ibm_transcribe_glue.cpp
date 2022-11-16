@@ -88,7 +88,7 @@ namespace {
 
     // access token 
     if (var = switch_channel_get_variable(channel, "IBM_ACCESS_TOKEN")) {
-     oss <<  "?access_token=" << var;
+      oss <<  "?access_token=" << var;
     }
 
     // model = voice
