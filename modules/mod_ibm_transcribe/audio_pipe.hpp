@@ -28,7 +28,7 @@ public:
     MESSAGE
   };
   typedef void (*log_emit_function)(int level, const char *line);
-  typedef void (*notifyHandler_t)(const char *sessionId, NotifyEvent_t event, const char* message, bool finished);
+  typedef void (*notifyHandler_t)(const char *sessionId, NotifyEvent_t event, const char* message, bool finished, bool wantsInterim, const char* bugname);
 
   struct lws_per_vhost_data {
     struct lws_context *context;
@@ -80,6 +80,13 @@ public:
   }
   std::string& getAccessToken(void) {
     return m_access_token;
+  }
+
+  void setBugname(const char* bugname) {
+    m_bugname = bugname;
+  }
+  std::string& getBugname(void) {
+    return m_bugname;
   }
 
   void close() ;

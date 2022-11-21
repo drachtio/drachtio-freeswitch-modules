@@ -14,6 +14,7 @@
 #define TRANSCRIBE_EVENT_CONNECT_FAIL    "ibm_transcribe::connect_failed"
 #define TRANSCRIBE_EVENT_BUFFER_OVERRUN  "ibm_transcribe::buffer_overrun"
 #define TRANSCRIBE_EVENT_DISCONNECT      "ibm_transcribe::disconnect"
+#define TRANSCRIBE_EVENT_ERROR      "ibm_transcribe::error"
 
 #define MAX_LANG (12)
 #define MAX_SESSION_ID (256)
@@ -22,13 +23,10 @@
 #define MAX_PATH_LEN (4096)
 #define MAX_BUG_LEN (64)
 
-typedef void (*responseHandler_t)(switch_core_session_t* session, const char* eventName, const char* json, const char* bugname, int finished);
-
 struct private_data {
 	switch_mutex_t *mutex;
 	char sessionId[MAX_SESSION_ID];
   SpeexResamplerState *resampler;
-  responseHandler_t responseHandler;
   void *pAudioPipe;
   int ws_state;
   char host[MAX_WS_URL_LEN];

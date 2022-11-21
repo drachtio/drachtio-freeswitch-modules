@@ -47,7 +47,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
         AudioPipe* ap = findAndRemovePendingConnect(wsi);
         if (ap) {
           ap->m_state = LWS_CLIENT_FAILED;
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_FAIL, (char *) in, ap->isFinished());
+          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_FAIL, (char *) in, ap->isFinished(), ap->isInterimTranscriptsEnabled(), ap->getBugname().c_str());
         }
         else {
           lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_CONNECTION_ERROR unable to find wsi %p..\n", wsi); 
@@ -63,16 +63,22 @@ int AudioPipe::lws_callback(struct lws *wsi,
           *ppAp = ap;
           ap->m_vhd = vhd;
           ap->m_state = LWS_CLIENT_CONNECTED;
+          
+          if (ap->isFinished()) {
+            //std::cerr << "Got quick hangup from client while connecting, immediate close" << std::endl;
+            ap->close();
+          }
+          else {
+            oss << "{\"action\": \"start\",";
+            oss << "\"content-type\": \"audio/l16;rate=16000\"";
+            oss << ",\"interim_results\": true";
+            oss << ",\"low_latency\": false";
+            oss << "}";
 
-          oss << "{\"action\": \"start\",";
-          oss << "\"content-type\": \"audio/l16;rate=16000\"";
-          oss << ",\"interim_results\": true";
-          oss << ",\"low_latency\": false";
-          oss << "}";
+            ap->bufferForSending(oss.str().c_str());
+            ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_SUCCESS, NULL,  ap->isFinished(), ap->isInterimTranscriptsEnabled(), ap->getBugname().c_str());
+          }
 
-          //std::cerr << "Sending: " << oss.str() << std::endl;
-          ap->bufferForSending(oss.str().c_str());
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_SUCCESS, NULL,  ap->isFinished());
         }
         else {
           lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_ESTABLISHED %s unable to find wsi %p..\n", ap->m_uuid.c_str(), wsi); 
@@ -90,12 +96,12 @@ int AudioPipe::lws_callback(struct lws *wsi,
           // closed by us
 
           lwsl_debug("%s socket closed by us\n", ap->m_uuid.c_str());
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECTION_CLOSED_GRACEFULLY, NULL,  ap->isFinished());
+          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECTION_CLOSED_GRACEFULLY, NULL,  ap->isFinished(), ap->isInterimTranscriptsEnabled(), ap->getBugname().c_str());
         }
         else if (ap->m_state == LWS_CLIENT_CONNECTED) {
           // closed by far end
           lwsl_info("%s socket closed by far end\n", ap->m_uuid.c_str());
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECTION_DROPPED, NULL,  ap->isFinished());
+          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECTION_DROPPED, NULL,  ap->isFinished(), ap->isInterimTranscriptsEnabled(), ap->getBugname().c_str());
         }
         ap->m_state = LWS_CLIENT_DISCONNECTED;
         ap->setClosed();
@@ -159,11 +165,15 @@ int AudioPipe::lws_callback(struct lws *wsi,
               std::string msg((char *)ap->m_recv_buf, ap->m_recv_buf_ptr - ap->m_recv_buf);
               //std::cerr << "Recv: " << msg << std::endl;
 
-              ap->m_callback(ap->m_uuid.c_str(), AudioPipe::MESSAGE, msg.c_str(),  ap->isFinished());
+              ap->m_callback(ap->m_uuid.c_str(), AudioPipe::MESSAGE, msg.c_str(),  ap->isFinished(), ap->isInterimTranscriptsEnabled(), ap->getBugname().c_str());
               if (nullptr != ap->m_recv_buf) free(ap->m_recv_buf);
             }
             ap->m_recv_buf = ap->m_recv_buf_ptr = nullptr;
             ap->m_recv_buf_len = 0;
+            if (ap->isFinished()) {
+              // got final transcript, close the connection
+              ap->close();
+            }
           }
         }
       }
@@ -181,6 +191,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
         {
           std::lock_guard<std::mutex> lk(ap->m_text_mutex);
           if (ap->m_metadata.length() > 0) {
+            //std::cerr << "Sending: " << ap->m_metadata << std::endl;
             uint8_t buf[ap->m_metadata.length() + LWS_PRE];
             memcpy(buf + LWS_PRE, ap->m_metadata.c_str(), ap->m_metadata.length());
             int n = ap->m_metadata.length();
@@ -449,6 +460,7 @@ AudioPipe::AudioPipe(const char* uuid, const char* host, unsigned int port, cons
   m_audio_buffer = new uint8_t[m_audio_buffer_max_len];
 }
 AudioPipe::~AudioPipe() {
+  //std::cerr << "AudioPipe::~AudioPipe " << std::endl;
   if (m_audio_buffer) delete [] m_audio_buffer;
   if (m_recv_buf) delete [] m_recv_buf;
 }
@@ -502,7 +514,10 @@ void AudioPipe::close() {
 }
 
 void AudioPipe::finish() {
-  if (m_finished || m_state != LWS_CLIENT_CONNECTED) return;
+  if (m_finished || m_state != LWS_CLIENT_CONNECTED) {
+    m_finished = true;
+    return;
+  }
   m_finished = true;
   bufferForSending("{\"action\": \"stop\"}");
 }

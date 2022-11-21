@@ -12,7 +12,7 @@
 #include <fstream>
 #include <sstream>
 #include <regex>
-
+#include <map>
 #include <iostream>
 
 #include "mod_ibm_transcribe.h"
@@ -32,8 +32,34 @@ namespace {
   static unsigned int nServiceThreads = std::max(1, std::min(requestedNumServiceThreads ? ::atoi(requestedNumServiceThreads) : 1, 5));
   static unsigned int idxCallCount = 0;
   static uint32_t playCount = 0;
+  static const std::map<ibm::AudioPipe::NotifyEvent_t, std::string> Event2Str = {
+    {ibm::AudioPipe::CONNECT_SUCCESS, "CONNECT_SUCCESS"},
+    {ibm::AudioPipe::CONNECT_FAIL, "CONNECT_FAIL"},
+    {ibm::AudioPipe::CONNECTION_DROPPED, "CONNECTION_DROPPED"},
+    {ibm::AudioPipe::CONNECTION_CLOSED_GRACEFULLY, "CONNECTION_CLOSED_GRACEFULLY"},
+    {ibm::AudioPipe::MESSAGE, "MESSAGE"}
+  };
+  static std::string EventStr(ibm::AudioPipe::NotifyEvent_t event) {
+    auto it = Event2Str.find(event);
+    if (it != Event2Str.end()) {
+      return it->second;
+    }
+    return "UNKNOWN";
+  }
 
+/*
+  static void reaper(private_t *tech_pvt) {
+    std::shared_ptr<ibm::AudioPipe> pAp;
+    pAp.reset((ibm::AudioPipe *)tech_pvt->pAudioPipe);
+    tech_pvt->pAudioPipe = nullptr;
 
+    std::thread t([pAp]{
+      pAp->finish();
+      pAp->waitForClose();
+    });
+    t.detach();
+  }
+*/
   static void destroy_tech_pvt(private_t *tech_pvt) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s (%u) destroy_tech_pvt\n", tech_pvt->sessionId, tech_pvt->id);
     if (tech_pvt) {
@@ -54,6 +80,23 @@ namespace {
       }
       */
     }
+  }
+
+  static void responseHandler(switch_core_session_t* session, 
+    const char* eventName, const char * json, const char* bugname, int finished) {
+    switch_event_t *event;
+    switch_channel_t *channel = switch_core_session_get_channel(session);
+
+    switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
+    switch_channel_event_set_data(channel, event);
+    switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "ibm");
+    switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-session-finished", finished ? "true" : "false");
+    if (finished) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "responseHandler returning event %s, from finished recognition session\n", eventName);
+    }
+    if (json) switch_event_add_body(event, "%s", json);
+    if (bugname) switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "media-bugname", bugname);
+    switch_event_fire(&event);
   }
 
   std::string encodeURIComponent(std::string decoded)
@@ -119,63 +162,68 @@ namespace {
     return path;
   }
 
-  static void eventCallback(const char* sessionId, ibm::AudioPipe::NotifyEvent_t event, const char* message, bool finished) {
+  static void eventCallback(const char* sessionId, ibm::AudioPipe::NotifyEvent_t event, const char* message, bool finished, bool wantsInterim, const char* bugname) {
     switch_core_session_t* session = switch_core_session_locate(sessionId);
     if (session) {
+      bool releaseAudioPipe = false;
       switch_channel_t *channel = switch_core_session_get_channel(session);
-      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "received message %s\n", message);
-      if (bug) {
-        private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
-        if (tech_pvt) {
-          switch (event) {
-            case ibm::AudioPipe::CONNECT_SUCCESS:
-              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "connection successful\n");
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_CONNECT_SUCCESS, NULL, tech_pvt->bugname, finished);
-            break;
-            case ibm::AudioPipe::CONNECT_FAIL:
-            {
-              // first thing: we can no longer access the AudioPipe
-              std::stringstream json;
-              json << "{\"reason\":\"" << message << "\"}";
-              tech_pvt->pAudioPipe = nullptr;
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_CONNECT_FAIL, (char *) json.str().c_str(), tech_pvt->bugname, finished);
-              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "connection failed: %s\n", message);
-            }
-            break;
-            case ibm::AudioPipe::CONNECTION_DROPPED:
-              // first thing: we can no longer access the AudioPipe
-              tech_pvt->pAudioPipe = nullptr;
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_DISCONNECT, NULL, tech_pvt->bugname, finished);
-              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection dropped from far end\n");
-            break;
-            case ibm::AudioPipe::CONNECTION_CLOSED_GRACEFULLY:
-              // first thing: we can no longer access the AudioPipe
-              tech_pvt->pAudioPipe = nullptr;
-              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection closed gracefully\n");
-            break;
-            case ibm::AudioPipe::MESSAGE:
-              if (NULL != strstr(message, "\"state\": \"listening\"")) {
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "ibm service is listening\n");
-              }
-              else if (NULL != strstr(message, "\"final\": false")) {
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "got interim transcript: %s\n", message);
-              }
-              else tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
-            break;
-
-            default:
-              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "got unexpected msg from ibm %d:%s\n", event, message);
-              break;
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "received %s: %s\n", EventStr(event).c_str(), message);
+      switch (event) {
+        case ibm::AudioPipe::CONNECT_SUCCESS:
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "connection successful\n");
+          responseHandler(session, TRANSCRIBE_EVENT_CONNECT_SUCCESS, NULL, bugname, finished);
+        break;
+        case ibm::AudioPipe::CONNECT_FAIL:
+        {
+          // first thing: we can no longer access the AudioPipe
+          std::stringstream json;
+          json << "{\"reason\":\"" << message << "\"}";
+          releaseAudioPipe = true;
+          responseHandler(session, TRANSCRIBE_EVENT_CONNECT_FAIL, (char *) json.str().c_str(), bugname, finished);
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "connection failed: %s\n", message);
+        }
+        break;
+        case ibm::AudioPipe::CONNECTION_DROPPED:
+          // first thing: we can no longer access the AudioPipe
+          releaseAudioPipe = true;
+          responseHandler(session, TRANSCRIBE_EVENT_DISCONNECT, NULL, bugname, finished);
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection dropped from far end\n");
+        break;
+        case ibm::AudioPipe::CONNECTION_CLOSED_GRACEFULLY:
+          // first thing: we can no longer access the AudioPipe
+          releaseAudioPipe = true;
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection closed gracefully\n");
+        break;
+        case ibm::AudioPipe::MESSAGE:
+          if (!wantsInterim && NULL != strstr(message, "\"state\": \"listening\"")) {
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "ibm service is listening\n");
           }
+          else if (NULL != strstr(message, "\"final\": false")) {
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "got interim transcript: %s\n", message);
+          }
+          else if (NULL != strstr(message, "\"error\":")) {
+            responseHandler(session, TRANSCRIBE_EVENT_ERROR, message, bugname, finished);
+          }
+          else responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, bugname, finished);
+        break;
+
+        default:
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "got unexpected msg from ibm %d:%s\n", event, message);
+          break;
+      }
+      if (releaseAudioPipe) {
+        switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
+        if (bug) {
+          private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
+          if (tech_pvt) tech_pvt->pAudioPipe = nullptr;
         }
       }
       switch_core_session_rwunlock(session);
     }
   }
+
   switch_status_t fork_data_init(private_t *tech_pvt, switch_core_session_t *session, 
-    int sampling, int desiredSampling, int channels, char *lang, int interim, 
-    char* bugname, responseHandler_t responseHandler) {
+    int sampling, int desiredSampling, int channels, char *lang, int interim, char* bugname) {
 
     int err;
     switch_codec_implementation_t read_impl;
@@ -205,7 +253,6 @@ namespace {
     tech_pvt->port = 443;
     strncpy(tech_pvt->path, path.c_str(), MAX_PATH_LEN);    
     tech_pvt->sampling = desiredSampling;
-    tech_pvt->responseHandler = responseHandler;
     tech_pvt->channels = channels;
     tech_pvt->id = ++idxCallCount;
     tech_pvt->buffer_overrun_notified = 0;
@@ -221,6 +268,7 @@ namespace {
     
     const char* access_token = switch_channel_get_variable(channel, "IBM_ACCESS_TOKEN");
     ap->setAccessToken(access_token);
+    ap->setBugname(bugname);
     if (interim) ap->enableInterimTranscripts(true);
 
     tech_pvt->pAudioPipe = static_cast<void *>(ap);
@@ -282,8 +330,7 @@ extern "C" {
   }
 	
   switch_status_t ibm_transcribe_session_init(switch_core_session_t *session, 
-    responseHandler_t responseHandler, uint32_t samples_per_second, uint32_t channels, 
-    char* lang, int interim, char* bugname, void **ppUserData)
+    uint32_t samples_per_second, uint32_t channels, char* lang, int interim, char* bugname, void **ppUserData)
   {    	
     int err;
 
@@ -294,7 +341,7 @@ extern "C" {
       return SWITCH_STATUS_FALSE;
     }
 
-    if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, samples_per_second, 16000, channels, lang, interim, bugname, responseHandler)) {
+    if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, samples_per_second, 16000, channels, lang, interim, bugname /*, responseHandler */)) {
       destroy_tech_pvt(tech_pvt);
       return SWITCH_STATUS_FALSE;
     }
@@ -318,7 +365,7 @@ extern "C" {
     private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
     uint32_t id = tech_pvt->id;
 
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) ibm_transcribe_session_stop\n", id);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) ibm_transcribe_session_stop\n", id);
 
     if (!tech_pvt) return SWITCH_STATUS_FALSE;
       
@@ -329,14 +376,19 @@ extern "C" {
 
     ibm::AudioPipe *pAudioPipe = static_cast<ibm::AudioPipe *>(tech_pvt->pAudioPipe);
     if (pAudioPipe) {
-      pAudioPipe->close();
+      //reaper(tech_pvt);
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) ibm_transcribe_session_stop, send stop request to get final transcript\n", id);
+      pAudioPipe->finish();
       tech_pvt->pAudioPipe = nullptr;
+    }
+    else {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) ibm_transcribe_session_stop, null audiopipe\n", id);
     }
     destroy_tech_pvt(tech_pvt);
     switch_mutex_unlock(tech_pvt->mutex);
     switch_mutex_destroy(tech_pvt->mutex);
     tech_pvt->mutex = nullptr;
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) ibm_transcribe_session_stop\n", id);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "(%u) ibm_transcribe_session_stop exiting\n", id);
     return SWITCH_STATUS_SUCCESS;
   }
 	
@@ -371,7 +423,7 @@ extern "C" {
           if (available < pAudioPipe->binaryMinSpace()) {
             if (!tech_pvt->buffer_overrun_notified) {
               tech_pvt->buffer_overrun_notified = 1;
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_BUFFER_OVERRUN, NULL, tech_pvt->bugname, 0);
+              responseHandler(session, TRANSCRIBE_EVENT_BUFFER_OVERRUN, NULL, tech_pvt->bugname, 0);
             }
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets!\n", 
               tech_pvt->id);
@@ -408,7 +460,7 @@ extern "C" {
               &out_len);
 
             if (out_len > 0) {
-              // bytes written = num samples * 2 * num channels
+              // bytes written = (num samples) * (2 bytes per sample) * (num channels)
               size_t bytes_written = out_len * 2 * tech_pvt->channels;
               //std::cerr << "read " << in_len << " samples, wrote " << out_len << " samples, wrote " << bytes_written << " bytes " << std::endl;
               pAudioPipe->binaryWritePtrAdd(bytes_written);
@@ -421,7 +473,7 @@ extern "C" {
                 tech_pvt->buffer_overrun_notified = 1;
                 switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "(%u) dropping packets!\n", 
                   tech_pvt->id);
-                tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_BUFFER_OVERRUN, NULL, tech_pvt->bugname, 0);
+                responseHandler(session, TRANSCRIBE_EVENT_BUFFER_OVERRUN, NULL, tech_pvt->bugname, 0);
               }
               break;
             }

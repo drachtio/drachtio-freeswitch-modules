@@ -14,24 +14,6 @@ SWITCH_MODULE_DEFINITION(mod_ibm_transcribe, mod_ibm_transcribe_load, mod_ibm_tr
 
 static switch_status_t do_stop(switch_core_session_t *session, char* bugname);
 
-static void responseHandler(switch_core_session_t* session, 
-	const char* eventName, const char * json, const char* bugname, int finished) {
-	switch_event_t *event;
-	switch_channel_t *channel = switch_core_session_get_channel(session);
-
-	switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
-	switch_channel_event_set_data(channel, event);
-	switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "ibm");
-	switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-session-finished", finished ? "true" : "false");
-	if (finished) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "responseHandler returning event %s, from finished recognition session\n", eventName);
-	}
-	if (json) switch_event_add_body(event, "%s", json);
-	if (bugname) switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "media-bugname", bugname);
-	switch_event_fire(&event);
-}
-
-
 static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type)
 {
 	switch_core_session_t *session = switch_core_media_bug_get_session(bug);
@@ -87,7 +69,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
-	if (SWITCH_STATUS_FALSE == ibm_transcribe_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == ibm_transcribe_session_init(session, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing ibm speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
