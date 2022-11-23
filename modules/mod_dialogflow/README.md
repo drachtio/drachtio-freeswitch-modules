@@ -42,11 +42,15 @@ To simply use the defaults for both environment and region:
 dialogflow-project-id, i.e myproject
 ```
 
-##### Output Audio Config
 By default, [Output Audio configurations](https://cloud.google.com/dialogflow/es/docs/reference/rest/v2/OutputAudioConfig) will be ignored and the configs selected for [your agent in Dialogflow platform](https://dialogflow.cloud.google.com/) will be used, however if you wish to abstract your implementation from the platform and define them programatically it can be done in the dialogflow_start command as follows:
 
 ```
-dialogflow-project-id:environment:region:speakingRate:pitch:volume:voice-name:voice-gender:effect, i.e myproject:production:eu-west1:1.1:1.5:2.5:en-GB-Standard-D:F:
+dialogflow-project-id:environment:region:speakingRate:pitch:volume:voice-name:voice-gender:effect
+```
+
+Example:
+```
+myproject:production:eu-west1:1.1:1.5:2.5:en-GB-Standard-D:F:handset-class-device
 ```
 Speaking rate, pitch and volume should take the value of a double. Information [here](https://cloud.google.com/dialogflow/es/docs/reference/rest/v2/projects.agent.environments#synthesizespeechconfig).
 
