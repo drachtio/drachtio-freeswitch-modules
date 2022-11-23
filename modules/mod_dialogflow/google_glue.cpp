@@ -205,7 +205,7 @@ public:
 			audio_config->set_language_code(m_lang.c_str());
 			audio_config->set_single_utterance(true);
         }
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream OutputAudioConfig: speaking rate %f, pitch %f, volume %f, voice %s %s, effects %s\n", m_speakingRate, m_pitch, m_volume, m_voiceName, m_voiceGender, m_effects);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream OutputAudioConfig: speaking rate %f, pitch %f, volume %f, voice name '%s' gender '%s', effects '%s'\n", m_speakingRate, m_pitch, m_volume, m_voiceName.c_str(), m_voiceGender.c_str(), m_effects.c_str());
         if (isAnyOutputAudioConfigChanged()) {
             auto* outputAudioConfig = m_request->mutable_output_audio_config();
             outputAudioConfig->set_sample_rate_hertz(16000);
