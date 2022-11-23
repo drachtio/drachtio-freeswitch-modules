@@ -205,8 +205,9 @@ public:
 			audio_config->set_language_code(m_lang.c_str());
 			audio_config->set_single_utterance(true);
         }
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream OutputAudioConfig: speaking rate %f, pitch %f, volume %f, voice name '%s' gender '%s', effects '%s'\n", m_speakingRate, m_pitch, m_volume, m_voiceName.c_str(), m_voiceGender.c_str(), m_effects.c_str());
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::startStream checking OutputAudioConfig custom parameters: speaking rate %f, pitch %f, volume %f, voice name '%s' gender '%s', effects '%s'\n", m_speakingRate, m_pitch, m_volume, m_voiceName.c_str(), m_voiceGender.c_str(), m_effects.c_str());
         if (isAnyOutputAudioConfigChanged()) {
+	        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream adding a custom OutputAudioConfig to the request since at least one parameter was received.");
             auto* outputAudioConfig = m_request->mutable_output_audio_config();
             outputAudioConfig->set_sample_rate_hertz(16000);
             outputAudioConfig->set_audio_encoding(OutputAudioEncoding::OUTPUT_AUDIO_ENCODING_LINEAR_16);
@@ -229,7 +230,9 @@ public:
                 }
                 voice->set_ssml_gender(gender);
             }
-        }
+        } else {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream no custom parameters for OutputAudioConfig, keeping default");
+		}
 
 		m_streamer = m_stub->StreamingDetectIntent(m_context.get());
 		m_streamer->Write(*m_request);
@@ -269,7 +272,7 @@ public:
 	}
 
     bool isAnyOutputAudioConfigChanged() {
-        return m_speakingRate|| m_pitch || m_volume || !m_voiceName.empty() || !m_voiceGender.empty();
+        return m_speakingRate|| m_pitch || m_volume || !m_voiceName.empty() || !m_voiceGender.empty() || !m_effects.empty();
     }
 
 private:
