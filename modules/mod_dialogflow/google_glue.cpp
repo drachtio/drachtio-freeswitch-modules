@@ -124,13 +124,13 @@ public:
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer: token %d: '%s'\n", idx, s.c_str());
 			if (0 == idx) m_projectId = s;
 			else if (1 == idx && s.length() > 0) m_environment = s;
-            else if (2 == idx && s.length() > 0) m_regionId = s;
-            else if (3 == idx && s.length() > 0) m_speakingRate = stod(s);
-            else if (4 == idx && s.length() > 0) m_pitch = stod(s);
-            else if (5 == idx && s.length() > 0) m_volume = stod(s);
-            else if (6 == idx && s.length() > 0) m_voiceName = s;
-            else if (7 == idx && s.length() > 0) m_voiceGender = s;
-            else if (8 == idx && s.length() > 0) m_effects = s;
+			else if (2 == idx && s.length() > 0) m_regionId = s;
+			else if (3 == idx && s.length() > 0) m_speakingRate = stod(s);
+			else if (4 == idx && s.length() > 0) m_pitch = stod(s);
+			else if (5 == idx && s.length() > 0) m_volume = stod(s);
+			else if (6 == idx && s.length() > 0) m_voiceName = s;
+			else if (7 == idx && s.length() > 0) m_voiceGender = s;
+			else if (8 == idx && s.length() > 0) m_effects = s;
 			idx++;
 		}
 
@@ -284,14 +284,14 @@ private:
 	std::shared_ptr<StreamingDetectIntentRequest> m_request;
 	std::string m_lang;
 	std::string m_projectId;
-    std::string m_environment;
-    std::string m_regionId;
-    double m_speakingRate;
-    double m_pitch;
-    double m_volume;
-    std::string m_effects;
-    std::string m_voiceName;
-    std::string m_voiceGender;
+	std::string m_environment;
+	std::string m_regionId;
+	double m_speakingRate;
+	double m_pitch;
+	double m_volume;
+	std::string m_effects;
+	std::string m_voiceName;
+	std::string m_voiceGender;
 	bool m_finished;
 	uint32_t m_packets;
 };
