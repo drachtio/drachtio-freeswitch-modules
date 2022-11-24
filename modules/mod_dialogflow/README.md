@@ -19,11 +19,11 @@ dialogflow_start <uuid> <project-id> <lang-code> [<event>]
 ```
 Attaches media bug to channel and performs streaming recognize request.
 - `uuid` - unique identifier of Freeswitch channel
-- `project-id` - the identifier of the dialogflow project to execute, which may optionally include a dialogflow environment and a region (see below).
+- `project-id` - the identifier of the dialogflow project to execute, which may optionally include a dialogflow environment, a region and output audio configurations (see below).
 - `lang-code` - a valid dialogflow [language tag](https://dialogflow.com/docs/reference/language) to use for speech recognition
 - `event` - name of an initial event to send to dialogflow; e.g. to trigger an initial prompt
 
-When executing a dialogflow project, the environment and region will default to 'draft' and 'us', respectively.  
+When executing a dialogflow project, the environment and region will default to 'draft' and 'us', respectively.
 
 To specify both an environment and a region, provide a value for project-id in the dialogflow_start command as follows:
 ```
@@ -41,6 +41,24 @@ To simply use the defaults for both environment and region:
 ```
 dialogflow-project-id, i.e myproject
 ```
+
+By default, [Output Audio configurations](https://cloud.google.com/dialogflow/es/docs/reference/rest/v2/OutputAudioConfig) will be ignored and the configs selected for [your agent in Dialogflow platform](https://dialogflow.cloud.google.com/) will be used, however if you wish to abstract your implementation from the platform and define them programatically it can be done in the dialogflow_start command as follows:
+
+```
+dialogflow-project-id:environment:region:speakingRate:pitch:volume:voice-name:voice-gender:effect
+```
+
+Example:
+```
+myproject:production:eu-west1:1.1:1.5:2.5:en-GB-Standard-D:F:handset-class-device
+```
+Speaking rate, pitch and volume should take the value of a double. Information [here](https://cloud.google.com/dialogflow/es/docs/reference/rest/v2/projects.agent.environments#synthesizespeechconfig).
+
+Voice Name should take a valid Text-to-speech model name (choose available voices from https://cloud.google.com/text-to-speech/docs/voices). If not set, the Dialogflow service will choose a voice based on the other parameters such as language code and gender. 
+
+Voice Gender should be M for Male, F for Female, N for neutral gender or leave empty for Unspecified.  If not set, the Dialogflow service will choose a voice based on the other parameters such as language code and name. Note that this is only a preference, not requirement. If a voice of the appropriate gender is not available, the synthesizer should substitute a voice with a different gender rather than failing the request.
+
+Effects are applied on the text-to-speech and are used to improve the playback of an audio on different types of hardware. Available effects and information [here](https://cloud.google.com/text-to-speech/docs/audio-profiles#available_audio_profiles).
 
 #### dialogflow_stop
 ```
