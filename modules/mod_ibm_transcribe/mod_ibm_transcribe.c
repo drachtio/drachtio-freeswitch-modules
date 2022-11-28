@@ -101,7 +101,7 @@ static switch_status_t do_stop(switch_core_session_t *session,  char* bugname)
 #define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] lang-code [interim] [stereo|mono]"
 SWITCH_STANDARD_API(ibm_transcribe_function)
 {
-	char *mycmd = NULL, *argv[5] = { 0 };
+	char *mycmd = NULL, *argv[6] = { 0 };
 	int argc = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_media_bug_flag_t flags = SMBF_READ_STREAM /* | SMBF_WRITE_STREAM | SMBF_READ_PING */;
