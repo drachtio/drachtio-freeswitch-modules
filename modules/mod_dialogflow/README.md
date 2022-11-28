@@ -42,15 +42,15 @@ To simply use the defaults for both environment and region:
 dialogflow-project-id, i.e myproject
 ```
 
-By default, [Output Audio configurations](https://cloud.google.com/dialogflow/es/docs/reference/rest/v2/OutputAudioConfig) will be ignored and the configs selected for [your agent in Dialogflow platform](https://dialogflow.cloud.google.com/) will be used, however if you wish to abstract your implementation from the platform and define them programatically it can be done in the dialogflow_start command as follows:
+By default, [Output Audio configurations](https://cloud.google.com/dialogflow/es/docs/reference/rest/v2/OutputAudioConfig) and [Sentiment Analysis](https://cloud.google.com/dialogflow/es/docs/reference/rpc/google.cloud.dialogflow.v2beta1#google.cloud.dialogflow.v2beta1.SentimentAnalysisRequestConfig) will be ignored and the configs selected for [your agent in Dialogflow platform](https://dialogflow.cloud.google.com/) will be used, however if you wish to abstract your implementation from the platform and define them programatically it can be done in the dialogflow_start command as follows:
 
 ```
-dialogflow-project-id:environment:region:speakingRate:pitch:volume:voice-name:voice-gender:effect
+dialogflow-project-id:environment:region:speakingRate:pitch:volume:voice-name:voice-gender:effect:sentiment-analysis
 ```
 
 Example:
 ```
-myproject:production:eu-west1:1.1:1.5:2.5:en-GB-Standard-D:F:handset-class-device
+myproject:production:eu-west1:1.1:1.5:2.5:en-GB-Standard-D:F:handset-class-device:true
 ```
 Speaking rate, pitch and volume should take the value of a double. Information [here](https://cloud.google.com/dialogflow/es/docs/reference/rest/v2/projects.agent.environments#synthesizespeechconfig).
 
@@ -59,6 +59,8 @@ Voice Name should take a valid Text-to-speech model name (choose available voice
 Voice Gender should be M for Male, F for Female, N for neutral gender or leave empty for Unspecified.  If not set, the Dialogflow service will choose a voice based on the other parameters such as language code and name. Note that this is only a preference, not requirement. If a voice of the appropriate gender is not available, the synthesizer should substitute a voice with a different gender rather than failing the request.
 
 Effects are applied on the text-to-speech and are used to improve the playback of an audio on different types of hardware. Available effects and information [here](https://cloud.google.com/text-to-speech/docs/audio-profiles#available_audio_profiles).
+
+Sentiment Analysis uses Cloud Natural Language to provide a sentiment score for each user query. To enable send the boolean ```true```.
 
 #### dialogflow_stop
 ```
