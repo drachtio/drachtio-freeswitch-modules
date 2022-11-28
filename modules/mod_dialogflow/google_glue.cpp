@@ -114,7 +114,7 @@ public:
     GStreamer(switch_core_session_t *session, const char* lang, char* projectId, char* event, char* text) :
             m_lang(lang), m_sessionId(switch_core_session_get_uuid(session)), m_environment("draft"), m_regionId("us"),
             m_speakingRate(), m_pitch(), m_volume(), m_voiceName(""), m_voiceGender(""), m_effects(""),
-            m_sentimentAnalysis("false"), m_finished(false), m_packets(0) {
+            m_sentimentAnalysis(false), m_finished(false), m_packets(0) {
 		const char* var;
 		switch_channel_t* channel = switch_core_session_get_channel(session);
 		std::vector<std::string> tokens;
