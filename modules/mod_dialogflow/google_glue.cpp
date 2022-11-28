@@ -304,7 +304,7 @@ private:
 	std::string m_effects;
 	std::string m_voiceName;
 	std::string m_voiceGender;
-    bool m_sentimentAnalysis;
+	bool m_sentimentAnalysis;
 	bool m_finished;
 	uint32_t m_packets;
 };
