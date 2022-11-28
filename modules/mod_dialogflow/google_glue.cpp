@@ -132,7 +132,7 @@ public:
 			else if (6 == idx && s.length() > 0) m_voiceName = s;
 			else if (7 == idx && s.length() > 0) m_voiceGender = s;
 			else if (8 == idx && s.length() > 0) m_effects = s;
-			else if (9 == idx && s.length() > 0) m_sentimentAnalysis = s;
+			else if (9 == idx && s.length() > 0) m_sentimentAnalysis = (s == "true");
 			idx++;
 		}
 
