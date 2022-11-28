@@ -236,19 +236,15 @@ public:
                 voice->set_ssml_gender(gender);
             }
         } else {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream no custom parameters for OutputAudioConfig, keeping default");
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream no custom parameters for OutputAudioConfig, keeping default");
 		}
+
         if (m_sentimentAnalysis) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream received sentiment analysis flag as true, adding as query param");
             auto* queryParameters = m_request->mutable_query_params();
             auto* sentimentAnalysisConfig = queryParameters->mutable_sentiment_analysis_request_config();
             sentimentAnalysisConfig->set_analyze_query_text_sentiment(m_sentimentAnalysis);
-
-            // queryParameters->set_allocated_sentiment_analysis_request_config()
-
-            // mutable_sentiment_analysis_request_config->
-            // new cenas().analyze_query_text_sentiment(true);
         }
-
 
 		m_streamer = m_stub->StreamingDetectIntent(m_context.get());
 		m_streamer->Write(*m_request);
