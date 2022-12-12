@@ -111,9 +111,9 @@ void tokenize(std::string const &str, const char delim, std::vector<std::string>
 
 class GStreamer {
 public:
-	GStreamer(switch_core_session_t *session, const char* lang, char* projectId, char* event, char* text) : 
-	m_lang(lang), m_sessionId(switch_core_session_get_uuid(session)), m_environment("draft"), m_regionId("us"),
-	m_finished(false), m_packets(0) {
+    GStreamer(switch_core_session_t *session, const char* lang, char* projectId, char* event, char* text) :
+            m_lang(lang), m_sessionId(switch_core_session_get_uuid(session)), m_environment("draft"), m_regionId("us"),
+            m_speakingRate(), m_pitch(), m_volume(), m_voiceName(""), m_voiceGender(""), m_effects(""), m_finished(false), m_packets(0) {
 		const char* var;
 		switch_channel_t* channel = switch_core_session_get_channel(session);
 		std::vector<std::string> tokens;
@@ -125,6 +125,12 @@ public:
 			if (0 == idx) m_projectId = s;
 			else if (1 == idx && s.length() > 0) m_environment = s;
 			else if (2 == idx && s.length() > 0) m_regionId = s;
+			else if (3 == idx && s.length() > 0) m_speakingRate = stod(s);
+			else if (4 == idx && s.length() > 0) m_pitch = stod(s);
+			else if (5 == idx && s.length() > 0) m_volume = stod(s);
+			else if (6 == idx && s.length() > 0) m_voiceName = s;
+			else if (7 == idx && s.length() > 0) m_voiceGender = s;
+			else if (8 == idx && s.length() > 0) m_effects = s;
 			idx++;
 		}
 
@@ -198,10 +204,38 @@ public:
 			audio_config->set_audio_encoding(AudioEncoding::AUDIO_ENCODING_LINEAR_16);
 			audio_config->set_language_code(m_lang.c_str());
 			audio_config->set_single_utterance(true);
+        }
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::startStream checking OutputAudioConfig custom parameters: speaking rate %f, pitch %f, volume %f, voice name '%s' gender '%s', effects '%s'\n", m_speakingRate, m_pitch, m_volume, m_voiceName.c_str(), m_voiceGender.c_str(), m_effects.c_str());
+        if (isAnyOutputAudioConfigChanged()) {
+	        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream adding a custom OutputAudioConfig to the request since at least one parameter was received.");
+            auto* outputAudioConfig = m_request->mutable_output_audio_config();
+            outputAudioConfig->set_sample_rate_hertz(16000);
+            outputAudioConfig->set_audio_encoding(OutputAudioEncoding::OUTPUT_AUDIO_ENCODING_LINEAR_16);
+
+            auto* synthesizeSpeechConfig = outputAudioConfig->mutable_synthesize_speech_config();
+            if (m_speakingRate) synthesizeSpeechConfig->set_speaking_rate(m_speakingRate);
+            if (m_pitch) synthesizeSpeechConfig->set_pitch(m_pitch);
+            if (m_volume) synthesizeSpeechConfig->set_volume_gain_db(m_volume);
+            if (!m_effects.empty()) synthesizeSpeechConfig->add_effects_profile_id(m_effects);
+
+            auto* voice = synthesizeSpeechConfig->mutable_voice();
+            if (!m_voiceName.empty()) voice->set_name(m_voiceName);
+            if (!m_voiceGender.empty()) {
+                SsmlVoiceGender gender = SsmlVoiceGender::SSML_VOICE_GENDER_UNSPECIFIED;
+                switch (toupper(m_voiceGender[0]))
+                {
+                    case 'F': gender = SsmlVoiceGender::SSML_VOICE_GENDER_MALE; break;
+                    case 'M': gender = SsmlVoiceGender::SSML_VOICE_GENDER_FEMALE; break;
+                    case 'N': gender = SsmlVoiceGender::SSML_VOICE_GENDER_NEUTRAL; break;
+                }
+                voice->set_ssml_gender(gender);
+            }
+        } else {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream no custom parameters for OutputAudioConfig, keeping default");
 		}
 
-  	m_streamer = m_stub->StreamingDetectIntent(m_context.get());
-  	m_streamer->Write(*m_request);
+		m_streamer = m_stub->StreamingDetectIntent(m_context.get());
+		m_streamer->Write(*m_request);
 	}
 	bool write(void* data, uint32_t datalen) {
 		if (m_finished) {
@@ -237,6 +271,10 @@ public:
 		return m_finished;
 	}
 
+    bool isAnyOutputAudioConfigChanged() {
+        return m_speakingRate|| m_pitch || m_volume || !m_voiceName.empty() || !m_voiceGender.empty() || !m_effects.empty();
+    }
+
 private:
 	std::string m_sessionId;
 	std::shared_ptr<grpc::ClientContext> m_context;
@@ -248,6 +286,12 @@ private:
 	std::string m_projectId;
 	std::string m_environment;
 	std::string m_regionId;
+	double m_speakingRate;
+	double m_pitch;
+	double m_volume;
+	std::string m_effects;
+	std::string m_voiceName;
+	std::string m_voiceGender;
 	bool m_finished;
 	uint32_t m_packets;
 };
