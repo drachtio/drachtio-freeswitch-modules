@@ -20,6 +20,7 @@ dialogflow_start <uuid> <project-id> <lang-code> [<event>]
 Attaches media bug to channel and performs streaming recognize request.
 - `uuid` - unique identifier of Freeswitch channel
 - `project-id` - the identifier of the dialogflow project to execute, which may optionally include a dialogflow environment, a region and output audio configurations (see below).
+- `project-id` - the identifier of the dialogflow project to execute, which may optionally include a dialogflow environment, a region and output audio configurations (see below).
 - `lang-code` - a valid dialogflow [language tag](https://dialogflow.com/docs/reference/language) to use for speech recognition
 - `event` - name of an initial event to send to dialogflow; e.g. to trigger an initial prompt
 
