@@ -113,7 +113,8 @@ class GStreamer {
 public:
     GStreamer(switch_core_session_t *session, const char* lang, char* projectId, char* event, char* text) :
             m_lang(lang), m_sessionId(switch_core_session_get_uuid(session)), m_environment("draft"), m_regionId("us"),
-            m_speakingRate(), m_pitch(), m_volume(), m_voiceName(""), m_voiceGender(""), m_effects(""), m_finished(false), m_packets(0) {
+            m_speakingRate(), m_pitch(), m_volume(), m_voiceName(""), m_voiceGender(""), m_effects(""),
+            m_sentimentAnalysis(false), m_finished(false), m_packets(0) {
 		const char* var;
 		switch_channel_t* channel = switch_core_session_get_channel(session);
 		std::vector<std::string> tokens;
@@ -131,6 +132,7 @@ public:
 			else if (6 == idx && s.length() > 0) m_voiceName = s;
 			else if (7 == idx && s.length() > 0) m_voiceGender = s;
 			else if (8 == idx && s.length() > 0) m_effects = s;
+			else if (9 == idx && s.length() > 0) m_sentimentAnalysis = (s == "true");
 			idx++;
 		}
 
@@ -205,9 +207,12 @@ public:
 			audio_config->set_language_code(m_lang.c_str());
 			audio_config->set_single_utterance(true);
         }
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::startStream checking OutputAudioConfig custom parameters: speaking rate %f, pitch %f, volume %f, voice name '%s' gender '%s', effects '%s'\n", m_speakingRate, m_pitch, m_volume, m_voiceName.c_str(), m_voiceGender.c_str(), m_effects.c_str());
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::startStream checking OutputAudioConfig custom parameters: speaking rate %f,"
+                                                                " pitch %f, volume %f, voice name '%s' gender '%s', effects '%s'\n", m_speakingRate,
+                                                                m_pitch, m_volume, m_voiceName.c_str(), m_voiceGender.c_str(), m_effects.c_str());
         if (isAnyOutputAudioConfigChanged()) {
-	        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream adding a custom OutputAudioConfig to the request since at least one parameter was received.");
+	        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream adding a custom OutputAudioConfig to the request since at"
+                                                                   " least one parameter was received.");
             auto* outputAudioConfig = m_request->mutable_output_audio_config();
             outputAudioConfig->set_sample_rate_hertz(16000);
             outputAudioConfig->set_audio_encoding(OutputAudioEncoding::OUTPUT_AUDIO_ENCODING_LINEAR_16);
@@ -231,8 +236,15 @@ public:
                 voice->set_ssml_gender(gender);
             }
         } else {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream no custom parameters for OutputAudioConfig, keeping default");
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream no custom parameters for OutputAudioConfig, keeping default");
 		}
+
+        if (m_sentimentAnalysis) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer::startStream received sentiment analysis flag as true, adding as query param");
+            auto* queryParameters = m_request->mutable_query_params();
+            auto* sentimentAnalysisConfig = queryParameters->mutable_sentiment_analysis_request_config();
+            sentimentAnalysisConfig->set_analyze_query_text_sentiment(m_sentimentAnalysis);
+        }
 
 		m_streamer = m_stub->StreamingDetectIntent(m_context.get());
 		m_streamer->Write(*m_request);
@@ -292,6 +304,7 @@ private:
 	std::string m_effects;
 	std::string m_voiceName;
 	std::string m_voiceGender;
+	bool m_sentimentAnalysis;
 	bool m_finished;
 	uint32_t m_packets;
 };
