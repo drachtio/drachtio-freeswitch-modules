@@ -8,6 +8,8 @@
 
 #include "google/cloud/speech/v1p1beta1/cloud_speech.grpc.pb.h"
 
+#include <switch_json.h>
+
 #include "mod_google_transcribe.h"
 #include "simple_buffer.h"
 
@@ -165,7 +167,6 @@ public:
     if (hints != NULL) {
       auto* adaptation = config->mutable_adaptation();
       auto* phrase_set = adaptation->add_phrase_sets();
-      char *phrases[500] = { 0 };
       auto *context = config->add_speech_contexts();
       float boost = -1;
 
@@ -176,12 +177,37 @@ public:
         phrase_set->set_boost(boost);
       }
 
-      int argc = switch_separate_string((char *) hints, ',', phrases, 500);
-      for (int i = 0; i < argc; i++) {
-        auto* phrase = phrase_set->add_phrases();
-        phrase->set_value(phrases[i]);
+      // hints are either a simple comma-separated list of phrases, or a json array of objects
+      // containing a phrase and a boost value
+      auto *jHint = cJSON_Parse((char *) hints);
+      if (jHint) {
+        int i = 0;
+        cJSON *jPhrase = NULL;
+        cJSON_ArrayForEach(jPhrase, jHint) {
+          auto* phrase = phrase_set->add_phrases();
+          cJSON *jItem = cJSON_GetObjectItem(jPhrase, "phrase");
+          if (jItem) {
+            phrase->set_value(cJSON_GetStringValue(jItem));
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "phrase: %s\n", phrase->value().c_str());
+            if (cJSON_GetObjectItem(jPhrase, "boost")) {
+              phrase->set_boost((float) cJSON_GetObjectItem(jPhrase, "boost")->valuedouble);
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", phrase->boost());
+            }
+            i++;
+          }
+        }
+        cJSON_Delete(jHint);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", i);
       }
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", argc);
+      else {
+        char *phrases[500] = { 0 };
+        int argc = switch_separate_string((char *) hints, ',', phrases, 500);
+        for (int i = 0; i < argc; i++) {
+          auto* phrase = phrase_set->add_phrases();
+          phrase->set_value(phrases[i]);
+        }
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", argc);
+      }
     }
 
     // alternative language
