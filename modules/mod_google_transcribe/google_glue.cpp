@@ -167,7 +167,6 @@ public:
     if (hints != NULL) {
       auto* adaptation = config->mutable_adaptation();
       auto* phrase_set = adaptation->add_phrase_sets();
-      char *phrases[500] = { 0 };
       auto *context = config->add_speech_contexts();
       float boost = -1;
 
@@ -186,18 +185,22 @@ public:
         cJSON *jPhrase = NULL;
         cJSON_ArrayForEach(jPhrase, jHint) {
           auto* phrase = phrase_set->add_phrases();
-          phrase->set_value(cJSON_GetObjectItem(jPhrase, "phrase")->valuestring);
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "phrase: %f\n", phrase->value());
-          if (cJSON_GetObjectItem(jPhrase, "boost")) {
-            phrase->set_boost((float) cJSON_GetObjectItem(jPhrase, "boost")->valuedouble);
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", phrase->boost());
+          cJSON *jItem = cJSON_GetObjectItem(jPhrase, "phrase");
+          if (jItem) {
+            phrase->set_value(cJSON_GetStringValue(jItem));
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "phrase: %s\n", phrase->value().c_str());
+            if (cJSON_GetObjectItem(jPhrase, "boost")) {
+              phrase->set_boost((float) cJSON_GetObjectItem(jPhrase, "boost")->valuedouble);
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", phrase->boost());
+            }
+            i++;
           }
-          i++;
         }
         cJSON_Delete(jHint);
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", i);
       }
       else {
+        char *phrases[500] = { 0 };
         int argc = switch_separate_string((char *) hints, ',', phrases, 500);
         for (int i = 0; i < argc; i++) {
           auto* phrase = phrase_set->add_phrases();
