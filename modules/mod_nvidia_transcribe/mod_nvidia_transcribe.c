@@ -178,14 +178,6 @@ SWITCH_STANDARD_API(transcribe_function)
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "stop transcribing\n");
 				status = do_stop(lsession, bugname);
 			} 
-			else if (!strcasecmp(argv[1], "start_timers")) {
-				char *bugname = argc > 2 ? argv[2] : MY_BUG_NAME;
-				switch_channel_t *channel = switch_core_session_get_channel(lsession);
-				switch_media_bug_t *bug = switch_channel_get_private(channel, bugname);
-
-    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s start timers\n", bugname);
-				status = nvidia_speech_session_start_timers(lsession, bug);
-			}
 			else if (!strcasecmp(argv[1], "start")) {
         char* lang = argv[2];
         int interim = argc > 3 && !strcmp(argv[3], "interim");

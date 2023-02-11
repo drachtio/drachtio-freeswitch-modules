@@ -105,7 +105,7 @@ public:
     /* punctuation */
     if (switch_true(switch_channel_get_variable(channel, "NVIDIA_PUNCTUATION"))) {
       config->set_enable_automatic_punctuation(true);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable puncutation\n",var);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable punctuation\n",var);
     }
     else config->set_enable_automatic_punctuation(false);
 
@@ -187,7 +187,6 @@ public:
         cJSON_ArrayForEach(jItem, jConfig) {
           if (cJSON_IsString(jItem)) {
             (*custom_config)[jItem->string] = jItem->valuestring;
-
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, 
               "added custom config %s:%s\n", jItem->string, jItem->valuestring);
           }
@@ -200,11 +199,9 @@ public:
     assert(!m_connected);
     // Begin a stream.
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p creating initial nvidia message\n", this);	
     createInitMessage();
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p creating streamer\n", this);	
   	m_streamer = m_stub->StreamingRecognize(&m_context);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p connected to nvidia\n", this);	
     m_connected = true;
 
     // read thread is waiting on this
@@ -476,19 +473,6 @@ extern "C" {
 
       *ppUserData = cb;
       return SWITCH_STATUS_SUCCESS;
-    }
-
-    switch_status_t nvidia_speech_session_start_timers(switch_core_session_t *session, switch_media_bug_t *bug) {
-      if (bug) {
-        struct cap_cb *cb = (struct cap_cb *) switch_core_media_bug_get_user_data(bug);
-        switch_mutex_lock(cb->mutex);
-        GStreamer* streamer = (GStreamer *) cb->streamer;
-
-        if (streamer) streamer->startTimers();
-        switch_mutex_unlock(cb->mutex);
-        return SWITCH_STATUS_SUCCESS;
-      }
-      return SWITCH_STATUS_FALSE;
     }
 
     switch_status_t nvidia_speech_session_cleanup(switch_core_session_t *session, int channelIsClosing, switch_media_bug_t *bug) {
