@@ -42,7 +42,6 @@ public:
     char sessionId[256];
     switch_channel_t *channel = switch_core_session_get_channel(session);
     strncpy(m_sessionId, switch_core_session_get_uuid(session), 256);
-
 	}
 
 	~GStreamer() {
@@ -62,29 +61,139 @@ public:
     m_stub = std::move(nr_asr::RivaSpeechRecognition::NewStub(grpcChannel));
 
     /* set configuration parameters which are carried in the RecognitionInitMessage */
-      auto streaming_config = m_request.mutable_streaming_config();
-      streaming_config->set_interim_results(false);
-      auto config = streaming_config->mutable_config
-      ();
-      config->set_sample_rate_hertz(8000);
-      config->set_language_code("en-US");
-      config->set_encoding(nr::AudioEncoding::LINEAR_PCM);
-      config->set_max_alternatives(1);
-      config->set_profanity_filter(false);
-      config->set_audio_channel_count(1);
-      config->set_enable_word_time_offsets(true);
-      config->set_enable_automatic_punctuation(false);
-      //config->set_enable_separate_recognition_per_channel(separate_recognition_per_channel_);
-      auto custom_config = config->mutable_custom_configuration();
-      (*custom_config)["test_key"] = "test_value";
-      config->set_verbatim_transcripts(false);
-      //if (model_name_ != "") {
-      //  config->set_model(model_name_);
-      //}
+    auto streaming_config = m_request.mutable_streaming_config();
+    streaming_config->set_interim_results(m_interim);
+    auto config = streaming_config->mutable_config();
+    config->set_sample_rate_hertz(8000);
+    config->set_encoding(nr::AudioEncoding::LINEAR_PCM);
+    config->set_audio_channel_count(1);
 
-      //nr_asr::SpeechContext* speech_context = config->add_speech_contexts();
-      //*(speech_context->mutable_phrases()) = {boosted_phrases_.begin(), boosted_phrases_.end()};
-      //speech_context->set_boost(boosted_phrases_score_);
+
+    /* language */
+    config->set_language_code(m_language);
+
+    /* model */
+    if ((var = switch_channel_get_variable(channel, "NVIDIA_MODEL"))) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "set model %s\n",var);
+      config->set_model(var);
+    }
+
+    /* max alternatives */
+    if ((var = switch_channel_get_variable(channel, "NVIDIA_MAX_ALTERNATIVES"))) {
+      int max_alternatives = atoi(var);
+      if (max_alternatives > 0) {
+        config->set_max_alternatives(max_alternatives);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "set max alternatives %d\n", max_alternatives);
+      }
+    }
+    else config->set_max_alternatives(1);
+
+    /* profanity filter */
+    if (switch_true(switch_channel_get_variable(channel, "NVIDIA_PROFANITY_FILTER"))) {
+      config->set_profanity_filter(true);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable profanity filter\n",var);
+    }
+    else config->set_profanity_filter(false);
+
+    /* enable word time offsets */
+    if (switch_true(switch_channel_get_variable(channel, "NVIDIA_WORD_TIME_OFFSETS"))) {
+      config->set_enable_word_time_offsets(true);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable word time offsets\n",var);
+    }
+    else config->set_enable_word_time_offsets(false);
+    
+    /* punctuation */
+    if (switch_true(switch_channel_get_variable(channel, "NVIDIA_PUNCTUATION"))) {
+      config->set_enable_automatic_punctuation(true);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable puncutation\n",var);
+    }
+    else config->set_enable_automatic_punctuation(false);
+
+    /* verbatim transcripts */
+    if (switch_true(switch_channel_get_variable(channel, "NVIDIA_VERBATIM_TRANSCRIPTS"))) {
+      config->set_verbatim_transcripts(true);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable verbatim transcripts\n",var);
+    }
+    else config->set_verbatim_transcripts(false);
+
+    /* hints */
+    const char* hints = switch_channel_get_variable(channel, "NVIDIA_HINTS");
+    if (hints) {
+      float boost = -1;
+      nr_asr::SpeechContext* speech_context = config->add_speech_contexts();
+
+      // hints are either a simple comma-separated list of phrases, or a json array of objects
+      // containing a phrase and a boost value
+      auto *jHint = cJSON_Parse((char *) hints);
+      if (jHint) {
+        int i = 0;
+        cJSON *jPhrase = NULL;
+        cJSON_ArrayForEach(jPhrase, jHint) {
+          cJSON *jItem = cJSON_GetObjectItem(jPhrase, "phrase");
+          if (jItem) {
+            nr_asr::SpeechContext* speech_context = config->add_speech_contexts();
+            auto *phrase = cJSON_GetStringValue(jItem);
+            speech_context->add_phrases(phrase);
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "hint: %s\n", phrase);
+            if (cJSON_GetObjectItem(jPhrase, "boost")) {
+              float boost = (float) cJSON_GetObjectItem(jPhrase, "boost")->valuedouble;
+              speech_context->set_boost(boost);
+              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", boost);
+            }
+            i++;
+          }
+        }
+        cJSON_Delete(jHint);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", i);
+      }
+      else {
+        /* single set of hints */
+        nr_asr::SpeechContext* speech_context = config->add_speech_contexts();
+        char *phrases[500] = { 0 };
+        int argc = switch_separate_string((char *) hints, ',', phrases, 500);
+        for (int i = 0; i < argc; i++) {
+          speech_context->add_phrases(phrases[i]);
+        }
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", argc);
+        const char* boost_str = switch_channel_get_variable(channel, "NVIDIA_HINTS_BOOST");
+        if (boost_str) {
+          float boost = (float) atof(boost_str);
+          speech_context->set_boost(boost);
+          switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", boost);
+        }
+      }
+    }
+
+    /* speaker diarization */
+    if (switch_true(switch_channel_get_variable(channel, "NVIDIA_SPEAKER_DIARIZATION"))) {
+      nr_asr::SpeakerDiarizationConfig* diarization_config = config->mutable_diarization_config();
+      diarization_config->set_enable_speaker_diarization(true);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable diarization\n", var);
+
+      if ((var = switch_channel_get_variable(channel, "NVIDIA_DIARIZATION_SPEAKER_COUNT"))) {
+        int max_speaker_count = atoi(var);
+        diarization_config->set_max_speaker_count(max_speaker_count);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "set max speaker count %d\n", max_speaker_count);
+      }
+    }
+
+    /* custom config */
+    const char* custom = switch_channel_get_variable(channel, "NVIDIA_CUSTOM_CONFIGURATION");
+    if (custom) {
+      auto *jConfig = cJSON_Parse((char *) custom);
+      if (jConfig) {
+        auto custom_config = config->mutable_custom_configuration();
+        cJSON *jItem = NULL;
+        cJSON_ArrayForEach(jItem, jConfig) {
+          if (cJSON_IsString(jItem)) {
+            (*custom_config)[jItem->string] = jItem->valuestring;
+
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, 
+              "added custom config %s:%s\n", jItem->string, jItem->valuestring);
+          }
+        }
+      }
+    }
   }
 
   void connect() {
@@ -246,7 +355,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
           switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "confidence %.2f\n", confidence) ;
 
           int words = result.alternatives(a).words_size();
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "got %d words\n",count) ;
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "got %d words\n", words) ;
           if (words > 0) {
             cJSON* jWords = cJSON_CreateArray();
             for (int w = 0; w < words; w++) {
@@ -270,100 +379,6 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
 
       cJSON_Delete(jResult);
     }
-
-
-/*
-    // 3 types of responses: status, start of speech, result
-    bool processed = false;
-    if (response.has_status()) {
-      processed = true;
-      Status status = response.status();
-      uint32_t code = status.code();
-      if (code <= 200) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p got status code %d\n", streamer, code);
-        if (code == 200) {
-          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer %p transcription complete\n", streamer);
-          cb->responseHandler(session, "end_of_transcription", cb->bugname, NULL);
-        }
-      }
-      else {
-        auto message = status.message();
-        auto details = status.details();
-        cJSON* jError = cJSON_CreateObject();
-        cJSON_AddNumberToObject(jError, "code", code);
-        cJSON_AddStringToObject(jError, "error", status.message().c_str());
-        cJSON_AddStringToObject(jError, "details", status.details().c_str());        
-        char* error = cJSON_PrintUnformatted(jError);
-
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer %p got non-success code %d - %s : %s\n", streamer, code, message.c_str(), details.c_str());
-        cb->responseHandler(session, "error", cb->bugname, error);
-
-        free(error);
-        cJSON_Delete(jError);
-      }
-    }
-    if (response.has_start_of_speech()) {
-        processed = true;
-        auto start_of_speech = response.start_of_speech();
-        auto first_audio_to_start_of_speech_ms = start_of_speech.first_audio_to_start_of_speech_ms();
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "GStreamer %p got start of speech %d\n", streamer, first_audio_to_start_of_speech_ms);	
-        cb->responseHandler(session, "start_of_speech", cb->bugname, NULL);
-    }
-    if (response.has_result()){
-      processed = true;
-      const Result& result = response.result();
-      EnumResultType type = result.result_type();
-      bool is_final = type == EnumResultType::FINAL;
-      int nAlternatives = result.hypotheses_size();
-
-      cJSON * jResult = cJSON_CreateObject();
-      cJSON * jAlternatives = cJSON_CreateArray();
-      cJSON * jIsFinal = cJSON_CreateBool(is_final);
-
-      cJSON_AddItemToObject(jResult, "is_final", jIsFinal);
-      cJSON_AddItemToObject(jResult, "alternatives", jAlternatives);
-
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p got a %s result with %d hypotheses\n", streamer, is_final ? "final" : "interim", nAlternatives);	
-      for (int i = 0; i < nAlternatives; i++) {
-        auto hypothesis = result.hypotheses(i);
-        auto formatted_text = hypothesis.formatted_text();
-        auto minimally_formatted_text = hypothesis.minimally_formatted_text();
-        auto encrypted_tokenization = hypothesis.encrypted_tokenization();
-        auto average_confidence = hypothesis.average_confidence();
-        auto rejected = hypothesis.rejected();
-        auto grammar_id = hypothesis.grammar_id();
-
-        cJSON* jAlt = cJSON_CreateObject();
-        cJSON* jConfidence = cJSON_CreateNumber(hypothesis.confidence());
-        cJSON* jAverageConfidence = cJSON_CreateNumber(hypothesis.average_confidence());
-        cJSON* jTranscript = cJSON_CreateString(hypothesis.formatted_text().c_str());
-        cJSON* jMinimallyFormattedText = cJSON_CreateString(hypothesis.minimally_formatted_text().c_str());
-        cJSON* jEncryptedTokenization = cJSON_CreateString(hypothesis.encrypted_tokenization().c_str());
-        if (hypothesis.has_grammar_id()) {
-          cJSON* jGrammarId = cJSON_CreateString(hypothesis.grammar_id().c_str());
-          cJSON_AddItemToObject(jAlt, "grammar_id", jGrammarId);
-        }
-        cJSON* jRejected = cJSON_CreateBool(hypothesis.rejected());
-        if (hypothesis.has_detected_wakeup_word()) {
-          cJSON* jDetectedWakeupWord = cJSON_CreateString(hypothesis.detected_wakeup_word().c_str());
-          cJSON_AddItemToObject(jAlt, "detectedWakeupWord", jDetectedWakeupWord);
-        }
-
-        cJSON_AddItemToObject(jAlt, "confidence", jConfidence);
-        cJSON_AddItemToObject(jAlt, "averageConfidence", jAverageConfidence);
-        cJSON_AddItemToObject(jAlt, "transcript", jTranscript);
-        cJSON_AddItemToObject(jAlt, "rejected", jRejected);
-        cJSON_AddItemToObject(jAlt, "minimallyFormattedText", jMinimallyFormattedText);
-        if (!encrypted_tokenization.empty()) cJSON_AddItemToObject(jAlt, "encryptedTokenization", jEncryptedTokenization);
-        cJSON_AddItemToArray(jAlternatives, jAlt);
-      }
-      char* json = cJSON_PrintUnformatted(jResult);
-      cb->responseHandler(session, (const char *) json, cb->bugname, NULL);
-      free(json);
-
-      cJSON_Delete(jResult);
-    }
-    */
     switch_core_session_rwunlock(session);
   }
   return nullptr;
