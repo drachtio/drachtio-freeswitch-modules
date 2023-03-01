@@ -138,6 +138,36 @@ public:
       }
     }
 
+    var = switch_channel_get_variable(channel, "SONIOX_STORAGE_ID");
+    if (var) {
+      auto* storage_config = config->mutable_storage_config();
+      storage_config->set_object_id(var);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "set storage id %s\n", var);
+
+      var = switch_channel_get_variable(channel, "SONIOX_STORAGE_TITLE");
+      if (var) {
+        storage_config->set_title(var);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "set title %s\n", var);
+      }
+
+      if (switch_true(switch_channel_get_variable(channel, "SONIOX_STORAGE_DISABLE_AUDIO"))) {
+        storage_config->set_disable_store_audio(true);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "disable audio storage\n");
+      }
+
+      else storage_config->set_disable_store_audio(false);
+      if (switch_true(switch_channel_get_variable(channel, "SONIOX_STORAGE_DISABLE_TRANSCRIPT"))) {
+        storage_config->set_disable_store_transcript(true);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "disable transcript storage\n");
+      }
+          
+      else storage_config->set_disable_store_transcript(false);
+      if (switch_true(switch_channel_get_variable(channel, "SONIOX_STORAGE_DISABLE_SEARCH"))) {
+        storage_config->set_disable_search(true);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "disable search\n");
+      }    
+      else storage_config->set_disable_search(false);
+    }
     /* speaker diarization */
     /*
     if (switch_true(switch_channel_get_variable(channel, "SONIOX_SPEAKER_DIARIZATION"))) {
