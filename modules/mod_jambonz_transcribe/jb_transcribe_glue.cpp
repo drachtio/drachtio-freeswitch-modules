@@ -139,6 +139,7 @@ namespace {
     cJSON_AddStringToObject(json, "type", "start");
     cJSON_AddStringToObject(json, "language", tech_pvt->language);
     cJSON_AddStringToObject(json, "format", "raw");
+    cJSON_AddStringToObject(json, "encoding", "LINEAR16");
     cJSON_AddBoolToObject(json, "interimResults", tech_pvt->interim);
     cJSON_AddNumberToObject(json, "sampleRateHz", 8000);
     if (var = switch_channel_get_variable(channel, "JAMBONZ_STT_OPTIONS")) {
