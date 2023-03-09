@@ -70,7 +70,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
         AudioPipe* ap = findAndRemovePendingConnect(wsi);
         if (ap) {
           ap->m_state = LWS_CLIENT_FAILED;
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_FAIL, (char *) in, ap->isFinished());
+          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECT_FAIL, (char *) in, ap->isFinished());
         }
         else {
           lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_CONNECTION_ERROR unable to find wsi %p..\n", wsi); 
@@ -85,7 +85,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
           *ppAp = ap;
           ap->m_vhd = vhd;
           ap->m_state = LWS_CLIENT_CONNECTED;
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECT_SUCCESS, NULL,  ap->isFinished());
+          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECT_SUCCESS, NULL,  ap->isFinished());
         }
         else {
           lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_ESTABLISHED %s unable to find wsi %p..\n", ap->m_uuid.c_str(), wsi); 
@@ -103,12 +103,12 @@ int AudioPipe::lws_callback(struct lws *wsi,
           // closed by us
 
           lwsl_debug("%s socket closed by us\n", ap->m_uuid.c_str());
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECTION_CLOSED_GRACEFULLY, NULL,  ap->isFinished());
+          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECTION_CLOSED_GRACEFULLY, NULL,  ap->isFinished());
         }
         else if (ap->m_state == LWS_CLIENT_CONNECTED) {
           // closed by far end
           lwsl_info("%s socket closed by far end\n", ap->m_uuid.c_str());
-          ap->m_callback(ap->m_uuid.c_str(), AudioPipe::CONNECTION_DROPPED, NULL,  ap->isFinished());
+          ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::CONNECTION_DROPPED, NULL,  ap->isFinished());
         }
         ap->m_state = LWS_CLIENT_DISCONNECTED;
         ap->setClosed();
@@ -170,7 +170,7 @@ int AudioPipe::lws_callback(struct lws *wsi,
           if (lws_is_final_fragment(wsi)) {
             if (nullptr != ap->m_recv_buf) {
               std::string msg((char *)ap->m_recv_buf, ap->m_recv_buf_ptr - ap->m_recv_buf);
-              ap->m_callback(ap->m_uuid.c_str(), AudioPipe::MESSAGE, msg.c_str(),  ap->isFinished());
+              ap->m_callback(ap->m_uuid.c_str(), ap->m_bugname.c_str(), AudioPipe::MESSAGE, msg.c_str(),  ap->isFinished());
               if (nullptr != ap->m_recv_buf) free(ap->m_recv_buf);
             }
             ap->m_recv_buf = ap->m_recv_buf_ptr = nullptr;
@@ -450,9 +450,9 @@ bool AudioPipe::deinitialize() {
 }
 
 // instance members
-AudioPipe::AudioPipe(const char* uuid, const char* host, unsigned int port, const char* path,
-  size_t bufLen, size_t minFreespace, const char* apiKey, notifyHandler_t callback) :
-  m_uuid(uuid), m_host(host), m_port(port), m_path(path), m_finished(false),
+AudioPipe::AudioPipe(const char* uuid, const char* bugname, const char* host, unsigned int port, const char* path,
+  int sslFlags, size_t bufLen, size_t minFreespace, const char* apiKey, notifyHandler_t callback) :
+  m_uuid(uuid), m_bugname(bugname), m_host(host), m_port(port), m_path(path), m_sslFlags(sslFlags), m_finished(false),
   m_audio_buffer_min_freespace(minFreespace), m_audio_buffer_max_len(bufLen), m_gracefulShutdown(false),
   m_audio_buffer_write_offset(LWS_PRE), m_recv_buf(nullptr), m_recv_buf_ptr(nullptr), 
   m_state(LWS_CLIENT_IDLE), m_wsi(nullptr), m_vhd(nullptr), m_apiKey(apiKey), m_callback(callback) {
@@ -480,7 +480,7 @@ bool AudioPipe::connect_client(struct lws_per_vhost_data *vhd) {
   i.path = m_path.c_str();
   i.host = i.address;
   i.origin = i.address;
-  i.ssl_connection = LCCSCF_USE_SSL;
+  i.ssl_connection = m_sslFlags;
   //i.protocol = protocolName.c_str();
   i.pwsi = &(m_wsi);
 

@@ -31,6 +31,80 @@ namespace {
   static unsigned int idxCallCount = 0;
   static uint32_t playCount = 0;
 
+  static int parse_ws_uri(switch_channel_t *channel, const char* szServerUri, char* host, char *path, unsigned int* pPort, int* pSslFlags) {
+    int i = 0, offset;
+    char server[MAX_WS_URL_LEN + MAX_PATH_LEN];
+    char *saveptr;
+    int flags = LCCSCF_USE_SSL;
+    
+    if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_ALLOW_SELFSIGNED"))) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "parse_ws_uri - allowing self-signed certs\n");
+      flags |= LCCSCF_ALLOW_SELFSIGNED;
+    }
+    if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_SKIP_SERVER_CERT_HOSTNAME_CHECK"))) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "parse_ws_uri - skipping hostname check\n");
+      flags |= LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
+    }
+    if (switch_true(switch_channel_get_variable(channel, "MOD_AUDIO_FORK_ALLOW_EXPIRED"))) {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "parse_ws_uri - allowing expired certs\n");
+      flags |= LCCSCF_ALLOW_EXPIRED;
+    }
+
+    // get the scheme
+    strncpy(server, szServerUri, MAX_WS_URL_LEN + MAX_PATH_LEN);
+    if (0 == strncmp(server, "https://", 8) || 0 == strncmp(server, "HTTPS://", 8)) {
+      *pSslFlags = flags;
+      offset = 8;
+      *pPort = 443;
+    }
+    else if (0 == strncmp(server, "wss://", 6) || 0 == strncmp(server, "WSS://", 6)) {
+      *pSslFlags = flags;
+      offset = 6;
+      *pPort = 443;
+    }
+    else if (0 == strncmp(server, "http://", 7) || 0 == strncmp(server, "HTTP://", 7)) {
+      offset = 7;
+      *pSslFlags = 0;
+      *pPort = 80;
+    }
+    else if (0 == strncmp(server, "ws://", 5) || 0 == strncmp(server, "WS://", 5)) {
+      offset = 5;
+      *pSslFlags = 0;
+      *pPort = 80;
+    }
+    else {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "parse_ws_uri - error parsing uri %s: invalid scheme\n", szServerUri);;
+      return 0;
+    }
+
+    std::string strHost(server + offset);
+    std::regex re("^(.+?):?(\\d+)?(/.*)?$");
+    std::smatch matches;
+    if(std::regex_search(strHost, matches, re)) {
+      /*
+      for (int i = 0; i < matches.length(); i++) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "parse_ws_uri - %d: %s\n", i, matches[i].str().c_str());
+      }
+      */
+      strncpy(host, matches[1].str().c_str(), MAX_WS_URL_LEN);
+      if (matches[2].str().length() > 0) {
+        *pPort = atoi(matches[2].str().c_str());
+      }
+      if (matches[3].str().length() > 0) {
+        strncpy(path, matches[3].str().c_str(), MAX_PATH_LEN);
+      }
+      else {
+        strcpy(path, "/");
+      }
+    } else {
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "parse_ws_uri - invalid format %s\n", strHost.c_str());
+      return 0;
+    }
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "parse_ws_uri - host %s, path %s\n", host, path);
+
+    return 1;
+  }
+
   static void reaper(private_t *tech_pvt) {
     std::shared_ptr<jambonz::AudioPipe> pAp;
     pAp.reset((jambonz::AudioPipe *)tech_pvt->pAudioPipe);
@@ -47,43 +121,15 @@ namespace {
   static void destroy_tech_pvt(private_t *tech_pvt) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s (%u) destroy_tech_pvt\n", tech_pvt->sessionId, tech_pvt->id);
     if (tech_pvt) {
-      if (tech_pvt->pAudioPipe) {
-        jambonz::AudioPipe* p = (jambonz::AudioPipe *) tech_pvt->pAudioPipe;
-        delete p;
-        tech_pvt->pAudioPipe = nullptr;
+      if (tech_pvt->mutex) {
+        switch_mutex_destroy(tech_pvt->mutex);
+        tech_pvt->mutex = nullptr;
       }
       if (tech_pvt->resampler) {
           speex_resampler_destroy(tech_pvt->resampler);
           tech_pvt->resampler = NULL;
       }
-
-      /*
-      if (tech_pvt->vad) {
-        switch_vad_destroy(&tech_pvt->vad);
-        tech_pvt->vad = nullptr;
-      }
-      */
     }
-  }
-
-  std::string encodeURIComponent(std::string decoded)
-  {
-
-      std::ostringstream oss;
-      std::regex r("[!'\\(\\)*-.0-9A-Za-z_~:]");
-
-      for (char &c : decoded)
-      {
-          if (std::regex_match((std::string){c}, r))
-          {
-              oss << c;
-          }
-          else
-          {
-              oss << "%" << std::uppercase << std::hex << (0xff & c);
-          }
-      }
-      return oss.str();
   }
 
   static void sendStartMessage(switch_channel_t *channel, private_t* tech_pvt) {
@@ -117,11 +163,11 @@ namespace {
     cJSON_Delete(json);
   }
 
-  static void eventCallback(const char* sessionId, jambonz::AudioPipe::NotifyEvent_t event, const char* message, bool finished) {
+  static void eventCallback(const char* sessionId, const char* bugname, jambonz::AudioPipe::NotifyEvent_t event, const char* message, bool finished) {
     switch_core_session_t* session = switch_core_session_locate(sessionId);
     if (session) {
       switch_channel_t *channel = switch_core_session_get_channel(session);
-      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
       if (bug) {
         private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
         if (tech_pvt) {
@@ -153,8 +199,24 @@ namespace {
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection closed gracefully\n");
             break;
             case jambonz::AudioPipe::MESSAGE:
-              
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
+            {
+              cJSON* jMessage = cJSON_Parse(message);
+              if (!jMessage) {
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "discarding incoming message (not json): %s\n", message);
+                break;
+              }
+              const char* type = cJSON_GetStringValue(cJSON_GetObjectItem(jMessage, "type"));
+              if (0 == strcmp(type, "error")) {
+                tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_ERROR, message, tech_pvt->bugname, finished);
+              }
+              else if (0 == strcmp(type, "transcription")) {
+                tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
+              }
+              else {
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "discarding incoming message: %s\n", message);
+              }
+              cJSON_Delete(jMessage);
+            }
             break;
 
             default:
@@ -173,20 +235,28 @@ namespace {
     int err;
     switch_codec_implementation_t read_impl;
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    const char* host = switch_channel_get_variable(channel, "JAMBONZ_STT_HOST");
-    const char* path = switch_channel_get_variable(channel, "JAMBONZ_STT_PATH");
-    const char* port = switch_channel_get_variable(channel, "JAMBONZ_STT_PORT");
+    char host[MAX_WS_URL_LEN], path[MAX_PATH_LEN];
+    unsigned int port;
+    int sslFlags;
+
+    const char* url = switch_channel_get_variable(channel, "JAMBONZ_STT_URL");
+    if (!parse_ws_uri(channel, url, &host[0], &path[0], &port, &sslFlags)) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "invalid websocket uri: %s\n", url);
+      return SWITCH_STATUS_FALSE;
+    }
 
     switch_core_session_get_read_impl(session, &read_impl);
   
     memset(tech_pvt, 0, sizeof(private_t));
   
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "host: %s, port: %s, path: %s\n", host, port, path);
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "host: %s, port: %d, path: %s\n", host, port, path);
 
     strncpy(tech_pvt->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
+    strncpy(tech_pvt->bugname, bugname, MAX_BUG_LEN);
     strncpy(tech_pvt->host, host, MAX_WS_URL_LEN);
-    tech_pvt->port = atoi(port);
     strncpy(tech_pvt->path, path, MAX_PATH_LEN); 
+    tech_pvt->port = port;
+    tech_pvt->sslFlags = sslFlags;
     strncpy(tech_pvt->language, lang, MAX_LANG_LEN); 
     tech_pvt->interim = interim;
     tech_pvt->sampling = desiredSampling;
@@ -204,8 +274,8 @@ namespace {
       return SWITCH_STATUS_FALSE;
     }
 
-    jambonz::AudioPipe* ap = new jambonz::AudioPipe(tech_pvt->sessionId, tech_pvt->host, tech_pvt->port, tech_pvt->path, 
-      buflen, read_impl.decoded_bytes_per_packet, apiKey, eventCallback);
+    jambonz::AudioPipe* ap = new jambonz::AudioPipe(tech_pvt->sessionId, bugname, tech_pvt->host, tech_pvt->port, tech_pvt->path, 
+      tech_pvt->sslFlags, buflen, read_impl.decoded_bytes_per_packet, apiKey, eventCallback);
     if (!ap) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error allocating AudioPipe\n");
       return SWITCH_STATUS_FALSE;
@@ -307,31 +377,37 @@ extern "C" {
 
 	switch_status_t jb_transcribe_session_stop(switch_core_session_t *session,int channelIsClosing, char* bugname) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
     if (!bug) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "jb_transcribe_session_stop: no bug - websocket conection already closed\n");
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "jb_transcribe_session_stop: no bug %s - websocket conection already closed\n", bugname);
       return SWITCH_STATUS_FALSE;
     }
     private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
-    uint32_t id = tech_pvt->id;
-
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) jb_transcribe_session_stop\n", id);
-
     if (!tech_pvt) return SWITCH_STATUS_FALSE;
-      
+
     // close connection and get final responses
     switch_mutex_lock(tech_pvt->mutex);
-    switch_channel_set_private(channel, bugname, NULL);
-    if (!channelIsClosing) switch_core_media_bug_remove(session, &bug);
-
-    jambonz::AudioPipe *pAudioPipe = static_cast<jambonz::AudioPipe *>(tech_pvt->pAudioPipe);
-    if (pAudioPipe) reaper(tech_pvt);
-    destroy_tech_pvt(tech_pvt);
-    switch_mutex_unlock(tech_pvt->mutex);
-    switch_mutex_destroy(tech_pvt->mutex);
-    tech_pvt->mutex = nullptr;
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) jb_transcribe_session_stop\n", id);
-    return SWITCH_STATUS_SUCCESS;
+    {
+      // get the bug again, now that we are under lock
+      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
+      if (bug) {
+        switch_channel_set_private(channel, bugname, NULL);
+        uint32_t id = tech_pvt->id;
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) jb_transcribe_session_stop\n", id);
+        if (!channelIsClosing) {
+          switch_core_media_bug_remove(session, &bug);
+        }
+        jambonz::AudioPipe *pAudioPipe = static_cast<jambonz::AudioPipe *>(tech_pvt->pAudioPipe);
+        if (pAudioPipe) reaper(tech_pvt);
+        destroy_tech_pvt(tech_pvt);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "(%u) jb_transcribe_session_stop, bug removed\n", id);
+        return SWITCH_STATUS_SUCCESS;
+      }
+      else {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "jb_transcribe_session_stop: race condition, previous close completed\n");
+      }
+    }
+    return SWITCH_STATUS_FALSE;
   }
 	
 	switch_bool_t jb_transcribe_frame(switch_core_session_t *session, switch_media_bug_t *bug) {

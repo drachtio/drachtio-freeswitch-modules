@@ -74,14 +74,12 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	void *pUserData;
 	uint32_t samples_per_second;
 
-  if (!switch_channel_get_variable(channel, "JAMBONZ_STT_HOST") ||
-    !switch_channel_get_variable(channel, "JAMBONZ_STT_PATH") ||
-    !switch_channel_get_variable(channel, "JAMBONZ_STT_PORT")) {
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Missing JAMBONZ_STT_HOST, JAMBONZ_STT_PATH, or JAMBONZ_STT_PORT\n");
+  if (!switch_channel_get_variable(channel, "JAMBONZ_STT_URL")) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Missing JAMBONZ_STT_URL channel var\n");
     return SWITCH_STATUS_FALSE;
   }
 
-	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
+	if (switch_channel_get_private(channel, bugname)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
 		do_stop(session, bugname);
 	}
@@ -101,7 +99,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	if ((status = switch_core_media_bug_add(session, "jb_transcribe", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
 		return status;
 	}
-  switch_channel_set_private(channel, MY_BUG_NAME, bug);
+  switch_channel_set_private(channel, bugname, bug);
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "added media bug for jb transcribe\n");
 
 	return SWITCH_STATUS_SUCCESS;
@@ -112,10 +110,10 @@ static switch_status_t do_stop(switch_core_session_t *session,  char* bugname)
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
 	switch_channel_t *channel = switch_core_session_get_channel(session);
-	switch_media_bug_t *bug = switch_channel_get_private(channel, MY_BUG_NAME);
+	switch_media_bug_t *bug = switch_channel_get_private(channel, bugname);
 
 	if (bug) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command to stop transcribe.\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command to stop transcribe for bug %s.\n", bugname);
 		status = jb_transcribe_session_stop(session, 0, bugname);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "stopped transcribe.\n");
 	}
@@ -158,7 +156,7 @@ SWITCH_STANDARD_API(jb_transcribe_function)
           flags |= SMBF_WRITE_STREAM ;
           flags |= SMBF_STEREO;
 				}
-    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
+    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s bug %s\n", lang, interim ? "interim": "complete", bugname);
 				status = start_capture(lsession, flags, lang, interim, bugname);
 			}
 			switch_core_session_rwunlock(lsession);

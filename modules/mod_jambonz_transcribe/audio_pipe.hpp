@@ -28,7 +28,7 @@ public:
     MESSAGE
   };
   typedef void (*log_emit_function)(int level, const char *line);
-  typedef void (*notifyHandler_t)(const char *sessionId, NotifyEvent_t event, const char* message, bool finished);
+  typedef void (*notifyHandler_t)(const char *sessionId, const char* bugname, NotifyEvent_t event, const char* message, bool finished);
 
   struct lws_per_vhost_data {
     struct lws_context *context;
@@ -41,7 +41,7 @@ public:
   static bool lws_service_thread(unsigned int nServiceThread);
 
   // constructor
-  AudioPipe(const char* uuid, const char* host, unsigned int port, const char* path, 
+  AudioPipe(const char* uuid, const char* bugname, const char* host, unsigned int port, const char* path, int sslFlags, 
     size_t bufLen, size_t minFreespace, const char* apiKey, notifyHandler_t callback);
   ~AudioPipe();  
 

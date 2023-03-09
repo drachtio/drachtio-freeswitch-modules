@@ -1,6 +1,8 @@
 #ifndef __JB_GLUE_H__
 #define __JB_GLUE_H__
 
+int parse_ws_uri(switch_channel_t *channel, const char* szServerUri, char* host, char *path, unsigned int* pPort, int* pSslFlags);
+
 switch_status_t jb_transcribe_init();
 switch_status_t jb_transcribe_cleanup();
 switch_status_t jb_transcribe_session_init(switch_core_session_t *session, responseHandler_t responseHandler, 
