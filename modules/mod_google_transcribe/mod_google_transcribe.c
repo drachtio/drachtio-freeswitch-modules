@@ -67,9 +67,20 @@ static void responseHandler(switch_core_session_t* session, const char * json, c
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
 	}
 	else {
+    int error = 0;
+    cJSON* jMessage = cJSON_Parse(json);
+    if (jMessage) {
+      const char* type = cJSON_GetStringValue(cJSON_GetObjectItem(jMessage, "type"));
+      if (0 == strcmp(type, "error")) {
+        error = 1;
+    		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_ERROR);
+      }
+      cJSON_Delete(jMessage);
+    }
+    if (!error) {
+    		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_RESULTS);
+    }
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s json payload: %s.\n", bugname ? bugname : "google_transcribe", json);
-
-		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_RESULTS);
 		switch_channel_event_set_data(channel, event);
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "google");
 		switch_event_add_body(event, "%s", json);

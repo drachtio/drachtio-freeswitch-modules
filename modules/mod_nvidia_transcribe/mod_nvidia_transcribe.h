@@ -12,7 +12,7 @@
 #define TRANSCRIBE_EVENT_RESULTS "nvidia_transcribe::transcription"
 #define TRANSCRIBE_EVENT_START_OF_SPEECH "nvidia_transcribe::start_of_speech"
 #define TRANSCRIBE_EVENT_TRANSCRIPTION_COMPLETE "nvidia_transcribe::end_of_transcription"
-#define TRANSCRIBE_EVENT_ERROR "nvidia_transcribe::error"
+#define TRANSCRIBE_EVENT_ERROR      "jambonz_transcribe::error"
 #define TRANSCRIBE_EVENT_VAD_DETECTED "nvidia_transcribe::vad_detected"
 
 

@@ -17,6 +17,7 @@
 #define TRANSCRIBE_EVENT_MAX_DURATION_EXCEEDED "google_transcribe::max_duration_exceeded"
 #define TRANSCRIBE_EVENT_PLAY_INTERRUPT "google_transcribe::play_interrupt"
 #define TRANSCRIBE_EVENT_VAD_DETECTED "google_transcribe::vad_detected"
+#define TRANSCRIBE_EVENT_ERROR      "jambonz_transcribe::error"
 
 
 // simply write a wave file
