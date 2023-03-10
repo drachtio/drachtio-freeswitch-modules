@@ -15,17 +15,6 @@ namespace {
   static int nTcpKeepaliveSecs = requestedTcpKeepaliveSecs ? ::atoi(requestedTcpKeepaliveSecs) : 55;
 }
 
-static int dch_lws_http_basic_auth_gen(const char *apiKey, char *buf, size_t len) {
-	size_t n = strlen(apiKey);
-
-	if (len < n + 7)
-		return 1;
-
-	strcpy(buf,"Token ");
-  strcpy(buf + 6, apiKey);
-	return 0;
-}
-
 int AudioPipe::lws_callback(struct lws *wsi, 
   enum lws_callback_reasons reason,
   void *user, void *in, size_t len) {
@@ -52,8 +41,8 @@ int AudioPipe::lws_callback(struct lws *wsi,
           unsigned char **p = (unsigned char **)in, *end = (*p) + len;
           char b[256];
           memset(b, 0, sizeof(b));
-          strcpy(b,"Token ");
-          strcpy(b + 6, apiKey.c_str());
+          strcpy(b,"Bearer ");
+          strcpy(b + 7, apiKey.c_str());
 
           if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_AUTHORIZATION, (unsigned char *)b, strlen(b), p, end)) return -1;
         }
