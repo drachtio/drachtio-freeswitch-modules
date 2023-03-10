@@ -380,20 +380,23 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
   // Read responses.
   StreamingRecognizeResponse response;
   while (streamer->read(&response)) {  // Returns false when no more to read.
-    count++;
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "response counter:  %d\n",count) ;
-    auto speech_event_type = response.speech_event_type();
-    Status st = response.error();
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "speech_event_type: %d \n", response.speech_event_type()) ;
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: error %s code: (%d)\n", st.message().c_str(), st.code()) ;
-    if (response.has_error()) {
-      Status status = response.error();
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: error %s (%d)\n", status.message().c_str(), status.code()) ;
-    }
     switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
     if (!session) {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: session %s is gone!\n", cb->sessionId) ;
       return nullptr;
+    }
+    count++;
+    auto speech_event_type = response.speech_event_type();
+    if (response.has_error()) {
+      Status status = response.error();
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: error %s (%d)\n", status.message().c_str(), status.code()) ;
+      cJSON* json = cJSON_CreateObject();
+      cJSON_AddStringToObject(json, "type", "error");
+      cJSON_AddStringToObject(json, "error", status.message().c_str());
+      char* jsonString = cJSON_PrintUnformatted(json);
+      cb->responseHandler(session, jsonString, cb->bugname);
+      free(jsonString);
+      cJSON_Delete(json);
     }
     
     if (cb->play_file == 1){

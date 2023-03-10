@@ -341,21 +341,7 @@ public:
       else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "GStreamer %p invalid resources json: %s\n", this, var);
       }
-    }
-    
-    /*
-
-    TBD: add support for the following parameters
-    msg->mutable_parameters()->mutable_formatting();
-
-    auto resource = msg->add_resources();
-    resources->set_inline_wordset("words and phrases");
-    resources->set_builtin("builtin");
-    resources->set_inline_grammar("grammar");
-    resources->mutable_wakeup_word()->set_words(0, "jambonz");
-    resources->set_weight_enum(EnumWeight::MEDIUM);
-    resources->set_reuse(EnumResourceReuse::UNDEFINED_REUSE);
-*/
+    }    
   }
 
   void connect() {
@@ -507,6 +493,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
         auto message = status.message();
         auto details = status.details();
         cJSON* jError = cJSON_CreateObject();
+        cJSON_AddStringToObject(jError, "type", "error");
         cJSON_AddNumberToObject(jError, "code", code);
         cJSON_AddStringToObject(jError, "error", status.message().c_str());
         cJSON_AddStringToObject(jError, "details", status.details().c_str());        

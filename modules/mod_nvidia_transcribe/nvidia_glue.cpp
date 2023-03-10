@@ -317,12 +317,10 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
   nr_asr::StreamingRecognizeResponse response;
   while (streamer->read(&response)) {  // Returns false when no more to read.
     count++;
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "response counter:  %d with %d results\n",count, response.results_size()) ;
     switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
     if (!session) {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: session %s is gone!\n", cb->sessionId) ;
     }
-
     for (int r = 0; r < response.results_size(); ++r) {
       const auto& result = response.results(r);
       bool is_final = result.is_final();

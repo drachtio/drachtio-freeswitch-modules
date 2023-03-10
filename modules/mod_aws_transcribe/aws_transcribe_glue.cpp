@@ -156,6 +156,13 @@ public:
 					const TranscribeStreamingServiceError& err = outcome.GetError();
 					auto message = err.GetMessage();
 					auto exception = err.GetExceptionName();
+          cJSON* json = cJSON_CreateObject();
+          cJSON_AddStringToObject(json, "type", "error");
+          cJSON_AddStringToObject(json, "error", message.c_str());
+          char* jsonString = cJSON_PrintUnformatted(json);
+          m_responseHandler(psession, jsonString, m_bugname.c_str());
+          free(jsonString);
+          cJSON_Delete(json);
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p stream got error response %s : %s\n", this, message.c_str(), exception.c_str());
 				}
 

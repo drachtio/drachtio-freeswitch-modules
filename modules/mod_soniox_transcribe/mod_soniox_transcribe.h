@@ -12,7 +12,7 @@
 #define TRANSCRIBE_EVENT_RESULTS "soniox_transcribe::transcription"
 #define TRANSCRIBE_EVENT_START_OF_SPEECH "soniox_transcribe::start_of_speech"
 #define TRANSCRIBE_EVENT_TRANSCRIPTION_COMPLETE "soniox_transcribe::end_of_transcription"
-#define TRANSCRIBE_EVENT_ERROR "soniox_transcribe::error"
+#define TRANSCRIBE_EVENT_ERROR      "jambonz_transcribe::error"
 #define TRANSCRIBE_EVENT_VAD_DETECTED "soniox_transcribe::vad_detected"
 
 

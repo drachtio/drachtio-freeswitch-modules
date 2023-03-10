@@ -14,6 +14,7 @@
 #define TRANSCRIBE_EVENT_NO_AUDIO_DETECTED "aws_transcribe::no_audio_detected"
 #define TRANSCRIBE_EVENT_MAX_DURATION_EXCEEDED "aws_transcribe::max_duration_exceeded"
 #define TRANSCRIBE_EVENT_VAD_DETECTED "aws_transcribe::vad_detected"
+#define TRANSCRIBE_EVENT_ERROR      "jambonz_transcribe::error"
 
 #define MAX_LANG (12)
 #define MAX_REGION (32)
@@ -39,7 +40,6 @@ struct cap_cb {
 
 	switch_vad_t * vad;
 	uint32_t samples_per_second;
-
 };
 
 #endif

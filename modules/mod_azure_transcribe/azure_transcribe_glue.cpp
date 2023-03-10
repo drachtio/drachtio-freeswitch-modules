@@ -187,6 +187,8 @@ public:
 					default:
 						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "GStreamer unexpected result '%s': reason %d\n", 
 							json.c_str(), reason);
+            responseHandler(psession, TRANSCRIBE_EVENT_ERROR, json.c_str(), m_bugname.c_str(), m_finished);
+
 					break;
 				}
 				switch_core_session_rwunlock(psession);

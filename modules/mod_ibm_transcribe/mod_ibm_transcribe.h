@@ -14,7 +14,7 @@
 #define TRANSCRIBE_EVENT_CONNECT_FAIL    "ibm_transcribe::connect_failed"
 #define TRANSCRIBE_EVENT_BUFFER_OVERRUN  "ibm_transcribe::buffer_overrun"
 #define TRANSCRIBE_EVENT_DISCONNECT      "ibm_transcribe::disconnect"
-#define TRANSCRIBE_EVENT_ERROR      "ibm_transcribe::error"
+#define TRANSCRIBE_EVENT_ERROR      "jambonz_transcribe::error"
 
 #define MAX_LANG (12)
 #define MAX_SESSION_ID (256)
