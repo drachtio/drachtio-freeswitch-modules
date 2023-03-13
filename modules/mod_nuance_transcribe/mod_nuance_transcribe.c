@@ -230,10 +230,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass %s!\n", TRANSCRIBE_EVENT_TRANSCRIPTION_COMPLETE);
 		return SWITCH_STATUS_TERM;
 	}
-	if (switch_event_reserve_subclass(TRANSCRIBE_EVENT_ERROR) != SWITCH_STATUS_SUCCESS) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass %s!\n", TRANSCRIBE_EVENT_ERROR);
-		return SWITCH_STATUS_TERM;
-	}
+	switch_event_reserve_subclass(TRANSCRIBE_EVENT_ERROR);
 	if (switch_event_reserve_subclass(TRANSCRIBE_EVENT_VAD_DETECTED) != SWITCH_STATUS_SUCCESS) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass %s!\n", TRANSCRIBE_EVENT_VAD_DETECTED);
 		return SWITCH_STATUS_TERM;
@@ -267,7 +264,6 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown)
 	switch_event_free_subclass(TRANSCRIBE_EVENT_RESULTS);
 	switch_event_free_subclass(TRANSCRIBE_EVENT_START_OF_SPEECH);
 	switch_event_free_subclass(TRANSCRIBE_EVENT_TRANSCRIPTION_COMPLETE);
-	switch_event_free_subclass(TRANSCRIBE_EVENT_ERROR);
 	switch_event_free_subclass(TRANSCRIBE_EVENT_VAD_DETECTED);
 	return SWITCH_STATUS_SUCCESS;
 }
