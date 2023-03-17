@@ -307,7 +307,10 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
 
     const auto& result = response.result();
     int nWords = result.words_size();
-    if (0 == nWords) continue;
+    if (0 == nWords) {
+      switch_core_session_rwunlock(session);
+      continue;
+    }
 
     auto final_proc_time_ms = result.final_proc_time_ms();
     auto total_proc_time_ms = result.total_proc_time_ms();
