@@ -110,6 +110,7 @@ public:
 		if (var = switch_channel_get_variable(channel, "AWS_VOCABULARY_FILTER_METHOD")) {
 			m_request.SetVocabularyFilterMethod(VocabularyFilterMethodMapper::GetVocabularyFilterMethodForName(var));
 		}
+    switch_core_session_rwunlock(session);
 	}
 
 	void connect() {
@@ -516,12 +517,15 @@ extern "C" {
 				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: waiting for read thread to complete %s\n", bugname);
 				switch_thread_join(&retval, cb->thread);
 				cb->thread = NULL;
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: read thread completed %s\n", bugname);
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: read thread completed %s, %d\n", bugname, retval);
 			}
 			killcb(cb);
 
 			switch_channel_set_private(channel, bugname, NULL);
-			if (!channelIsClosing) switch_core_media_bug_remove(session, &bug);
+			if (!channelIsClosing) {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: removing bug %s\n", bugname);
+        switch_core_media_bug_remove(session, &bug);
+      }
 
 			switch_mutex_unlock(cb->mutex);
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "aws_transcribe_session_stop: Closed aws session\n");
