@@ -71,7 +71,7 @@ static void responseHandler(switch_core_session_t* session, const char * json, c
     cJSON* jMessage = cJSON_Parse(json);
     if (jMessage) {
       const char* type = cJSON_GetStringValue(cJSON_GetObjectItem(jMessage, "type"));
-      if (0 == strcmp(type, "error")) {
+      if (type && 0 == strcmp(type, "error")) {
         error = 1;
     		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_ERROR);
       }

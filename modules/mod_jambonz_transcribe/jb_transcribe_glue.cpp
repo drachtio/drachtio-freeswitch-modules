@@ -207,10 +207,10 @@ namespace {
                 break;
               }
               const char* type = cJSON_GetStringValue(cJSON_GetObjectItem(jMessage, "type"));
-              if (0 == strcmp(type, "error")) {
+              if (type && 0 == strcmp(type, "error")) {
                 tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_ERROR, message, tech_pvt->bugname, finished);
               }
-              else if (0 == strcmp(type, "transcription")) {
+              else if (type && 0 == strcmp(type, "transcription")) {
                 tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
               }
               else {
