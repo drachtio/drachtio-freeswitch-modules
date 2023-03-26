@@ -472,9 +472,12 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     if (speech_event_type == StreamingRecognizeResponse_SpeechEventType_END_OF_SINGLE_UTTERANCE) {
       // we only get this when we have requested it, and recognition stops after we get this
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: got end_of_utterance\n") ;
+      cb->got_end_of_utterance = 1;
       cb->responseHandler(session, "end_of_utterance", cb->bugname);
-      cb->end_of_utterance = 1;
-      streamer->writesDone();
+      if (cb->wants_single_utterance) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: sending writesDone because we want only a single utterance\n") ;
+        streamer->writesDone();
+      }
     }
     switch_core_session_rwunlock(session);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: got %d responses\n", response.results_size());
@@ -483,9 +486,6 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
   {
     switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
     if (session) {
-      if (1 == cb->end_of_utterance) {
-        cb->responseHandler(session, "end_of_transcript", cb->bugname);
-      }
       grpc::Status status = streamer->finish();
       if (11 == status.error_code()) {
         if (std::string::npos != status.error_message().find("Exceeded maximum allowed stream duration")) {
@@ -535,7 +535,8 @@ extern "C" {
       cb =(struct cap_cb *) switch_core_session_alloc(session, sizeof(*cb));
       strncpy(cb->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
       strncpy(cb->bugname, bugname, MAX_BUG_LEN);
-      cb->end_of_utterance = 0;
+      cb->got_end_of_utterance = 0;
+      cb->wants_single_utterance = single_utterance;
       if (play_file != NULL){
         cb->play_file = 1;
       }
@@ -672,7 +673,7 @@ extern "C" {
     switch_bool_t google_speech_frame(switch_media_bug_t *bug, void* user_data) {
     	switch_core_session_t *session = switch_core_media_bug_get_session(bug);
     	struct cap_cb *cb = (struct cap_cb *) user_data;
-		  if (cb->streamer && !cb->end_of_utterance) {
+		  if (cb->streamer && (!cb->wants_single_utterance || !cb->got_end_of_utterance)) {
         GStreamer* streamer = (GStreamer *) cb->streamer;
         uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
         switch_frame_t frame = {};
