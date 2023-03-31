@@ -101,6 +101,10 @@ public:
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_single_utterance\n");
       streaming_config->set_single_utterance(true);
     }
+    else {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_single_utterance is FALSE\n");
+      streaming_config->set_single_utterance(false);
+    }
 
 		config->set_language_code(lang);
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s \n", lang);

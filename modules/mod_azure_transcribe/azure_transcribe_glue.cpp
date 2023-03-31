@@ -195,12 +195,23 @@ public:
 			}
 		};
 
-		auto onCanceled = [this](const SpeechRecognitionCanceledEventArgs& args) {
-			if (m_finished) return;
-			auto result = args.Result;
-			auto details = args.ErrorDetails;
-			auto code = args.ErrorCode;
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer recognition canceled, error %d: %s\n", code, details.c_str());
+		auto onCanceled = [this, responseHandler](const SpeechRecognitionCanceledEventArgs& args) {
+      if (m_finished) return;
+			switch_core_session_t* psession = switch_core_session_locate(m_sessionId.c_str());
+			if (psession) {
+        auto result = args.Result;
+        auto details = args.ErrorDetails;
+        auto code = args.ErrorCode;
+        cJSON* json = cJSON_CreateObject();
+        cJSON_AddStringToObject(json, "type", "error");
+        cJSON_AddStringToObject(json, "error", details.c_str());
+        char* jsonString = cJSON_PrintUnformatted(json);
+        responseHandler(psession, TRANSCRIBE_EVENT_ERROR, jsonString, m_bugname.c_str(), m_finished);
+        free(jsonString);
+        cJSON_Delete(json);
+				switch_core_session_rwunlock(psession);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer recognition canceled, error %d: %s\n", code, details.c_str());
+      }
 		};
 
 		m_recognizer->SessionStopped += onSessionStopped;
