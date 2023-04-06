@@ -91,7 +91,7 @@ extern "C" {
 		memset(langCode, '\0', 6);
 		strncpy(langCode, google->voice_name, 5);
 
-		if (strstr(text, "<speak>") == text) {
+		if (strstr(text, "<speak") == text) {
 			input->set_ssml(text);
 		}
 		else {
