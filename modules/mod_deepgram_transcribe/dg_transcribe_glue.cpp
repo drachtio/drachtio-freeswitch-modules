@@ -92,13 +92,13 @@ namespace {
     const char *var ;
     std::ostringstream oss;
 
-    oss << "/v1/listen";
+    oss << "/v1/listen?tier=";
 
     // model 
-    if ((var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_TIER")) && 0 == strcmp(var, "enhanced")) {
-     oss <<  "?tier=enhanced";
+    if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_TIER")) {
+     oss <<  var;
     } else {
-     oss <<  "?tier=base";
+     oss <<  "base";
     }
 
    oss <<  "&model=";
