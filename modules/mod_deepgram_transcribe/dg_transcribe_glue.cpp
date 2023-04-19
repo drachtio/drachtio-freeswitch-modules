@@ -90,33 +90,27 @@ namespace {
     int sampleRate, int channels, const char* language, int interim) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     const char *var ;
+    const char *model = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_MODEL");
+    const char *customModel = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_CUSTOM_MODEL");
+    const char *tier = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_TIER") ;
     std::ostringstream oss;
 
-    oss << "/v1/listen?tier=";
+    oss << "/v1/listen?model=";
 
-    // model 
-    if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_TIER")) {
-     oss <<  var;
-    } else {
-     oss <<  "base";
-    }
+    // default to conversationai model but allow override
+    if (!model && !customModel) oss << "conversationalai";
+    else if (customModel) oss << customModel;
+    else if (model) oss << model;
 
-   oss <<  "&model=";
-    if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_CUSTOM_MODEL")) {
-     oss <<  var;
-    } 
-    else if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_MODEL")) {
-     oss <<  var;
-    }
-    else {
-     oss <<  "conversationalai";
-    }
+    // tier 
+    if (tier) oss << "&tier=" << tier;
+
     if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_MODEL_VERSION")) {
      oss <<  "&version";
      oss <<  var;
     }
-   oss <<  "&language=";
-   oss <<  language;
+    oss <<  "&language=";
+    oss <<  language;
 
     if (channels == 2) {
      oss <<  "&multichannel=true";
