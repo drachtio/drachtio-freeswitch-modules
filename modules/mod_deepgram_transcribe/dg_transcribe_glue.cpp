@@ -180,13 +180,12 @@ namespace {
      oss <<  "&interim_results=true";
     }
     if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_ENDPOINTING")) {
-      if (switch_false(var)) {
-       oss <<  "&endpointing=false";
-      }
-      else if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_VAD_TURNOFF")) {
-       oss <<  "&vad_turnoff=";
-       oss <<  var;
-      }
+      oss <<  "&endpointing=";
+      oss <<  var;
+    }
+    if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_VAD_TURNOFF")) {
+      oss <<  "&vad_turnoff=";
+      oss <<  var;
     }
    oss <<  "&encoding=linear16";
    oss <<  "&sample_rate=8000";
