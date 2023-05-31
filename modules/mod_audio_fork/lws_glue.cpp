@@ -156,11 +156,11 @@ namespace {
     }
   }
 
-  static void eventCallback(const char* sessionId, AudioPipe::NotifyEvent_t event, const char* message) {
+  static void eventCallback(const char* sessionId, const char* bugname, AudioPipe::NotifyEvent_t event, const char* message) {
     switch_core_session_t* session = switch_core_session_locate(sessionId);
     if (session) {
       switch_channel_t *channel = switch_core_session_get_channel(session);
-      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
       if (bug) {
         private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
         if (tech_pvt) {
@@ -205,7 +205,8 @@ namespace {
     }
   }
   switch_status_t fork_data_init(private_t *tech_pvt, switch_core_session_t *session, char * host, 
-    unsigned int port, char* path, int sslFlags, int sampling, int desiredSampling, int channels, char* metadata, responseHandler_t responseHandler) {
+    unsigned int port, char* path, int sslFlags, int sampling, int desiredSampling, int channels, 
+    char *bugname, char* metadata, responseHandler_t responseHandler) {
 
     const char* username = nullptr;
     const char* password = nullptr;
@@ -238,7 +239,7 @@ namespace {
     size_t buflen = LWS_PRE + (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
 
     AudioPipe* ap = new AudioPipe(tech_pvt->sessionId, host, port, path, sslFlags, 
-      buflen, read_impl.decoded_bytes_per_packet, username, password, eventCallback);
+      buflen, read_impl.decoded_bytes_per_packet, username, password, bugname, eventCallback);
     if (!ap) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error allocating AudioPipe\n");
       return SWITCH_STATUS_FALSE;
@@ -395,6 +396,7 @@ extern "C" {
               int sampling,
               int sslFlags,
               int channels,
+              char *bugname,
               char* metadata, 
               void **ppUserData)
   {    	
@@ -406,7 +408,8 @@ extern "C" {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "error allocating memory!\n");
       return SWITCH_STATUS_FALSE;
     }
-    if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, host, port, path, sslFlags, samples_per_second, sampling, channels, metadata, responseHandler)) {
+    if (SWITCH_STATUS_SUCCESS != fork_data_init(tech_pvt, session, host, port, path, sslFlags, samples_per_second, sampling, channels, 
+      bugname, metadata, responseHandler)) {
       destroy_tech_pvt(tech_pvt);
       return SWITCH_STATUS_FALSE;
     }
@@ -418,9 +421,9 @@ extern "C" {
     return SWITCH_STATUS_SUCCESS;
   }
 
-  switch_status_t fork_session_cleanup(switch_core_session_t *session, char* text, int channelIsClosing) {
+  switch_status_t fork_session_cleanup(switch_core_session_t *session, char *bugname, char* text, int channelIsClosing) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
     if (!bug) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "fork_session_cleanup: no bug - websocket conection already closed\n");
       return SWITCH_STATUS_FALSE;
@@ -437,9 +440,9 @@ extern "C" {
 
     // get the bug again, now that we are under lock
     {
-      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+      switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
       if (bug) {
-        switch_channel_set_private(channel, MY_BUG_NAME, NULL);
+        switch_channel_set_private(channel, bugname, NULL);
         if (!channelIsClosing) {
           switch_core_media_bug_remove(session, &bug);
         }
@@ -464,9 +467,9 @@ extern "C" {
     return SWITCH_STATUS_SUCCESS;
   }
 
-  switch_status_t fork_session_send_text(switch_core_session_t *session, char* text) {
+  switch_status_t fork_session_send_text(switch_core_session_t *session, char *bugname, char* text) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
     if (!bug) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "fork_session_send_text failed because no bug\n");
       return SWITCH_STATUS_FALSE;
@@ -480,9 +483,9 @@ extern "C" {
     return SWITCH_STATUS_SUCCESS;
   }
 
-  switch_status_t fork_session_pauseresume(switch_core_session_t *session, int pause) {
+  switch_status_t fork_session_pauseresume(switch_core_session_t *session, char *bugname, int pause) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
     if (!bug) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "fork_session_pauseresume failed because no bug\n");
       return SWITCH_STATUS_FALSE;
@@ -496,9 +499,9 @@ extern "C" {
     return SWITCH_STATUS_SUCCESS;
   }
 
-  switch_status_t fork_session_graceful_shutdown(switch_core_session_t *session) {
+  switch_status_t fork_session_graceful_shutdown(switch_core_session_t *session, char *bugname) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, MY_BUG_NAME);
+    switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
     if (!bug) {
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "fork_session_graceful_shutdown failed because no bug\n");
       return SWITCH_STATUS_FALSE;
