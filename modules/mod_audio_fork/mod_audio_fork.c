@@ -35,7 +35,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	case SWITCH_ABC_TYPE_CLOSE:
 		{
       private_t* tech_pvt = (private_t *)  switch_core_media_bug_get_user_data(bug);
-			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_CLOSE.\n");
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_CLOSE for bug %s\n", tech_pvt->bugname);
       fork_session_cleanup(session, tech_pvt->bugname, NULL, 1);
 		}
 		break;
@@ -71,8 +71,8 @@ static switch_status_t start_capture(switch_core_session_t *session,
   int channels = (flags & SMBF_STEREO) ? 2 : 1;
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, 
-    "mod_audio_fork: streaming %d sampling to %s path %s port %d tls: %s.\n", 
-    sampling, host, path, port, sslFlags ? "yes" : "no");
+    "mod_audio_fork (%s): streaming %d sampling to %s path %s port %d tls: %s.\n", 
+    bugname, sampling, host, path, port, sslFlags ? "yes" : "no");
 
 	if (switch_channel_get_private(channel, bugname)) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_fork: bug %s already attached!\n", bugname);
@@ -108,10 +108,10 @@ static switch_status_t do_stop(switch_core_session_t *session, char* bugname, ch
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
 	if (text) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: stop w/ final text %s\n", text);
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork (%s): stop w/ final text %s\n", bugname, text);
 	}
 	else {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: stop\n");
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork (%s): stop\n", bugname);
 	}
 	status = fork_session_cleanup(session, bugname, text, 0);
 
@@ -122,7 +122,7 @@ static switch_status_t do_pauseresume(switch_core_session_t *session, char* bugn
 {
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
-	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: %s\n", pause ? "pause" : "resume");
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork (%s): %s\n", bugname, pause ? "pause" : "resume");
 	status = fork_session_pauseresume(session, bugname, pause);
 
 	return status;
@@ -132,6 +132,7 @@ static switch_status_t do_graceful_shutdown(switch_core_session_t *session, char
 {
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork (%s): do_graceful_shutdown \n", bugname);
 	status = fork_session_graceful_shutdown(session, bugname);
 
 	return status;
@@ -144,11 +145,11 @@ static switch_status_t send_text(switch_core_session_t *session, char* bugname, 
 	switch_media_bug_t *bug = switch_channel_get_private(channel, bugname);
 
   if (bug) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork: sending text: %s.\n", text);
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "mod_audio_fork (%s): sending text: %s.\n", bugname, text);
     status = fork_session_send_text(session, bugname, text);
   }
   else {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_fork: no bug, failed sending text: %s.\n", text);
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "mod_audio_fork (%s): no bug, failed sending text: %s.\n", bugname, text);
   }
   return status;
 }
