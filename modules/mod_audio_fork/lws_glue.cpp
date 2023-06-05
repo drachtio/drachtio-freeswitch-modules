@@ -234,6 +234,7 @@ namespace {
     tech_pvt->buffer_overrun_notified = 0;
     tech_pvt->audio_paused = 0;
     tech_pvt->graceful_shutdown = 0;
+    strncpy(tech_pvt->bugname, bugname, MAX_BUG_LEN);
     if (metadata) strncpy(tech_pvt->initialMetadata, metadata, MAX_METADATA_LEN);
     
     size_t buflen = LWS_PRE + (FRAME_SIZE_8000 * desiredSampling / 8000 * channels * 1000 / RTP_PACKETIZATION_PERIOD * nAudioBufferSecs);
@@ -425,7 +426,7 @@ extern "C" {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
     if (!bug) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "fork_session_cleanup: no bug - websocket conection already closed\n");
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "fork_session_cleanup: no bug %s - websocket conection already closed\n", bugname);
       return SWITCH_STATUS_FALSE;
     }
     private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
