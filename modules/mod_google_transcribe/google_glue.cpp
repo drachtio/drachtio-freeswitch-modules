@@ -250,7 +250,6 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     if (speech_event_type == StreamingRecognizeResponse_SpeechEventType_END_OF_SINGLE_UTTERANCE) {
       // we only get this when we have requested it, and recognition stops after we get this
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: got end_of_utterance\n") ;
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "end of single utterance");
       cb->responseHandler(session, "end_of_utterance");
       cb->end_of_utterance = 1;
       streamer->writesDone();
