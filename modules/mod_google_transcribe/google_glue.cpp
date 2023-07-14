@@ -250,6 +250,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     if (speech_event_type == StreamingRecognizeResponse_SpeechEventType_END_OF_SINGLE_UTTERANCE) {
       // we only get this when we have requested it, and recognition stops after we get this
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "grpc_read_thread: got end_of_utterance\n") ;
+      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "end of single utterance");
       cb->responseHandler(session, "end_of_utterance");
       cb->end_of_utterance = 1;
       streamer->writesDone();
@@ -261,9 +262,10 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
   {
     switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
     if (session) {
-      if (1 == cb->end_of_utterance) {
-        cb->responseHandler(session, "end_of_transcript");
-      }
+      // if (1 == cb->end_of_utterance) {
+      //   switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "end of utterance/transcript");
+      //   cb->responseHandler(session, "end_of_transcript");
+      // }
       grpc::Status status = streamer->finish();
       if (11 == status.error_code()) {
         if (std::string::npos != status.error_message().find("Exceeded maximum allowed stream duration")) {
