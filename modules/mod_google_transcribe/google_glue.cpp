@@ -262,7 +262,6 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
     if (session) {
       // if (1 == cb->end_of_utterance) {
-      //   switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "end of utterance/transcript");
       //   cb->responseHandler(session, "end_of_transcript");
       // }
       grpc::Status status = streamer->finish();
