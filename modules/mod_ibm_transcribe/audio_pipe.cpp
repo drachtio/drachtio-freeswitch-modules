@@ -520,6 +520,7 @@ void AudioPipe::finish() {
   }
   m_finished = true;
   bufferForSending("{\"action\": \"stop\"}");
+  close();
 }
 
 void AudioPipe::waitForClose() {

@@ -533,6 +533,7 @@ void AudioPipe::unlockAudioBuffer() {
 void AudioPipe::close() {
   if (m_state != LWS_CLIENT_CONNECTED) return;
   addPendingDisconnect(this);
+  close();
 }
 
 void AudioPipe::do_graceful_shutdown() {
