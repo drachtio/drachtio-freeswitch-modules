@@ -516,7 +516,6 @@ void AudioPipe::finish() {
   if (m_finished || m_state != LWS_CLIENT_CONNECTED) return;
   m_finished = true;
   bufferForSending("{\"type\": \"CloseStream\"}");
-  close();
 }
 
 void AudioPipe::waitForClose() {
