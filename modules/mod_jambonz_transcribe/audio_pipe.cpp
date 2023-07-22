@@ -446,6 +446,7 @@ bool AudioPipe::deinitialize() {
     lwsl_notice("AudioPipe::deinitialize destroying context %d of %d\n", i + 1, numContexts);
     lws_context_destroy(contexts[i]);
   }
+  std::this_thread::sleep_for(std::chrono::seconds(2));
   return true;
 }
 
