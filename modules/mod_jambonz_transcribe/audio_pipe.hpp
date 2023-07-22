@@ -5,8 +5,10 @@
 #include <list>
 #include <mutex>
 #include <future>
-
+#include <queue>
+#include <unordered_map>
 #include <libwebsockets.h>
+#include <thread>
 
 namespace jambonz {
 
@@ -85,8 +87,6 @@ public:
 private:
 
   static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len); 
-  static bool lws_initialized;
-  static bool lws_stopping;
   static unsigned int nchild;
   static struct lws_context *contexts[];
   static unsigned int numContexts;
@@ -98,6 +98,9 @@ private:
   static std::list<AudioPipe*> pendingDisconnects;
   static std::list<AudioPipe*> pendingWrites;
   static log_emit_function logger;
+  static std::mutex mapMutex;
+  static std::unordered_map<std::thread::id, bool> stopFlags;
+  static std::queue<std::thread::id> threadIds;
 
   static AudioPipe* findAndRemovePendingConnect(struct lws *wsi);
   static AudioPipe* findPendingConnect(struct lws *wsi);
