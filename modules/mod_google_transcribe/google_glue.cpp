@@ -261,9 +261,9 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
   {
     switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
     if (session) {
-      if (1 == cb->end_of_utterance) {
-        cb->responseHandler(session, "end_of_transcript");
-      }
+      // if (1 == cb->end_of_utterance) {
+      //   cb->responseHandler(session, "end_of_transcript");
+      // }
       grpc::Status status = streamer->finish();
       if (11 == status.error_code()) {
         if (std::string::npos != status.error_message().find("Exceeded maximum allowed stream duration")) {
