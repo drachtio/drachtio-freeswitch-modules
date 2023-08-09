@@ -62,7 +62,7 @@ public:
 		auto speechConfig = nullptr != endpoint ? 
 			(nullptr != subscriptionKey ?
 				SpeechConfig::FromEndpoint(endpoint, subscriptionKey) :
-				SpeechConfig::FromHost(endpoint)) :
+				SpeechConfig::FromEndpoint(endpoint)) :
 			SpeechConfig::FromSubscription(subscriptionKey, region);
 		if (switch_true(switch_channel_get_variable(channel, "AZURE_USE_OUTPUT_FORMAT_DETAILED"))) {
 			speechConfig->SetOutputFormat(OutputFormat::Detailed);
