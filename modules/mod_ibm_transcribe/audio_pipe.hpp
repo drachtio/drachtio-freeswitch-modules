@@ -1,5 +1,5 @@
-#ifndef __AUDIO_PIPE_HPP__
-#define __AUDIO_PIPE_HPP__
+#ifndef __IBM_AUDIO_PIPE_HPP__
+#define __IBM_AUDIO_PIPE_HPP__
 
 #include <string>
 #include <list>
@@ -7,8 +7,9 @@
 #include <future>
 #include <queue>
 #include <unordered_map>
-#include <libwebsockets.h>
 #include <thread>
+
+#include <libwebsockets.h>
 
 namespace ibm {
 
