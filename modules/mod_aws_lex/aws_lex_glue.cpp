@@ -1,6 +1,5 @@
 #include <cstdlib>
 #include <switch.h>
-#include "switch_cJSON_fsw.h"
 
 #include <string.h>
 #include <mutex>
