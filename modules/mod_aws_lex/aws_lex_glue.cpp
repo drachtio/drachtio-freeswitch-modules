@@ -1,7 +1,6 @@
 #include <cstdlib>
-
 #include <switch.h>
-#include <switch_json.h>
+#include "switch_cJSON_fsw.h"
 
 #include <string.h>
 #include <mutex>
@@ -31,7 +30,6 @@ using namespace Aws::Utils;
 using namespace Aws::Auth;
 using namespace Aws::LexRuntimeV2;
 using namespace Aws::LexRuntimeV2::Model;
-
 
 const char ALLOC_TAG[] = "drachtio";
 
@@ -576,7 +574,6 @@ extern "C" {
 	switch_status_t aws_lex_init() {
 		const char* accessKeyId = std::getenv("AWS_ACCESS_KEY_ID");
 		const char* secretAccessKey= std::getenv("AWS_SECRET_ACCESS_KEY");
-		const char* awsTrace = std::getenv("AWS_TRACE");
 		if (NULL == accessKeyId && NULL == secretAccessKey) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, 
 				"\"AWS_ACCESS_KEY_ID\"  and/or \"AWS_SECRET_ACCESS_KEY\" env var not set; authentication will expect channel variables of same names to be set\n");
@@ -585,20 +582,26 @@ extern "C" {
 			hasDefaultCredentials = true;
 
 		}
-    Aws::SDKOptions options;
+#ifdef FREESWITCH_AWS_GLOBAL_INITIALIZATION
+    if (awsCounter() == 0) {
+#endif
+  		const char* awsTrace = std::getenv("AWS_TRACE");
+      Aws::SDKOptions options;
+      options.httpOptions.installSigPipeHandler = true;
 
-		if (awsTrace && 0 == strcmp("1", awsTrace)) {
-			awsLoggingEnabled = true;
-			options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
+      if (awsTrace && 0 == strcmp("1", awsTrace)) {
+        awsLoggingEnabled = true;
+        options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
 
-			Aws::Utils::Logging::InitializeAWSLogging(
-					Aws::MakeShared<Aws::Utils::Logging::DefaultLogSystem>(
-						ALLOC_TAG, Aws::Utils::Logging::LogLevel::Trace, "aws_sdk_"));
-		}
+        Aws::Utils::Logging::InitializeAWSLogging(
+            Aws::MakeShared<Aws::Utils::Logging::DefaultLogSystem>(
+              ALLOC_TAG, Aws::Utils::Logging::LogLevel::Trace, "aws_sdk_"));
+      }
 
-    Aws::InitAPI(options);
-
-
+      Aws::InitAPI(options);
+#ifdef FREESWITCH_AWS_GLOBAL_INITIALIZATION
+    }
+#endif
 
 		return SWITCH_STATUS_SUCCESS;
 	}
@@ -607,12 +610,15 @@ extern "C" {
 		Aws::SDKOptions options;
 		
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_aws_lex: shutting down API");
+
+#ifndef FREESWITCH_AWS_GLOBAL_INITIALIZATION
 		if (awsLoggingEnabled) {
 			options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
 			Aws::Utils::Logging::ShutdownAWSLogging();
 		}
 	
     Aws::ShutdownAPI(options);
+#endif
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_aws_lex: shutdown API complete");
 
 		return SWITCH_STATUS_SUCCESS;

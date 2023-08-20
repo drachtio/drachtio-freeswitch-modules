@@ -363,26 +363,35 @@ extern "C" {
 			hasDefaultCredentials = true;
 
 		}
-    Aws::SDKOptions options;
-/*		
-    options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
+#ifdef FREESWITCH_AWS_GLOBAL_INITIALIZATION
+    if (awsCounter() == 0) {
+#endif
+  		const char* awsTrace = std::getenv("AWS_TRACE");
+      Aws::SDKOptions options;
+      options.httpOptions.installSigPipeHandler = true;
 
-		Aws::Utils::Logging::InitializeAWSLogging(
-        Aws::MakeShared<Aws::Utils::Logging::DefaultLogSystem>(
-           ALLOC_TAG, Aws::Utils::Logging::LogLevel::Trace, "aws_sdk_transcribe"));
-*/
-    Aws::InitAPI(options);
+      if (awsTrace && 0 == strcmp("1", awsTrace)) {
+        awsLoggingEnabled = true;
+        options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
+
+        Aws::Utils::Logging::InitializeAWSLogging(
+            Aws::MakeShared<Aws::Utils::Logging::DefaultLogSystem>(
+              ALLOC_TAG, Aws::Utils::Logging::LogLevel::Trace, "aws_sdk_"));
+      }
+
+      Aws::InitAPI(options);
+#ifdef FREESWITCH_AWS_GLOBAL_INITIALIZATION
+    }
+#endif
 
 		return SWITCH_STATUS_SUCCESS;
 	}
 	
 	switch_status_t aws_transcribe_cleanup() {
 		Aws::SDKOptions options;
-		/*
-    options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
-		Aws::Utils::Logging::ShutdownAWSLogging();
-		*/
+#ifndef FREESWITCH_AWS_GLOBAL_INITIALIZATION
     Aws::ShutdownAPI(options);
+    #endif
 
 		return SWITCH_STATUS_SUCCESS;
 	}
