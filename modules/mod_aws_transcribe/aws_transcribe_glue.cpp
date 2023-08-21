@@ -371,7 +371,6 @@ extern "C" {
       options.httpOptions.installSigPipeHandler = true;
 
       if (awsTrace && 0 == strcmp("1", awsTrace)) {
-        awsLoggingEnabled = true;
         options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
 
         Aws::Utils::Logging::InitializeAWSLogging(
