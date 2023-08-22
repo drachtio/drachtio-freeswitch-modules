@@ -352,6 +352,10 @@ static void killcb(struct cap_cb* cb) {
 
 extern "C" {
 	switch_status_t aws_transcribe_init() {
+#ifdef FREESWITCH_AWS_GLOBAL_INITIALIZATION
+    return SWITCH_STATUS_SUCCESS;
+#endif
+
 		const char* accessKeyId = std::getenv("AWS_ACCESS_KEY_ID");
 		const char* secretAccessKey = std::getenv("AWS_SECRET_ACCESS_KEY");
 		const char* region = std::getenv("AWS_REGION");
@@ -363,34 +367,30 @@ extern "C" {
 			hasDefaultCredentials = true;
 
 		}
-#ifdef FREESWITCH_AWS_GLOBAL_INITIALIZATION
-    if (awsCounter() == 0) {
-#endif
-  		const char* awsTrace = std::getenv("AWS_TRACE");
-      Aws::SDKOptions options;
-      options.httpOptions.installSigPipeHandler = true;
+    const char* awsTrace = std::getenv("AWS_TRACE");
+    Aws::SDKOptions options;
+    options.httpOptions.installSigPipeHandler = true;
 
-      if (awsTrace && 0 == strcmp("1", awsTrace)) {
-        options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
+    if (awsTrace && 0 == strcmp("1", awsTrace)) {
+      options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
 
-        Aws::Utils::Logging::InitializeAWSLogging(
-            Aws::MakeShared<Aws::Utils::Logging::DefaultLogSystem>(
-              ALLOC_TAG, Aws::Utils::Logging::LogLevel::Trace, "aws_sdk_"));
-      }
-
-      Aws::InitAPI(options);
-#ifdef FREESWITCH_AWS_GLOBAL_INITIALIZATION
+      Aws::Utils::Logging::InitializeAWSLogging(
+          Aws::MakeShared<Aws::Utils::Logging::DefaultLogSystem>(
+            ALLOC_TAG, Aws::Utils::Logging::LogLevel::Trace, "aws_sdk_"));
     }
-#endif
+
+    Aws::InitAPI(options);
 
 		return SWITCH_STATUS_SUCCESS;
 	}
 	
 	switch_status_t aws_transcribe_cleanup() {
+#ifdef FREESWITCH_AWS_GLOBAL_INITIALIZATION
+    return SWITCH_STATUS_SUCCESS;
+#endif
+
 		Aws::SDKOptions options;
-#ifndef FREESWITCH_AWS_GLOBAL_INITIALIZATION
     Aws::ShutdownAPI(options);
-    #endif
 
 		return SWITCH_STATUS_SUCCESS;
 	}
