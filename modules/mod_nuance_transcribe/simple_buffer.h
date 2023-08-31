@@ -19,7 +19,8 @@ class SimpleBuffer {
       if (datalen % m_chunkSize != 0) return;
       int numChunks = datalen / m_chunkSize;
       for (int i = 0; i < numChunks; i++) {
-        memcpy(m_pNextWrite, data, datalen);
+        memcpy(m_pNextWrite, data, m_chunkSize);
+        data = static_cast<char*>(data) + m_chunkSize;
         if (numItems < m_numChunks) numItems++;
 
         uint32_t offset = (m_pNextWrite - m_pData) / m_chunkSize;
