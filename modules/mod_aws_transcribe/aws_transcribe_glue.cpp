@@ -111,7 +111,7 @@ public:
 		if (var = switch_channel_get_variable(channel, "AWS_VOCABULARY_FILTER_METHOD")) {
 			m_request.SetVocabularyFilterMethod(VocabularyFilterMethodMapper::GetVocabularyFilterMethodForName(var));
 		}
-		// NB: this was added in AWS SDK 1.9
+		// LP: I saw this in some other commit of Dave's but it wasn't in master. NB: this was added in AWS SDK 1.9
 		if (var = switch_channel_get_variable(channel, "AWS_ENABLE_PARTIAL_RESULTS_STABILITY")) {
 			m_request.SetEnablePartialResultsStabilization(true);
 			m_request.SetPartialResultsStability(PartialResultsStabilityMapper::GetPartialResultsStabilityForName(var));
