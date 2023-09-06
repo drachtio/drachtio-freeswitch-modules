@@ -86,6 +86,7 @@ public:
 
 		// not worth resampling to 16k if we get 8k ulaw or alaw in..
     m_request.SetMediaSampleRateHertz(samples_per_second > 8000 ? 16000 : 8000);
+		// setting this lower instead because it can't be used if SetIdentifyLanguage is also used. See below.
     //m_request.SetLanguageCode(LanguageCodeMapper::GetLanguageCodeForName(lang));
     m_request.SetMediaEncoding(MediaEncoding::pcm);
     m_request.SetEventStreamHandler(m_handler);
