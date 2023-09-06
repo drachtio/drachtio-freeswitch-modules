@@ -86,7 +86,7 @@ public:
 
 		// not worth resampling to 16k if we get 8k ulaw or alaw in..
     m_request.SetMediaSampleRateHertz(samples_per_second > 8000 ? 16000 : 8000);
-    m_request.SetLanguageCode(LanguageCodeMapper::GetLanguageCodeForName(lang));
+    //m_request.SetLanguageCode(LanguageCodeMapper::GetLanguageCodeForName(lang));
     m_request.SetMediaEncoding(MediaEncoding::pcm);
     m_request.SetEventStreamHandler(m_handler);
 		if (channels > 1) m_request.SetNumberOfChannels(channels);
@@ -109,6 +109,19 @@ public:
 		}
 		if (var = switch_channel_get_variable(channel, "AWS_VOCABULARY_FILTER_METHOD")) {
 			m_request.SetVocabularyFilterMethod(VocabularyFilterMethodMapper::GetVocabularyFilterMethodForName(var));
+		}
+		// NB: this was added in AWS SDK 1.9
+		if (var = switch_channel_get_variable(channel, "AWS_ENABLE_PARTIAL_RESULTS_STABILITY")) {
+			m_request.SetEnablePartialResultsStabilization(true);
+			m_request.SetPartialResultsStability(PartialResultsStabilityMapper::GetPartialResultsStabilityForName(var));
+		}
+		if (var = switch_channel_get_variable(channel, "AWS_LANGUAGE_ALTERNATIVES")) {
+			m_request.SetIdentifyLanguage(true);
+			m_request.SetLanguageOptions(var);
+			m_request.SetPreferredLanguage(LanguageCodeMapper::GetLanguageCodeForName(lang));
+		}
+		else {
+			m_request.SetLanguageCode(LanguageCodeMapper::GetLanguageCodeForName(lang));
 		}
     switch_core_session_rwunlock(session);
 	}
