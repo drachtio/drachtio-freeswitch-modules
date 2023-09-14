@@ -37,7 +37,6 @@ Stop transcription on a channel.
 
 | variable | Description |
 | --- | ----------- |
-| 
 | COBALT_ENABLE_CONFUSION_NETWORK | if true, enable [confusion network](https://docs-v2.cobaltspeech.com/docs/asr/transcribe/#confusion-network) |
 | COBALT_METADATA | custom metadata to send with a transcribe request  |
 | COBALT_COMPILED_CONTEXT_DATA | base64-encoded compiled context hints to include with the transcribe request |
