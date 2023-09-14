@@ -46,7 +46,6 @@ static void responseHandler(switch_core_session_t* session, const char * json, c
 	}
 	if (bugname) switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "media-bugname", bugname);
 	switch_event_fire(&event);
-  switch_event_destroy(&event);
 }
 
 static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type)

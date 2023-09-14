@@ -162,7 +162,6 @@ namespace {
     switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "cobalt");
     switch_event_add_body(event, "%s", json);
     switch_event_fire(&event);
-    switch_event_destroy(&event);
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "compile context response for cobalt speech: %s\n", json);	
 
