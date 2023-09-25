@@ -157,13 +157,13 @@ public:
 					const TranscribeStreamingServiceError& err = outcome.GetError();
 					auto message = err.GetMessage();
 					auto exception = err.GetExceptionName();
-          cJSON* json = cJSON_CreateObject();
-          cJSON_AddStringToObject(json, "type", "error");
-          cJSON_AddStringToObject(json, "error", message.c_str());
-          char* jsonString = cJSON_PrintUnformatted(json);
-          m_responseHandler(psession, jsonString, m_bugname.c_str());
-          free(jsonString);
-          cJSON_Delete(json);
+					cJSON* json = cJSON_CreateObject();
+					cJSON_AddStringToObject(json, "type", "error");
+					cJSON_AddStringToObject(json, "error", message.c_str());
+					char* jsonString = cJSON_PrintUnformatted(json);
+					m_responseHandler(psession, jsonString, m_bugname.c_str());
+					free(jsonString);
+					cJSON_Delete(json);
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p stream got error response %s : %s\n", this, message.c_str(), exception.c_str());
 				}
 
@@ -172,6 +172,11 @@ public:
 				m_cond.notify_one();
 
 				switch_core_session_rwunlock(psession);
+			} else {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p session is closed/hungup. Need to unblock thread.\n", this);
+				std::lock_guard<std::mutex> lk(m_mutex);
+				m_finished = true;
+				m_cond.notify_one();
 			}
     };
 
