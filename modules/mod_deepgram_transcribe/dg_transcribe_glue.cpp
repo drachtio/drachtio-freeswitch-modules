@@ -97,8 +97,11 @@ namespace {
 
     oss << "/v1/listen?model=";
 
-    // default to conversationai model but allow override
-    if (!model && !customModel) oss << "conversationalai";
+    // default to conversationai model for english, general for others (but allow override)
+    if (!model && !customModel) {
+      if (strncmp(language, "en", 2) == 0) oss << "conversationalai";
+      else oss << "general";
+    }
     else if (customModel) oss << customModel;
     else if (model) oss << model;
 
