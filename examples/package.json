@@ -10,8 +10,8 @@
   "license": "MIT",
   "dependencies": {
     "config": "^3.3.1",
-    "drachtio-fsmrf": "^2.0.1",
-    "drachtio-srf": "^4.4.37",
+    "drachtio-fsmrf": "^3.0.27",
+    "drachtio-srf": "^4.5.28",
     "minimist": "^1.2.5",
     "ws": "^7.3.1"
   }
