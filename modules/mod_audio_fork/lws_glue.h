@@ -16,4 +16,5 @@ switch_status_t fork_session_graceful_shutdown(switch_core_session_t *session, c
 switch_status_t fork_session_send_text(switch_core_session_t *session, char *bugname, char* text);
 switch_bool_t fork_frame(switch_core_session_t *session, switch_media_bug_t *bug);
 switch_status_t fork_service_threads();
+switch_status_t fork_session_connect(void **ppUserData)
 #endif

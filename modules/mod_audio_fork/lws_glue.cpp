@@ -161,6 +161,8 @@ namespace {
     if (session) {
       switch_channel_t *channel = switch_core_session_get_channel(session);
       switch_media_bug_t *bug = (switch_media_bug_t*) switch_channel_get_private(channel, bugname);
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "xhoaluu\n");
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, event);
       if (bug) {
         private_t* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
         if (tech_pvt) {
@@ -416,8 +418,12 @@ extern "C" {
     }
 
     *ppUserData = tech_pvt;
+    return SWITCH_STATUS_SUCCESS;
+  }
 
-    AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
+   switch_status_t fork_session_connect(void **ppUserData) {
+    private_t *tech_pvt = static_cast<private_t *>(*ppUserData);
+    AudioPipe *pAudioPipe = static_cast<AudioPipe*>(tech_pvt->pAudioPipe);
     pAudioPipe->connect();
     return SWITCH_STATUS_SUCCESS;
   }
