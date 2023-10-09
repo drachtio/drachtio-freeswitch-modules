@@ -99,6 +99,11 @@ static switch_status_t start_capture(switch_core_session_t *session,
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "setting bug private data %s.\n", bugname);
 	switch_channel_set_private(channel, bugname, bug);
 
+	if (fork_session_connect(&pUserData) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error mod_audio_fork session cannot connect.\n");
+		return SWITCH_STATUS_FALSE;
+	}
+
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "exiting start_capture.\n");
 	return SWITCH_STATUS_SUCCESS;
 }

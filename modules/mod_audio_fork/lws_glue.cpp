@@ -416,8 +416,12 @@ extern "C" {
     }
 
     *ppUserData = tech_pvt;
+    return SWITCH_STATUS_SUCCESS;
+  }
 
-    AudioPipe *pAudioPipe = static_cast<AudioPipe *>(tech_pvt->pAudioPipe);
+   switch_status_t fork_session_connect(void **ppUserData) {
+    private_t *tech_pvt = static_cast<private_t *>(*ppUserData);
+    AudioPipe *pAudioPipe = static_cast<AudioPipe*>(tech_pvt->pAudioPipe);
     pAudioPipe->connect();
     return SWITCH_STATUS_SUCCESS;
   }
