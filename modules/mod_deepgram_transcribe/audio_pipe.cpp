@@ -244,8 +244,8 @@ static const lws_retry_bo_t retry = {
     nullptr,   // retry_ms_table
     0,         // retry_ms_table_count
     0,         // conceal_count
-    40,         // secs_since_valid_ping
-    10,        // secs_since_valid_hangup
+    UINT16_MAX,         // secs_since_valid_ping
+    UINT16_MAX,        // secs_since_valid_hangup
     0          // jitter_percent
 };
 
