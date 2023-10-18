@@ -28,6 +28,10 @@ const char ALLOC_TAG[] = "drachtio";
 static bool hasDefaultCredentials = false;
 static bool sdkInitialized = false;
 static const char* sdkLog = std::getenv("AZURE_SDK_LOGFILE");
+static const char* proxyIP = std::getenv("JAMBONES_HTTP_PROXY_IP");
+static const char* proxyPort = std::getenv("JAMBONES_HTTP_PROXY_PORT");
+static const char* proxyUsername = std::getenv("JAMBONES_HTTP_PROXY_USERNAME");
+static const char* proxyPassword = std::getenv("JAMBONES_HTTP_PROXY_PASSWORD");
 
 class GStreamer {
 public:
@@ -78,6 +82,11 @@ public:
 		if (switch_true(switch_channel_get_variable(channel, "AZURE_AUDIO_LOGGING"))) {
 			speechConfig->EnableAudioLogging();
 		}
+
+    if (nullptr != proxyIP && nullptr != proxyPort) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(psession), SWITCH_LOG_DEBUG, "setting proxy: %s:%s\n", proxyIP, proxyPort);
+      speechConfig->SetProxy(proxyIP, atoi(proxyPort), proxyUsername, proxyPassword);
+    }
 
 		m_pushStream = AudioInputStream::CreatePushStream(format);
 		auto audioConfig = AudioConfig::FromStreamInput(m_pushStream);
