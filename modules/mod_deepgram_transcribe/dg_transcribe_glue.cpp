@@ -120,6 +120,14 @@ namespace {
      oss <<  "&channels=2";
     }
 
+    if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_ENABLE_SMART_FORMAT")) {
+     oss <<  "&smart_format=true";
+     oss <<  "&no_delay=true";
+     /**
+      * see: https://github.com/orgs/deepgram/discussions/384
+      * 
+      */
+    }
     if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_ENABLE_AUTOMATIC_PUNCTUATION")) {
      oss <<  "&punctuate=true";
     }
@@ -184,6 +192,10 @@ namespace {
     }
     if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_ENDPOINTING")) {
       oss <<  "&endpointing=";
+      oss <<  var;
+    }
+    if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_UTTERANCE_END_MS")) {
+      oss <<  "&utterance_end_ms=";
       oss <<  var;
     }
     if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_VAD_TURNOFF")) {

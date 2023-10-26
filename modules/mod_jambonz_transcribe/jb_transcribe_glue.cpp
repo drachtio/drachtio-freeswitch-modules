@@ -133,8 +133,12 @@ namespace {
   }
 
   static void sendStartMessage(switch_channel_t *channel, private_t* tech_pvt) {
+    auto *pAudioPipe = static_cast<jambonz::AudioPipe*>(tech_pvt->pAudioPipe);
     const char* var;
     bool hasOptions = false;
+
+    if (nullptr == pAudioPipe) return;
+
     cJSON* json = cJSON_CreateObject();
     cJSON_AddStringToObject(json, "type", "start");
     cJSON_AddStringToObject(json, "language", tech_pvt->language);
@@ -154,7 +158,6 @@ namespace {
       cJSON_AddItemToObject(json, "options", jOptions); 
     }
     char* jsonString = cJSON_PrintUnformatted(json);
-    auto *pAudioPipe = static_cast<jambonz::AudioPipe*>(tech_pvt->pAudioPipe);
 
     /* send */
     pAudioPipe->bufferForSending(jsonString);
