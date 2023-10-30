@@ -128,6 +128,13 @@ public:
 		const char* timeout = switch_channel_get_variable(channel, "AZURE_INITIAL_SPEECH_TIMEOUT_MS");
 		if (timeout) properties.SetProperty(PropertyId::SpeechServiceConnection_InitialSilenceTimeoutMs, timeout);
 		else properties.SetProperty(PropertyId::SpeechServiceConnection_InitialSilenceTimeoutMs, DEFAULT_SPEECH_TIMEOUT);
+
+    const char* segmentationInterval = switch_channel_get_variable(channel, "AZURE_SPEECH_SEGMENTATION_SILENCE_TIMEOUT_MS");
+    if (segmentationInterval) {
+      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(psession), SWITCH_LOG_DEBUG, "setting segmentation interval to %s ms\n", segmentationInterval);
+      properties.SetProperty(PropertyId::Speech_SegmentationSilenceTimeoutMs, segmentationInterval);
+    }
+
 		// recognition mode - readonly according to Azure docs: 
 		// https://docs.microsoft.com/en-us/javascript/api/microsoft-cognitiveservices-speech-sdk/propertyid?view=azure-node-latest
 		/*
