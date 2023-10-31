@@ -307,7 +307,11 @@ extern "C" {
     if (!channelIsClosing) switch_core_media_bug_remove(session, &bug);
 
     assemblyai::AudioPipe *pAudioPipe = static_cast<assemblyai::AudioPipe *>(tech_pvt->pAudioPipe);
-    if (pAudioPipe) reaper(tech_pvt);
+    if (pAudioPipe) {
+      //TODO: I think here we should call a method on pAudioPipe to send a terminate session message to assemblyai
+      //see: https://www.assemblyai.com/docs/guides/real-time-streaming-transcription#terminating-a-session
+      reaper(tech_pvt);
+    }
     destroy_tech_pvt(tech_pvt);
     switch_mutex_unlock(tech_pvt->mutex);
     switch_mutex_destroy(tech_pvt->mutex);
