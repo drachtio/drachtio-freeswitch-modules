@@ -220,14 +220,18 @@ int AudioPipe::lws_callback(struct lws *wsi,
           //TODO: we need to have at least 100ms buffered which is 5 packets at 320 bytes per packet
           if (ap->m_audio_buffer_write_offset > LWS_PRE) {
             size_t datalen = ap->m_audio_buffer_write_offset - LWS_PRE;
-            //TODO: we need to send as base64-encoded data in a JSON text frame, not binary
-            //see https://www.assemblyai.com/docs/guides/real-time-streaming-transcription#sending-audio
-            int sent = lws_write(wsi, (unsigned char *) ap->m_audio_buffer + LWS_PRE, datalen, LWS_WRITE_BINARY);
-            if (sent < datalen) {
-              lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_WRITEABLE %s attemped to send %lu only sent %d wsi %p..\n", 
-                ap->m_uuid.c_str(), datalen, sent, wsi); 
+            if (datalen >= 1600) {
+              std::string result = drachtio::base64_encode((unsigned char const *) ap->m_audio_buffer + LWS_PRE, datalen);
+              uint8_t buf[result.length() + LWS_PRE];
+              memcpy(buf + LWS_PRE,result.c_str(), result.length());
+              int n = result.length();
+              int m = lws_write(wsi, buf + LWS_PRE, n, LWS_WRITE_TEXT);
+              if (m < n) {
+                lwsl_err("AudioPipe::lws_service_thread LWS_CALLBACK_CLIENT_WRITEABLE attemped to send %lu bytes only sent %d wsi %p..\n", 
+                  n, m, wsi); 
+              }
+              ap->m_audio_buffer_write_offset = LWS_PRE;
             }
-            ap->m_audio_buffer_write_offset = LWS_PRE;
           }
         }
 
