@@ -9,6 +9,9 @@
 
 #define MY_BUG_NAME "assemblyai_transcribe"
 #define TRANSCRIBE_EVENT_RESULTS "assemblyai_transcribe::transcription"
+#define TRANSCRIBE_EVENT_SESSION_BEGINS "assemblyai_transcribe::session_begins"
+#define TRANSCRIBE_EVENT_SESSION_TERMINATED "assemblyai_transcribe::session_termanated"
+#define TRANSCRIBE_EVENT_ERROR "assemblyai_transcribe::error"
 #define TRANSCRIBE_EVENT_NO_AUDIO_DETECTED "assemblyai_transcribe::no_audio_detected"
 #define TRANSCRIBE_EVENT_VAD_DETECTED "assemblyai_transcribe::vad_detected"
 #define TRANSCRIBE_EVENT_CONNECT_SUCCESS "assemblyai_transcribe::connect"

@@ -138,8 +138,21 @@ namespace {
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection closed gracefully\n");
             break;
             case assemblyai::AudioPipe::MESSAGE:
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
+            {
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "assemblyai message: %s\n", message);
+              if (strstr(message,  "\"error\":")) {
+                tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_ERROR, message, tech_pvt->bugname, finished);
+              }
+              if (strstr(message,  "\"message_type\":\"SessionBegins\"")) {
+                tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_SESSION_BEGINS, message, tech_pvt->bugname, finished);
+              }
+              if (strstr(message,  "\"message_type\":\"SessionTerminated\"")) {
+                tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_SESSION_TERMINATED, message, tech_pvt->bugname, finished);
+              }
+              else if (strstr(message,  "\"message_type\":\"FinalTranscript\"") || strstr(message,  "\"message_type\":\"PartialTranscript\"")) {
+                tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
+              }
+            }
             break;
 
             default:
