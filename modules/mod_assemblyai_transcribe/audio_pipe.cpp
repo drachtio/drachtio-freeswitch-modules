@@ -1,5 +1,6 @@
 #include <cassert>
 #include <iostream>
+#include <sstream>
 
 #include "audio_pipe.hpp"
 #include "base64.hpp"
@@ -221,7 +222,9 @@ int AudioPipe::lws_callback(struct lws *wsi,
           if (ap->m_audio_buffer_write_offset > LWS_PRE) {
             size_t datalen = ap->m_audio_buffer_write_offset - LWS_PRE;
             if (datalen >= 1600) {
-              std::string result = drachtio::base64_encode((unsigned char const *) ap->m_audio_buffer + LWS_PRE, datalen);
+              std::ostringstream oss;
+              oss << "{\"audio_data\":\"" << drachtio::base64_encode((unsigned char const *) ap->m_audio_buffer + LWS_PRE, datalen) << "\"}";
+              std::string result = oss.str();
               uint8_t buf[result.length() + LWS_PRE];
               memcpy(buf + LWS_PRE,result.c_str(), result.length());
               int n = result.length();
