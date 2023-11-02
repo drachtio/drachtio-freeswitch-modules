@@ -150,6 +150,12 @@ namespace {
                 tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_SESSION_TERMINATED, message, tech_pvt->bugname, finished);
               }
               else if (strstr(message,  "\"message_type\":\"FinalTranscript\"") || strstr(message,  "\"message_type\":\"PartialTranscript\"")) {
+                /* discard empty partials */
+                if (strstr(message,  "\"message_type\":\"PartialTranscript\"") &&
+                    strstr(message,  "\"text\":\"\"") && !strstr(message,  "\"confidence\":0")) {
+                  switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "discarding empty partial transcript from assemblyai\n");
+                  break;
+                }
                 tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
               }
             }
