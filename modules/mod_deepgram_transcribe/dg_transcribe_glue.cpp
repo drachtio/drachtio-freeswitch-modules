@@ -12,6 +12,8 @@
 #include <fstream>
 #include <sstream>
 #include <regex>
+#include <iostream>
+#include <unordered_map>
 
 #include "mod_deepgram_transcribe.h"
 #include "simple_buffer.h"
@@ -30,6 +32,57 @@ namespace {
   static unsigned int nServiceThreads = std::max(1, std::min(requestedNumServiceThreads ? ::atoi(requestedNumServiceThreads) : 1, 5));
   static unsigned int idxCallCount = 0;
   static uint32_t playCount = 0;
+
+  /* deepgram model / tier defaults by language */
+  struct LanguageInfo {
+      std::string tier;
+      std::string model;
+  };
+
+  static const std::unordered_map<std::string, LanguageInfo> languageLookupTable = {
+      {"zh", {"base", "general"}},
+      {"zh-CN", {"base", "general"}},
+      {"zh-TW", {"base", "general"}},
+      {"da", {"enhanced", "general"}},
+      {"en", {"nova", "phonecall"}},
+      {"en-US", {"nova", "phonecall"}},
+      {"en-AU", {"nova", "general"}},
+      {"en-GB", {"nova", "general"}},
+      {"en-IN", {"nova", "general"}},
+      {"en-NZ", {"nova", "general"}},
+      {"nl", {"enhanced", "general"}},
+      {"fr", {"enhanced", "general"}},
+      {"fr-CA", {"base", "general"}},
+      {"de", {"enhanced", "general"}},
+      {"hi", {"enhanced", "general"}},
+      {"hi-Latn", {"base", "general"}},
+      {"id", {"base", "general"}},
+      {"ja", {"enhanced", "general"}},
+      {"ko", {"enhanced", "general"}},
+      {"no", {"enhanced", "general"}},
+      {"pl", {"enhanced", "general"}},
+      {"pt", {"enhanced", "general"}},
+      {"pt-BR", {"enhanced", "general"}},
+      {"pt-PT", {"enhanced", "general"}},
+      {"ru", {"base", "general"}},
+      {"es", {"nova", "general"}},
+      {"es-419", {"nova", "general"}},
+      {"sv", {"enhanced", "general"}},
+      {"ta", {"enhanced", "general"}},
+      {"tr", {"base", "general"}},
+      {"uk", {"base", "general"}}
+  };
+
+  static bool getLanguageInfo(const std::string& language, LanguageInfo& info) {
+      auto it = languageLookupTable.find(language);
+      if (it != languageLookupTable.end()) {
+          info = it->second;
+          return true;
+      }
+      return false;
+  }
+
+  static const char* emptyTranscript = "{\"alternatives\":[{\"transcript\":\"\",\"confidence\":0.0,\"words\":[]}]}";
 
   static void reaper(private_t *tech_pvt) {
     std::shared_ptr<deepgram::AudioPipe> pAp;
@@ -94,19 +147,24 @@ namespace {
     const char *customModel = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_CUSTOM_MODEL");
     const char *tier = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_TIER") ;
     std::ostringstream oss;
+    LanguageInfo info;
 
-    oss << "/v1/listen?model=";
+    oss << "/v1/listen?";
 
-    // default to conversationai model for english, general for others (but allow override)
-    if (!model && !customModel) {
-      if (strncmp(language, "en", 2) == 0) oss << "conversationalai";
-      else oss << "general";
+    if (!tier && !model && !customModel) {
+      /* make best choice by language */
+      if (getLanguageInfo(language, info)) {
+        oss << "tier=" << info.tier << "&model=" << info.model;
+      }
+      else {
+        oss << "tier=base&model=general"; // most widely supported, though not ideal
+      }
     }
-    else if (customModel) oss << customModel;
-    else if (model) oss << model;
-
-    // tier 
-    if (tier) oss << "&tier=" << tier;
+    else {
+      if (tier) oss << "tier=" << tier;
+      if (model) oss << "&model=" << model;
+      if (customModel) oss << "&model=" << customModel;
+    }
 
     if (var = switch_channel_get_variable(channel, "DEEPGRAM_SPEECH_MODEL_VERSION")) {
      oss <<  "&version";
@@ -243,8 +301,13 @@ namespace {
               switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "connection closed gracefully\n");
             break;
             case deepgram::AudioPipe::MESSAGE:
-              tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
-              switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "deepgram message: %s\n", message);
+              if( strstr(message, emptyTranscript)) {
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "discarding empty deepgram transcript\n");
+              }
+              else {
+                tech_pvt->responseHandler(session, TRANSCRIBE_EVENT_RESULTS, message, tech_pvt->bugname, finished);
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "deepgram message: %s\n", message);
+              }
             break;
 
             default:
