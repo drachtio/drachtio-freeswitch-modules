@@ -6,43 +6,22 @@
 #include <switch_json.h>
 #include <grpc++/grpc++.h>
 
-#include "google/cloud/speech/v1p1beta1/cloud_speech.grpc.pb.h"
+#include "google/cloud/speech/v2/cloud_speech.grpc.pb.h"
 
 #include <switch_json.h>
 
 #include "mod_google_transcribe.h"
 #include "simple_buffer.h"
 
-using google::cloud::speech::v1p1beta1::RecognitionConfig;
-using google::cloud::speech::v1p1beta1::Speech;
-using google::cloud::speech::v1p1beta1::SpeechContext;
-using google::cloud::speech::v1p1beta1::StreamingRecognizeRequest;
-using google::cloud::speech::v1p1beta1::StreamingRecognizeResponse;
-using google::cloud::speech::v1p1beta1::SpeakerDiarizationConfig;
-using google::cloud::speech::v1p1beta1::SpeechAdaptation;
-using google::cloud::speech::v1p1beta1::PhraseSet;
-using google::cloud::speech::v1p1beta1::PhraseSet_Phrase;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_DISCUSSION;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_PRESENTATION;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_PHONE_CALL;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_VOICEMAIL;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_PROFESSIONALLY_PRODUCED;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_VOICE_SEARCH;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_VOICE_COMMAND;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_InteractionType_DICTATION;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_MicrophoneDistance_NEARFIELD;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_MicrophoneDistance_MIDFIELD;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_MicrophoneDistance_FARFIELD;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_OriginalMediaType_AUDIO;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_OriginalMediaType_VIDEO;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_SMARTPHONE;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_PC;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_PHONE_LINE;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_VEHICLE;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_OTHER_OUTDOOR_DEVICE;
-using google::cloud::speech::v1p1beta1::RecognitionMetadata_RecordingDeviceType_OTHER_INDOOR_DEVICE;
-using google::cloud::speech::v1p1beta1::StreamingRecognizeResponse_SpeechEventType_END_OF_SINGLE_UTTERANCE;
+using google::cloud::speech::v2::RecognitionConfig;
+using google::cloud::speech::v2::Speech;
+using google::cloud::speech::v2::StreamingRecognizeRequest;
+using google::cloud::speech::v2::StreamingRecognizeResponse;
+using google::cloud::speech::v2::SpeakerDiarizationConfig;
+using google::cloud::speech::v2::SpeechAdaptation;
+using google::cloud::speech::v2::PhraseSet;
+using google::cloud::speech::v2::PhraseSet_Phrase;
+using google::cloud::speech::v2::StreamingRecognizeResponse_SpeechEventType_END_OF_SINGLE_UTTERANCE;
 using google::rpc::Status;
 
 #define CHUNKSIZE (320)
@@ -98,65 +77,65 @@ public:
 
   	m_stub = Speech::NewStub(m_channel);
   		
-		auto* streaming_config = m_request.mutable_streaming_config();
+		auto streaming_config = m_request.mutable_streaming_config();
 		RecognitionConfig* config = streaming_config->mutable_config();
 
-    streaming_config->set_interim_results(interim);
-    if (single_utterance == 1) {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_single_utterance\n");
-      streaming_config->set_single_utterance(true);
-    }
-    else {
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_single_utterance is FALSE\n");
-      streaming_config->set_single_utterance(false);
-    }
+    streaming_config->mutable_streaming_features()->set_interim_results(interim);
+    // if (single_utterance == 1) {
+    //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_single_utterance\n");
+    //   streaming_config->set_single_utterance(true);
+    // }
+    // else {
+    //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_single_utterance is FALSE\n");
+    //   streaming_config->set_single_utterance(false);
+    // }
 
-		config->set_language_code(lang);
+		config->add_language_codes(lang);
     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s \n", lang);
     
-  	config->set_sample_rate_hertz(config_sample_rate);
+  	config->mutable_explicit_decoding_config()->set_sample_rate_hertz(config_sample_rate);
 
-		config->set_encoding(RecognitionConfig::LINEAR16);
+		config->mutable_explicit_decoding_config()->set_encoding(LINEAR16);
 
     // the rest of config comes from channel vars
 
     // number of channels in the audio stream (default: 1)
     if (channels > 1) {
-      config->set_audio_channel_count(channels);
+      config->mutable_explicit_decoding_config()->set_audio_channel_count(channels);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "audio_channel_count %d\n", channels);
 
       // transcribe each separately?
       if (separate_recognition == 1) {
-        config->set_enable_separate_recognition_per_channel(true);
+        config->mutable_features()->set_multi_channel_mode(SEPARATE_RECOGNITION_PER_CHANNEL);
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_separate_recognition_per_channel on\n");
       }
     }
 
     // max alternatives
     if (max_alternatives > 1) {
-      config->set_max_alternatives(max_alternatives);
+      config->mutable_features()->set_max_alternatives(max_alternatives);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "max_alternatives %d\n", max_alternatives);
     }
 
     // profanity filter
     if (profanity_filter == 1) {
-      config->set_profanity_filter(true);
+      config->mutable_features()->set_profanity_filter(true);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "profanity_filter\n");
     }
 
     // enable word offsets
     if (word_time_offset == 1) {
-      config->set_enable_word_time_offsets(true);
+      config->mutable_features()->set_enable_word_time_offsets(true);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_word_time_offsets\n");
     }
 
     // enable automatic punctuation
     if (punctuation == 1) {
-      config->set_enable_automatic_punctuation(true);
+      config->mutable_features()->set_enable_automatic_punctuation(true);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_automatic_punctuation\n");
     }
     else {
-      config->set_enable_automatic_punctuation(false);
+      config->mutable_features()->set_enable_automatic_punctuation(false);
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "disable_automatic_punctuation\n");
     }
 
