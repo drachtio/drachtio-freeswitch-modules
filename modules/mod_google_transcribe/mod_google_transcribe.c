@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <switch.h>
 
+static const uint32_t DEFAULT_SAMPLE_RATE = 8000;
+
 /* Prototypes */
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown);
 SWITCH_MODULE_RUNTIME_FUNCTION(mod_transcribe_runtime);
@@ -150,7 +152,7 @@ static switch_status_t do_stop(switch_core_session_t *session, char *bugname)
 }
 
 static switch_status_t start_capture2(switch_core_session_t *session, switch_media_bug_flag_t flags, 
-  char* lang, int interim, int single_utterance, int separate_recognition, int max_alternatives,
+  uint32_t sample_rate, char* lang, int interim, int single_utterance, int separate_recognition, int max_alternatives,
   int profinity_filter, int word_time_offset, int punctuation, const char* model, int enhanced, const char* hints, char* play_file)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -174,7 +176,7 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
-	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, MY_BUG_NAME, single_utterance,
+	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, sample_rate, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, MY_BUG_NAME, single_utterance,
 	 separate_recognition, max_alternatives, profinity_filter, word_time_offset, punctuation, model, enhanced, hints, play_file, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google speech session.\n");
 		return SWITCH_STATUS_FALSE;
@@ -265,7 +267,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
-	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, single_utterance,
+	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, DEFAULT_SAMPLE_RATE, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, single_utterance,
 	 separate_recognition, max_alternatives, profanity_filter, word_time_offset, punctuation, model, enhanced, hints, NULL, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google speech session.\n");
 		return SWITCH_STATUS_FALSE;
@@ -281,11 +283,12 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 }
 
 // #define TRANSCRIBE_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim] [single-utterance](bool) [seperate-recognition](bool) [max-alternatives](int) [profinity-filter](bool) [word-time](bool) [punctuation](bool) [model](string) [enhanced](true) [hints](string without space) [play-file]"
-#define TRANSCRIBE2_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim]  [single-utterance] [seperate-recognition] [max-alternatives] [profinity-filter] [word-time] [punctuation] [model] [enhanced] [hints] [play-file]"
+#define TRANSCRIBE2_API_SYNTAX "<uuid> [start|stop] [lang-code] [interim]  [single-utterance] [seperate-recognition] [max-alternatives] [profinity-filter] [word-time] [punctuation] [sample-rate] [model] [enhanced] [hints] [play-file]"
 SWITCH_STANDARD_API(transcribe2_function)
 {
 	char *mycmd = NULL, *argv[20] = { 0 };
 	int argc = 0, enhanced = 0;
+	uint32_t sample_rate = DEFAULT_SAMPLE_RATE;
 	const char* hints = NULL;
 	const char* model = NULL;
 	char* play_file = NULL;
@@ -298,10 +301,10 @@ SWITCH_STANDARD_API(transcribe2_function)
 	}
 
 	if (zstr(cmd) || 
-      (!strcasecmp(argv[1], "stop") && argc < 2) ||
-      (!strcasecmp(argv[1], "start") && argc < 9) ||
+      (argc < 2) ||
+      (!strcasecmp(argv[1], "start") && argc < 10) ||
       zstr(argv[0])) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s %s.\n", cmd, argv[0], argv[1]);
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error with command %s %s.\n", cmd, argv[0]);
 		stream->write_function(stream, "-USAGE: %s\n", TRANSCRIBE2_API_SYNTAX);
 		goto done;
 	} else {
@@ -320,18 +323,21 @@ SWITCH_STANDARD_API(transcribe2_function)
 				int profinity_filter = !strcmp(argv[7], "true"); // profinity-filter
 				int word_time_offset = !strcmp(argv[8], "true"); // word-time
 				int punctuation      = !strcmp(argv[9], "true");  //punctuation
-				if (argc > 9){
-					model = argv[10]; // model 
-					enhanced = !strcmp(argv[11], "true"); // enhanced
-				}
-				if (argc > 11){
-					hints = argv[12]; // hints
+				if (argc > 10) {
+					sample_rate = atol(argv[10]);
 				}
 				if (argc > 12){
-					play_file = argv[13];
+					model = argv[11]; // model 
+					enhanced = !strcmp(argv[12], "true"); // enhanced
+				}
+				if (argc > 13){
+					hints = argv[13]; // hints
+				}
+				if (argc > 14){
+					play_file = argv[14];
 				}
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
-				status = start_capture2(lsession, flags, lang, interim, single_utterance, separate_recognition,max_alternatives,
+				status = start_capture2(lsession, flags, sample_rate, lang, interim, single_utterance, separate_recognition,max_alternatives,
 				profinity_filter, word_time_offset, punctuation, model, enhanced, hints, play_file);
 			}
 			switch_core_session_rwunlock(lsession);
