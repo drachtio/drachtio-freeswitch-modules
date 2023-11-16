@@ -78,17 +78,21 @@ public:
       m_audioBuffer(CHUNKSIZE, 15) {
   
     const char* var;
+    const char* google_uri;
     switch_channel_t *channel = switch_core_session_get_channel(session);
 
+    if (!(google_uri = switch_channel_get_variable(channel, "GOOGLE_SPEECH_TO_TEXT_URI"))) {
+      google_uri = "speech.googleapis.com";
+    }
 		if (var = switch_channel_get_variable(channel, "GOOGLE_APPLICATION_CREDENTIALS")) {
 			auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
 			auto callCreds = grpc::ServiceAccountJWTAccessCredentials(var);
 			auto creds = grpc::CompositeChannelCredentials(channelCreds, callCreds);
-			m_channel = grpc::CreateChannel("speech.googleapis.com", creds);
+			m_channel = grpc::CreateChannel(google_uri, creds);
 		}
 		else {
 			auto creds = grpc::GoogleDefaultCredentials();
-			m_channel = grpc::CreateChannel("speech.googleapis.com", creds);
+			m_channel = grpc::CreateChannel(google_uri, creds);
 		}
 
   	m_stub = Speech::NewStub(m_channel);
