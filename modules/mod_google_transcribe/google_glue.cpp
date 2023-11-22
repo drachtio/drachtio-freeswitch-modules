@@ -22,6 +22,9 @@ using google::cloud::speech::v2::SpeechAdaptation;
 using google::cloud::speech::v2::PhraseSet;
 using google::cloud::speech::v2::PhraseSet_Phrase;
 using google::cloud::speech::v2::StreamingRecognizeResponse_SpeechEventType_END_OF_SINGLE_UTTERANCE;
+using google::cloud::speech::v2::ExplicitDecodingConfig_AudioEncoding_LINEAR16;
+using google::cloud::speech::v2::RecognitionFeatures_MultiChannelMode_SEPARATE_RECOGNITION_PER_CHANNEL;
+using google::cloud::speech::v2::SpeechAdaptation_AdaptationPhraseSet;
 using google::rpc::Status;
 
 #define CHUNKSIZE (320)
@@ -95,7 +98,7 @@ public:
     
   	config->mutable_explicit_decoding_config()->set_sample_rate_hertz(config_sample_rate);
 
-		config->mutable_explicit_decoding_config()->set_encoding(LINEAR16);
+		config->mutable_explicit_decoding_config()->set_encoding(ExplicitDecodingConfig_AudioEncoding_LINEAR16);
 
     // the rest of config comes from channel vars
 
@@ -106,7 +109,7 @@ public:
 
       // transcribe each separately?
       if (separate_recognition == 1) {
-        config->mutable_features()->set_multi_channel_mode(SEPARATE_RECOGNITION_PER_CHANNEL);
+        config->mutable_features()->set_multi_channel_mode(RecognitionFeatures_MultiChannelMode_SEPARATE_RECOGNITION_PER_CHANNEL);
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_separate_recognition_per_channel on\n");
       }
     }
@@ -145,36 +148,39 @@ public:
       switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "speech model %s\n", model);
     }
 
+    // There seems to be no concept of an enhanced model in v2
     // use enhanced model
-    if (enhanced == 1) {
-      config->set_use_enhanced(true);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "use_enhanced\n");
-    }
+    // if (enhanced == 1) {
+    //   config->set_use_enhanced(true);
+    //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "use_enhanced\n");
+    // }
 
     // hints  
     if (hints != NULL) {
       auto* adaptation = config->mutable_adaptation();
       auto* phrase_set = adaptation->add_phrase_sets();
-      auto *context = config->add_speech_contexts();
       float boost = -1;
 
+      // v2 appears not to have a way of setting the boost value for the phrase set
       // get boost setting for the phrase set in its entirety
-      if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_HINTS_BOOST"))) {
-     	  boost = (float) atof(switch_channel_get_variable(channel, "GOOGLE_SPEECH_HINTS_BOOST"));
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", boost);
-        phrase_set->set_boost(boost);
-      }
+      // if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_HINTS_BOOST"))) {
+     	//   boost = (float) atof(switch_channel_get_variable(channel, "GOOGLE_SPEECH_HINTS_BOOST"));
+      //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", boost);
+      //   phrase_set->set_boost(boost);
+      // }
 
       // hints are either a simple comma-separated list of phrases, or a json array of objects
       // containing a phrase and a boost value
       auto *jHint = cJSON_Parse((char *) hints);
       if (jHint) {
         int i = 0;
-        cJSON *jPhrase = NULL;
+        cJSON *jPhrase = nullptr;
         cJSON_ArrayForEach(jPhrase, jHint) {
-          auto* phrase = phrase_set->add_phrases();
+          auto* adaptation_phrase_set = adaptation->add_phrase_sets();
+          auto* inline_phrase_set = adaptation_phrase_set->mutable_inline_phrase_set();
           cJSON *jItem = cJSON_GetObjectItem(jPhrase, "phrase");
           if (jItem) {
+            auto* phrase = inline_phrase_set->add_phrases();
             phrase->set_value(cJSON_GetStringValue(jItem));
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "phrase: %s\n", phrase->value().c_str());
             if (cJSON_GetObjectItem(jPhrase, "boost")) {
@@ -191,28 +197,32 @@ public:
         char *phrases[500] = { 0 };
         int argc = switch_separate_string((char *) hints, ',', phrases, 500);
         for (int i = 0; i < argc; i++) {
-          auto* phrase = phrase_set->add_phrases();
+          auto* adaptation_phrase_set = adaptation->add_phrase_sets();
+          auto* inline_phrase_set = adaptation_phrase_set->mutable_inline_phrase_set();
+          auto* phrase = inline_phrase_set->add_phrases();
           phrase->set_value(phrases[i]);
         }
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", argc);
       }
     }
 
+    // In v2 there is just a single array which holds all potential languages
     // alternative language
-    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_ALTERNATIVE_LANGUAGE_CODES")) {
-      char *alt_langs[3] = { 0 };
-      int argc = switch_separate_string((char *) var, ',', alt_langs, 3);
-      for (int i = 0; i < argc; i++) {
-        config->add_alternative_language_codes(alt_langs[i]);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added alternative lang %s\n", alt_langs[i]);
-      }
-    }
+    // if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_ALTERNATIVE_LANGUAGE_CODES")) {
+    //   char *alt_langs[3] = { 0 };
+    //   int argc = switch_separate_string((char *) var, ',', alt_langs, 3);
+    //   for (int i = 0; i < argc; i++) {
+    //     config->add_alternative_language_codes(alt_langs[i]);
+    //     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added alternative lang %s\n", alt_langs[i]);
+    //   }
+    // }
 
     // speaker diarization
     if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SPEAKER_DIARIZATION")) {
-      auto* diarization_config = config->mutable_diarization_config();
-      diarization_config->set_enable_speaker_diarization(true);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enabling speaker diarization\n", var);
+      auto* diarization_config = config->mutable_features()->mutable_diarization_config();
+      // There is no enable function in v2
+      // diarization_config->set_enable_speaker_diarization(true);
+      // switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enabling speaker diarization\n", var);
       if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SPEAKER_DIARIZATION_MIN_SPEAKER_COUNT")) {
         int count = std::max(atoi(var), 1);
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "setting min speaker count to %d\n", count);
@@ -225,38 +235,39 @@ public:
       }
     }
 
+    // RecognitionMetaData is now deprecated
     // recognition metadata
-    auto* metadata = config->mutable_metadata();
-    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_INTERACTION_TYPE")) {
-      if (case_insensitive_match("discussion", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_DISCUSSION);
-      if (case_insensitive_match("presentation", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_PRESENTATION);
-      if (case_insensitive_match("phone_call", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_PHONE_CALL);
-      if (case_insensitive_match("voicemail", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_VOICEMAIL);
-      if (case_insensitive_match("professionally_produced", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_PROFESSIONALLY_PRODUCED);
-      if (case_insensitive_match("voice_search", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_VOICE_SEARCH);
-      if (case_insensitive_match("voice_command", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_VOICE_COMMAND);
-      if (case_insensitive_match("dictation", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_DICTATION);
-    }
-    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_INDUSTRY_NAICS_CODE")) {
-      metadata->set_industry_naics_code_of_audio(atoi(var));
-    }
-    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_MICROPHONE_DISTANCE")) {
-      if (case_insensitive_match("nearfield", var)) metadata->set_microphone_distance(RecognitionMetadata_MicrophoneDistance_NEARFIELD);
-      if (case_insensitive_match("midfield", var)) metadata->set_microphone_distance(RecognitionMetadata_MicrophoneDistance_MIDFIELD);
-      if (case_insensitive_match("farfield", var)) metadata->set_microphone_distance(RecognitionMetadata_MicrophoneDistance_FARFIELD);
-    }
-    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_ORIGINAL_MEDIA_TYPE")) {
-      if (case_insensitive_match("audio", var)) metadata->set_original_media_type(RecognitionMetadata_OriginalMediaType_AUDIO);
-      if (case_insensitive_match("video", var)) metadata->set_original_media_type(RecognitionMetadata_OriginalMediaType_VIDEO);
-    }
-    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_RECORDING_DEVICE_TYPE")) {
-      if (case_insensitive_match("smartphone", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_SMARTPHONE);
-      if (case_insensitive_match("pc", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_PC);
-      if (case_insensitive_match("phone_line", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_PHONE_LINE);
-      if (case_insensitive_match("vehicle", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_VEHICLE);
-      if (case_insensitive_match("other_outdoor_device", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_OTHER_OUTDOOR_DEVICE);
-      if (case_insensitive_match("other_indoor_device", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_OTHER_INDOOR_DEVICE);
-    }
+    // auto* metadata = config->mutable_metadata();
+    // if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_INTERACTION_TYPE")) {
+    //   if (case_insensitive_match("discussion", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_DISCUSSION);
+    //   if (case_insensitive_match("presentation", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_PRESENTATION);
+    //   if (case_insensitive_match("phone_call", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_PHONE_CALL);
+    //   if (case_insensitive_match("voicemail", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_VOICEMAIL);
+    //   if (case_insensitive_match("professionally_produced", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_PROFESSIONALLY_PRODUCED);
+    //   if (case_insensitive_match("voice_search", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_VOICE_SEARCH);
+    //   if (case_insensitive_match("voice_command", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_VOICE_COMMAND);
+    //   if (case_insensitive_match("dictation", var)) metadata->set_interaction_type(RecognitionMetadata_InteractionType_DICTATION);
+    // }
+    // if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_INDUSTRY_NAICS_CODE")) {
+    //   metadata->set_industry_naics_code_of_audio(atoi(var));
+    // }
+    // if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_MICROPHONE_DISTANCE")) {
+    //   if (case_insensitive_match("nearfield", var)) metadata->set_microphone_distance(RecognitionMetadata_MicrophoneDistance_NEARFIELD);
+    //   if (case_insensitive_match("midfield", var)) metadata->set_microphone_distance(RecognitionMetadata_MicrophoneDistance_MIDFIELD);
+    //   if (case_insensitive_match("farfield", var)) metadata->set_microphone_distance(RecognitionMetadata_MicrophoneDistance_FARFIELD);
+    // }
+    // if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_ORIGINAL_MEDIA_TYPE")) {
+    //   if (case_insensitive_match("audio", var)) metadata->set_original_media_type(RecognitionMetadata_OriginalMediaType_AUDIO);
+    //   if (case_insensitive_match("video", var)) metadata->set_original_media_type(RecognitionMetadata_OriginalMediaType_VIDEO);
+    // }
+    // if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_METADATA_RECORDING_DEVICE_TYPE")) {
+    //   if (case_insensitive_match("smartphone", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_SMARTPHONE);
+    //   if (case_insensitive_match("pc", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_PC);
+    //   if (case_insensitive_match("phone_line", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_PHONE_LINE);
+    //   if (case_insensitive_match("vehicle", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_VEHICLE);
+    //   if (case_insensitive_match("other_outdoor_device", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_OTHER_OUTDOOR_DEVICE);
+    //   if (case_insensitive_match("other_indoor_device", var)) metadata->set_recording_device_type(RecognitionMetadata_RecordingDeviceType_OTHER_INDOOR_DEVICE);
+    // }
 	}
 
 	~GStreamer() {
@@ -296,7 +307,7 @@ public:
       }
       return true;
     }
-    m_request.set_audio_content(data, datalen);
+    m_request.set_audio(data, datalen);
     bool ok = m_streamer->Write(m_request);
     return ok;
   }
@@ -375,17 +386,18 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     }
     count++;
     auto speech_event_type = response.speech_event_type();
-    if (response.has_error()) {
-      Status status = response.error();
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: error %s (%d)\n", status.message().c_str(), status.code()) ;
-      cJSON* json = cJSON_CreateObject();
-      cJSON_AddStringToObject(json, "type", "error");
-      cJSON_AddStringToObject(json, "error", status.message().c_str());
-      char* jsonString = cJSON_PrintUnformatted(json);
-      cb->responseHandler(session, jsonString, cb->bugname);
-      free(jsonString);
-      cJSON_Delete(json);
-    }
+    // There is no error field in StreamingRecognizeResponse in v2
+    // if (response.has_error()) {
+    //   Status status = response.error();
+    //   switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: error %s (%d)\n", status.message().c_str(), status.code()) ;
+    //   cJSON* json = cJSON_CreateObject();
+    //   cJSON_AddStringToObject(json, "type", "error");
+    //   cJSON_AddStringToObject(json, "error", status.message().c_str());
+    //   char* jsonString = cJSON_PrintUnformatted(json);
+    //   cb->responseHandler(session, jsonString, cb->bugname);
+    //   free(jsonString);
+    //   cJSON_Delete(json);
+    // }
     
     if (cb->play_file == 1){
       cb->responseHandler(session, "play_interrupt", cb->bugname);
@@ -400,7 +412,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
       cJSON * jLanguageCode = cJSON_CreateString(result.language_code().c_str());
       cJSON * jChannelTag = cJSON_CreateNumber(result.channel_tag());
 
-      auto duration = result.result_end_time();
+      auto duration = result.result_end_offset();
       int32_t seconds = duration.seconds();
       int64_t nanos = duration.nanos();
       int span = (int) trunc(seconds * 1000. + ((float) nanos / 1000000.));
@@ -428,15 +440,15 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
             auto words = alternative.words(b);
             cJSON* jWord = cJSON_CreateObject();
             cJSON_AddItemToObject(jWord, "word", cJSON_CreateString(words.word().c_str()));
-            if (words.has_start_time()) {
-              cJSON_AddItemToObject(jWord, "start_time", cJSON_CreateNumber(words.start_time().seconds()));
+            if (words.has_start_offset()) {
+              cJSON_AddItemToObject(jWord, "start_offset", cJSON_CreateNumber(words.start_offset().seconds()));
             }
-            if (words.has_end_time()) {
-              cJSON_AddItemToObject(jWord, "end_time", cJSON_CreateNumber(words.end_time().seconds()));
+            if (words.has_end_offset()) {
+              cJSON_AddItemToObject(jWord, "end_offset", cJSON_CreateNumber(words.end_offset().seconds()));
             }
-            int speaker_tag = words.speaker_tag();
-            if (speaker_tag > 0) {
-              cJSON_AddItemToObject(jWord, "speaker_tag", cJSON_CreateNumber(speaker_tag));
+            auto speaker_label = words.speaker_label();
+            if (speaker_label.size() > 0) {
+              cJSON_AddItemToObject(jWord, "speaker_label", cJSON_CreateString(speaker_label.c_str()));
             }
             float confidence = words.confidence();
             if (confidence > 0.0) {
