@@ -17,7 +17,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_transcribe_load);
 
 SWITCH_MODULE_DEFINITION(mod_google_transcribe, mod_transcribe_load, mod_transcribe_shutdown, NULL);
 
-static switch_status_t do_stop(switch_core_session_t *session, char* bugname);
+static switch_status_t do_stop(switch_core_session_t *session, char* bugname, GoogleCloudServiceVersion version);
 
 
 static void responseHandler(switch_core_session_t* session, const char * json, const char* bugname) {
@@ -91,7 +91,7 @@ static void responseHandler(switch_core_session_t* session, const char * json, c
 	switch_event_fire(&event);
 }
 
-static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type)
+static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type, GoogleCloudServiceVersion version)
 {
 	switch_core_session_t *session = switch_core_media_bug_get_session(bug);
 	struct cap_cb* cb = (struct cap_cb*) switch_core_media_bug_get_user_data(bug);
@@ -106,14 +106,20 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 		{
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_CLOSE, calling google_speech_session_cleanup.\n");
 			responseHandler(session, "end_of_transcript", cb->bugname);
-			google_speech_session_cleanup(session, 1, bug);
+			if (version == GoogleCloudServiceVersion_v2)
+				google_speech_session_cleanup_v2(session, 1, bug);
+			else
+				google_speech_session_cleanup_v1(session, 1, bug);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Finished SWITCH_ABC_TYPE_CLOSE.\n");
 		}
 		break;
 	
 	case SWITCH_ABC_TYPE_READ:
 
-		return google_speech_frame(bug, user_data);
+		if (version == GoogleCloudServiceVersion_v2)
+			return google_speech_frame_v2(bug, user_data);
+		else
+			return google_speech_frame_v1(bug, user_data);
 		break;
 
 	case SWITCH_ABC_TYPE_WRITE:
@@ -124,19 +130,27 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 	return SWITCH_TRUE;
 }
 
+static switch_bool_t capture_callback_v1(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type) {
+	return capture_callback(bug, user_data, type, GoogleCloudServiceVersion_v1);
+}
+
+static switch_bool_t capture_callback_v2(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type) {
+	return capture_callback(bug, user_data, type, GoogleCloudServiceVersion_v2);
+}
+
 static switch_status_t transcribe_input_callback(switch_core_session_t *session, void *input, switch_input_type_t input_type, void *data, unsigned int len){
 	if (input_type == SWITCH_INPUT_TYPE_EVENT) {
-			switch_event_t *event;
-			event = (switch_event_t *)input;
-			if (event->event_id == SWITCH_EVENT_DETECTED_SPEECH) {
-				return SWITCH_STATUS_BREAK;
-			}
+		switch_event_t *event;
+		event = (switch_event_t *)input;
+		if (event->event_id == SWITCH_EVENT_DETECTED_SPEECH) {
+			return SWITCH_STATUS_BREAK;
+		}
 	}
 	
 	return SWITCH_STATUS_SUCCESS;
 }
 
-static switch_status_t do_stop(switch_core_session_t *session, char *bugname)
+static switch_status_t do_stop(switch_core_session_t *session, char *bugname, GoogleCloudServiceVersion version)
 {
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 	switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -144,7 +158,10 @@ static switch_status_t do_stop(switch_core_session_t *session, char *bugname)
 
 	if (bug) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command, calling google_speech_session_cleanup (possibly to stop prev transcribe)\n");
-		status = google_speech_session_cleanup(session, 0, bug);
+		if (version == GoogleCloudServiceVersion_v2)
+			status = google_speech_session_cleanup_v2(session, 0, bug);
+		else
+			status = google_speech_session_cleanup_v1(session, 0, bug);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "stopped transcription.\n");
 	}
 
@@ -153,7 +170,8 @@ static switch_status_t do_stop(switch_core_session_t *session, char *bugname)
 
 static switch_status_t start_capture2(switch_core_session_t *session, switch_media_bug_flag_t flags, 
   uint32_t sample_rate, char* lang, int interim, int single_utterance, int separate_recognition, int max_alternatives,
-  int profinity_filter, int word_time_offset, int punctuation, const char* model, int enhanced, const char* hints, char* play_file)
+  int profinity_filter, int word_time_offset, int punctuation, const char* model, int enhanced, const char* hints,
+  char* play_file, GoogleCloudServiceVersion version)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
@@ -162,10 +180,11 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 	void *pUserData;
 	uint32_t samples_per_second;
 	switch_input_args_t args = { 0 };
+	switch_media_bug_callback_t bug_callback;
 
 	if (switch_channel_get_private(channel, MY_BUG_NAME)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
-		do_stop(session, MY_BUG_NAME);
+		do_stop(session, MY_BUG_NAME, version);
 	}
 
 	switch_core_session_get_read_impl(session, &read_impl);
@@ -175,13 +194,24 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 	}
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
+	if (version == GoogleCloudServiceVersion_v2)
+		status = google_speech_session_init_v2(session, responseHandler, sample_rate, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, MY_BUG_NAME, single_utterance,
+			separate_recognition, max_alternatives, profinity_filter, word_time_offset, punctuation, model, enhanced, hints, play_file, &pUserData);
+	else
+		status = google_speech_session_init_v1(session, responseHandler, sample_rate, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, MY_BUG_NAME, single_utterance,
+			separate_recognition, max_alternatives, profinity_filter, word_time_offset, punctuation, model, enhanced, hints, play_file, &pUserData);
 
-	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, sample_rate, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, MY_BUG_NAME, single_utterance,
-	 separate_recognition, max_alternatives, profinity_filter, word_time_offset, punctuation, model, enhanced, hints, play_file, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == status) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
-	if ((status = switch_core_media_bug_add(session, "google_transcribe", NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
+
+	if (version == GoogleCloudServiceVersion_v1)
+		bug_callback = capture_callback_v1;
+	else
+		bug_callback = capture_callback_v2;
+
+	if ((status = switch_core_media_bug_add(session, "google_transcribe", NULL, bug_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
 		return status;
 	}
 
@@ -197,7 +227,7 @@ static switch_status_t start_capture2(switch_core_session_t *session, switch_med
 }
 
 static switch_status_t start_capture(switch_core_session_t *session, switch_media_bug_flag_t flags, 
-  char* lang, int interim, char* bugname)
+  char* lang, int interim, char* bugname, GoogleCloudServiceVersion version)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	switch_media_bug_t *bug;
@@ -207,12 +237,13 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	uint32_t samples_per_second;
 	int single_utterance = 0, separate_recognition = 0, max_alternatives = 0, profanity_filter = 0, word_time_offset = 0, punctuation = 0, enhanced = 0;
 	const char* hints = NULL;
-  const char* model = NULL;
+  	const char* model = NULL;
 	const char* var;
-
+	switch_media_bug_callback_t bug_callback;
+	
 	if (switch_channel_get_private(channel, bugname)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "removing bug from previous transcribe\n");
-		do_stop(session, bugname);
+		do_stop(session, bugname, version);
 	}
 
 	if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_SINGLE_UTTERANCE"))) {
@@ -266,14 +297,25 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	}
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
+	status = SWITCH_STATUS_FALSE;
+	if (version == GoogleCloudServiceVersion_v2)
+		status = google_speech_session_init_v2(session, responseHandler, DEFAULT_SAMPLE_RATE, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, single_utterance,
+			separate_recognition, max_alternatives, profanity_filter, word_time_offset, punctuation, model, enhanced, hints, NULL, &pUserData);
+	else
+		status = google_speech_session_init_v1(session, responseHandler, DEFAULT_SAMPLE_RATE, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, single_utterance,
+			separate_recognition, max_alternatives, profanity_filter, word_time_offset, punctuation, model, enhanced, hints, NULL, &pUserData);
 
-	if (SWITCH_STATUS_FALSE == google_speech_session_init(session, responseHandler, DEFAULT_SAMPLE_RATE, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, single_utterance,
-	 separate_recognition, max_alternatives, profanity_filter, word_time_offset, punctuation, model, enhanced, hints, NULL, &pUserData)) {
+	if (SWITCH_STATUS_FALSE == status) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing google speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}
 
-	if ((status = switch_core_media_bug_add(session, bugname, NULL, capture_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
+	if (version == GoogleCloudServiceVersion_v1)
+		bug_callback = capture_callback_v1;
+	else
+		bug_callback = capture_callback_v2;
+
+	if ((status = switch_core_media_bug_add(session, bugname, NULL, bug_callback, pUserData, 0, flags, &bug)) != SWITCH_STATUS_SUCCESS) {
 		return status;
 	}
 
@@ -295,6 +337,9 @@ SWITCH_STANDARD_API(transcribe2_function)
 	
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_media_bug_flag_t flags = SMBF_READ_STREAM /* | SMBF_WRITE_STREAM | SMBF_READ_PING */;
+	switch_channel_t *channel;
+	const char* var;
+	GoogleCloudServiceVersion version = GoogleCloudServiceVersion_v1;
 
 	if (!zstr(cmd) && (mycmd = strdup(cmd))) {
 		argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
@@ -311,12 +356,20 @@ SWITCH_STANDARD_API(transcribe2_function)
 		switch_core_session_t *lsession = NULL;
 
 		if ((lsession = switch_core_session_locate(argv[0]))) {
+			channel = switch_core_session_get_channel(lsession);
+			if ((var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_CLOUD_SERVICES_VERSION"))) {
+				if (!strcasecmp(var, "v1"))
+					version = GoogleCloudServiceVersion_v1;
+				else if (!strcasecmp(var, "v2"))
+					version = GoogleCloudServiceVersion_v2;
+			}
+
 			if (!strcasecmp(argv[1], "stop")) {
     		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "stop transcribing\n");
-				status = do_stop(lsession, MY_BUG_NAME);
+				status = do_stop(lsession, MY_BUG_NAME, version);
 			} else if (!strcasecmp(argv[1], "start")) {
-        char* lang = argv[2];
-        int interim = argc > 3 && !strcmp(argv[3], "true");
+        		char* lang = argv[2];
+        		int interim = argc > 3 && !strcmp(argv[3], "true");
 				int single_utterance =  !strcmp(argv[4], "true"); // single-utterance
 				int separate_recognition = !strcmp(argv[5], "true"); // sepreate-recognition
 				int max_alternatives = atoi(argv[6]); // max-alternatives
@@ -336,9 +389,9 @@ SWITCH_STANDARD_API(transcribe2_function)
 				if (argc > 14){
 					play_file = argv[14];
 				}
-    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
+    			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "start transcribing %s %s\n", lang, interim ? "interim": "complete");
 				status = start_capture2(lsession, flags, sample_rate, lang, interim, single_utterance, separate_recognition,max_alternatives,
-				profinity_filter, word_time_offset, punctuation, model, enhanced, hints, play_file);
+				profinity_filter, word_time_offset, punctuation, model, enhanced, hints, play_file, version);
 			}
 			switch_core_session_rwunlock(lsession);
 		}
@@ -363,6 +416,9 @@ SWITCH_STANDARD_API(transcribe_function)
 	int argc = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_media_bug_flag_t flags = SMBF_READ_STREAM /* | SMBF_WRITE_STREAM | SMBF_READ_PING */;
+	switch_channel_t *channel;
+	const char* var;
+	GoogleCloudServiceVersion version = GoogleCloudServiceVersion_v1;
 
 	if (!zstr(cmd) && (mycmd = strdup(cmd))) {
 		argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
@@ -379,20 +435,28 @@ SWITCH_STANDARD_API(transcribe_function)
 		switch_core_session_t *lsession = NULL;
 
 		if ((lsession = switch_core_session_locate(argv[0]))) {
+			channel = switch_core_session_get_channel(lsession);
+			if ((var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_CLOUD_SERVICES_VERSION"))) {
+				if (!strcasecmp(var, "v1"))
+					version = GoogleCloudServiceVersion_v1;
+				else if (!strcasecmp(var, "v2"))
+					version = GoogleCloudServiceVersion_v2;
+			}
+
 			if (!strcasecmp(argv[1], "stop")) {
 				char *bugname = argc > 2 ? argv[2] : MY_BUG_NAME;
-    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "stop transcribing\n");
-				status = do_stop(lsession, bugname);
+	    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "stop transcribing\n");
+				status = do_stop(lsession, bugname, version);
 			} else if (!strcasecmp(argv[1], "start")) {
-        char* lang = argv[2];
-        int interim = argc > 3 && !strcmp(argv[3], "interim");
+    		    char* lang = argv[2];
+        		int interim = argc > 3 && !strcmp(argv[3], "interim");
 				char *bugname = argc > 5 ? argv[5] : MY_BUG_NAME;
 				if (argc > 4 && !strcmp(argv[4], "stereo")) {
-          flags |= SMBF_WRITE_STREAM ;
-          flags |= SMBF_STEREO;
+          			flags |= SMBF_WRITE_STREAM ;
+          			flags |= SMBF_STEREO;
 				}
-    		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s start transcribing %s %s\n", bugname, lang, interim ? "interim": "complete");
-				status = start_capture(lsession, flags, lang, interim, bugname);
+    			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s start transcribing %s %s\n", bugname, lang, interim ? "interim": "complete");
+				status = start_capture(lsession, flags, lang, interim, bugname, version);
 			}
 			switch_core_session_rwunlock(lsession);
 		}
@@ -481,4 +545,3 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_transcribe_shutdown)
 	switch_event_free_subclass(TRANSCRIBE_EVENT_PLAY_INTERRUPT);
 	return SWITCH_STATUS_SUCCESS;
 }
-

@@ -37,6 +37,10 @@ struct cap_cb {
 #else
 /* per-channel data */
 typedef void (*responseHandler_t)(switch_core_session_t* session, const char* json, const char* bugname);
+typedef enum GoogleCloudServiceVersion {
+    GoogleCloudServiceVersion_v1,
+    GoogleCloudServiceVersion_v2
+} GoogleCloudServiceVersion;
 
 struct cap_cb {
 	switch_mutex_t *mutex;
