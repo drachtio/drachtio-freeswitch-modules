@@ -14,49 +14,19 @@ SWITCH_MODULE_DEFINITION(mod_aws_transcribe, mod_aws_transcribe_load, mod_aws_tr
 
 static switch_status_t do_stop(switch_core_session_t *session, char* bugname);
 
-static void responseHandler(switch_core_session_t* session, const char * json, const char* bugname) {
+static void responseHandler(switch_core_session_t* session, 
+	const char* eventName, const char * json, const char* bugname, int finished) {
 	switch_event_t *event;
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 
-	if (0 == strcmp("vad_detected", json)) {
-		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_VAD_DETECTED);
-		switch_channel_event_set_data(channel, event);
-		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "aws");
+	switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, eventName);
+	switch_channel_event_set_data(channel, event);
+	switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "deepgram");
+	switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-session-finished", finished ? "true" : "false");
+	if (finished) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "responseHandler returning event %s, from finished recognition session\n", eventName);
 	}
-	else if (0 == strcmp("end_of_transcript", json)) {
-		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_END_OF_TRANSCRIPT);
-		switch_channel_event_set_data(channel, event);
-		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "aws");
-	}
-	else if (0 == strcmp("max_duration_exceeded", json)) {
-		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_MAX_DURATION_EXCEEDED);
-		switch_channel_event_set_data(channel, event);
-		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "aws");
-	}
-	else if (0 == strcmp("no_audio", json)) {
-		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_NO_AUDIO_DETECTED);
-		switch_channel_event_set_data(channel, event);
-		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "aws");
-	}
-	else {
-    int error = 0;
-    cJSON* jMessage = cJSON_Parse(json);
-    if (jMessage) {
-      const char* type = cJSON_GetStringValue(cJSON_GetObjectItem(jMessage, "type"));
-      if (type && 0 == strcmp(type, "error")) {
-        error = 1;
-    		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_ERROR);
-      }
-      cJSON_Delete(jMessage);
-    }
-    if (!error) {
-    		switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, TRANSCRIBE_EVENT_RESULTS);
-    }
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "json payload: %s.\n", json);
-		switch_channel_event_set_data(channel, event);
-		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "transcription-vendor", "aws");
-		switch_event_add_body(event, "%s", json);
-	}
+	if (json) switch_event_add_body(event, "%s", json);
 	if (bugname) switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "media-bugname", bugname);
 	switch_event_fire(&event);
 }
@@ -73,9 +43,9 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 
 	case SWITCH_ABC_TYPE_CLOSE:
 		{
-			struct cap_cb* cb = (struct cap_cb*) switch_core_media_bug_get_user_data(bug);
+			private_t *tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Got SWITCH_ABC_TYPE_CLOSE.\n");
-			aws_transcribe_session_stop(session, 1, cb->bugname);
+			aws_transcribe_session_stop(session, 1, tech_pvt->bugname);
 			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Finished SWITCH_ABC_TYPE_CLOSE.\n");
 		}
 		break;
@@ -116,7 +86,9 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 
-	if (SWITCH_STATUS_FALSE == aws_transcribe_session_init(session, responseHandler, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, &pUserData)) {
+  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, " initializing aws speech session.\n");
+	if (SWITCH_STATUS_FALSE == aws_transcribe_session_init(session, responseHandler, samples_per_second, 
+    flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, &pUserData)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error initializing aws speech session.\n");
 		return SWITCH_STATUS_FALSE;
 	}

@@ -1,5 +1,5 @@
-#ifndef __DG_AUDIO_PIPE_HPP__
-#define __DG_AUDIO_PIPE_HPP__
+#ifndef __AWS_AUDIO_PIPE_HPP__
+#define __AWS_AUDIO_PIPE_HPP__
 
 #include <string>
 #include <list>
@@ -11,7 +11,7 @@
 
 #include <libwebsockets.h>
 
-namespace deepgram {
+namespace aws {
 
 class AudioPipe {
 public:
@@ -45,7 +45,7 @@ public:
 
   // constructor
   AudioPipe(const char* uuid, const char* host, unsigned int port, const char* path, 
-    size_t bufLen, size_t minFreespace, const char* apiKey, notifyHandler_t callback);
+    size_t bufLen, size_t minFreespace, notifyHandler_t callback);
   ~AudioPipe();  
 
   LwsState_t getLwsState(void) { return m_state; }
@@ -66,9 +66,7 @@ public:
   void binaryWritePtrAdd(size_t len) {
     m_audio_buffer_write_offset += len;
   }
-  void binaryWritePtrResetToZero(void) {
-    m_audio_buffer_write_offset = 0;
-  }
+  void binaryWritePtrResetToZero(void);
   void lockAudioBuffer(void) {
     m_audio_mutex.lock();
   }
@@ -87,7 +85,7 @@ public:
 
 private:
 
-  static int lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len); 
+  static int aws_lws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len); 
   static unsigned int nchild;
   static struct lws_context *contexts[];
   static unsigned int numContexts;
