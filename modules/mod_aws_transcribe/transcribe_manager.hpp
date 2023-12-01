@@ -25,7 +25,7 @@ using namespace std;
 class TranscribeManager {
 public:
     static void getSignedWebsocketUrl(string& host, string& path,
-            const std::string& accessKey, const std::string& secretKey, const std::string& sessionToken, 
+            const std::string& accessKey, const std::string& secretKey, const std::string& securityToken, 
             const std::string& region, const std::string& lang, const char* vocabularyName,
             const char* vocabularyFilterName, const char* vocabularyFilterMethod);
 

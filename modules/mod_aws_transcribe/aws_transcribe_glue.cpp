@@ -186,7 +186,7 @@ extern "C" {
 		const char* awsAccessKeyId = switch_channel_get_variable(channel, "AWS_ACCESS_KEY_ID");
 		const char* awsSecretAccessKey = switch_channel_get_variable(channel, "AWS_SECRET_ACCESS_KEY");
 		const char* awsRegion = switch_channel_get_variable(channel, "AWS_REGION");
-		const char* awsSessionToken = switch_channel_get_variable(channel, "AWS_SESSION_TOKEN");
+		const char* awsSessionToken = switch_channel_get_variable(channel, "AWS_SECURITY_TOKEN");
 		tech_pvt->channels = channels;
 		strncpy(tech_pvt->sessionId, switch_core_session_get_uuid(session), MAX_SESSION_ID);
 		strncpy(tech_pvt->bugname, bugname, MAX_BUG_LEN);

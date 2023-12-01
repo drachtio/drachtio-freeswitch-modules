@@ -31,7 +31,7 @@ namespace {
 // https://docs.aws.amazon.com/transcribe/latest/dg/event-stream.html
 
 void TranscribeManager::getSignedWebsocketUrl(string& host, string& path, const string& accessKey,
-        const string& secretKey, const string& sessionToken, const string& region, const std::string& lang, 
+        const string& secretKey, const string& securityToken, const string& region, const std::string& lang, 
         const char* vocabularyName, const char* vocabularyFilterName, const char* vocabularyFilterMethod) {
     string method = "GET";
     string service = "transcribe";
@@ -61,7 +61,7 @@ void TranscribeManager::getSignedWebsocketUrl(string& host, string& path, const 
     canonical_querystring += "&X-Amz-Credential=" + accessKey + "%2F" + credential_scope;
     canonical_querystring += "&X-Amz-Date=" + string(amzDate);
     canonical_querystring += "&X-Amz-Expires=300";
-    canonical_querystring += "&X-Amz-Security-Token=" + uri_encode(sessionToken);
+    canonical_querystring += "&X-Amz-Security-Token=" + uri_encode(securityToken);
     canonical_querystring += "&X-Amz-SignedHeaders=" + signed_headers;
     canonical_querystring += "&language-code=" + lang;
     canonical_querystring += "&media-encoding=pcm&sample-rate=8000";
