@@ -51,6 +51,7 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
 	RecognitionConfig* config = streaming_config->mutable_config();
 
     streaming_config->mutable_streaming_features()->set_interim_results(interim);
+    // The single utterance concept is now determined by the model selected, rather than configuration parameter
     // if (single_utterance == 1) {
     //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_single_utterance\n");
     //   streaming_config->set_single_utterance(true);
@@ -60,60 +61,63 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
     //   streaming_config->set_single_utterance(false);
     // }
 
-		config->add_language_codes(lang);
-    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s \n", lang);
+    // From here down to the enhanced model section is just temporarily commented out while we experiment with the new
+    // configuration parameters in V2
+
+	// 	config->add_language_codes(lang);
+    // switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s for v2 \n", lang);
     
-  	config->mutable_explicit_decoding_config()->set_sample_rate_hertz(config_sample_rate);
+  	// config->mutable_explicit_decoding_config()->set_sample_rate_hertz(config_sample_rate);
 
-		config->mutable_explicit_decoding_config()->set_encoding(ExplicitDecodingConfig_AudioEncoding_LINEAR16);
+	// 	config->mutable_explicit_decoding_config()->set_encoding(ExplicitDecodingConfig_AudioEncoding_LINEAR16);
 
-    // the rest of config comes from channel vars
+    // // the rest of config comes from channel vars
 
-    // number of channels in the audio stream (default: 1)
-    if (channels > 1) {
-      config->mutable_explicit_decoding_config()->set_audio_channel_count(channels);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "audio_channel_count %d\n", channels);
+    // // number of channels in the audio stream (default: 1)
+    // if (channels > 1) {
+    //   config->mutable_explicit_decoding_config()->set_audio_channel_count(channels);
+    //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "audio_channel_count %d for v2\n", channels);
 
-      // transcribe each separately?
-      if (separate_recognition == 1) {
-        config->mutable_features()->set_multi_channel_mode(RecognitionFeatures_MultiChannelMode_SEPARATE_RECOGNITION_PER_CHANNEL);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_separate_recognition_per_channel on\n");
-      }
-    }
+    //   // transcribe each separately?
+    //   if (separate_recognition == 1) {
+    //     config->mutable_features()->set_multi_channel_mode(RecognitionFeatures_MultiChannelMode_SEPARATE_RECOGNITION_PER_CHANNEL);
+    //     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_separate_recognition_per_channel on for v2\n");
+    //   }
+    // }
 
-    // max alternatives
-    if (max_alternatives > 1) {
-      config->mutable_features()->set_max_alternatives(max_alternatives);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "max_alternatives %d\n", max_alternatives);
-    }
+    // // max alternatives
+    // if (max_alternatives > 1) {
+    //   config->mutable_features()->set_max_alternatives(max_alternatives);
+    //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "max_alternatives %d for v2\n", max_alternatives);
+    // }
 
-    // profanity filter
-    if (profanity_filter == 1) {
-      config->mutable_features()->set_profanity_filter(true);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "profanity_filter\n");
-    }
+    // // profanity filter
+    // if (profanity_filter == 1) {
+    //   config->mutable_features()->set_profanity_filter(true);
+    //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "profanity_filter for v2\n");
+    // }
 
-    // enable word offsets
-    if (word_time_offset == 1) {
-      config->mutable_features()->set_enable_word_time_offsets(true);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_word_time_offsets\n");
-    }
+    // // enable word offsets
+    // if (word_time_offset == 1) {
+    //   config->mutable_features()->set_enable_word_time_offsets(true);
+    //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_word_time_offsets for v2\n");
+    // }
 
-    // enable automatic punctuation
-    if (punctuation == 1) {
-      config->mutable_features()->set_enable_automatic_punctuation(true);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_automatic_punctuation\n");
-    }
-    else {
-      config->mutable_features()->set_enable_automatic_punctuation(false);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "disable_automatic_punctuation\n");
-    }
+    // // enable automatic punctuation
+    // if (punctuation == 1) {
+    //   config->mutable_features()->set_enable_automatic_punctuation(true);
+    //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_automatic_punctuation for v2\n");
+    // }
+    // else {
+    //   config->mutable_features()->set_enable_automatic_punctuation(false);
+    //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "disable_automatic_punctuation for v2\n");
+    // }
 
-    // speech model
-    if (model != NULL) {
-      config->set_model(model);
-      switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "speech model %s\n", model);
-    }
+    // // speech model
+    // if (model != NULL) {
+    //   config->set_model(model);
+    //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "speech model %s for v2\n", model);
+    // }
 
     // There seems to be no concept of an enhanced model in v2
     // use enhanced model
@@ -158,7 +162,7 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
           }
         }
         cJSON_Delete(jHint);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", i);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints for v2\n", i);
       }
       else {
         char *phrases[500] = { 0 };
@@ -169,7 +173,7 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
           auto* phrase = inline_phrase_set->add_phrases();
           phrase->set_value(phrases[i]);
         }
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", argc);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints for v2\n", argc);
       }
     }
 
@@ -194,12 +198,12 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
       // switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enabling speaker diarization\n", var);
       if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SPEAKER_DIARIZATION_MIN_SPEAKER_COUNT")) {
         int count = std::max(atoi(var), 1);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "setting min speaker count to %d\n", count);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "setting min speaker count for v2 to %d\n", count);
         diarization_config->set_min_speaker_count(count);
       }
       if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SPEAKER_DIARIZATION_MAX_SPEAKER_COUNT")) {
         int count = std::max(atoi(var), 2);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "setting max speaker count to %d\n", count);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "setting max speaker count for v2 to %d\n", count);
         diarization_config->set_max_speaker_count(count);
       }
     }
@@ -248,6 +252,9 @@ bool GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::St
 		return true;
 	}
 	m_request.set_audio(data, datalen);
+
+    // TODO: Make parts of the path below configurable via environment/FreeSWITCH variables
+    m_request.set_recognizer("projects/questnet-speech/locations/global/recognizers/transcribe");
 	bool ok = m_streamer->Write(m_request);
 	return ok;
 }
@@ -396,7 +403,6 @@ extern "C" {
     }
 
     switch_bool_t google_speech_frame_v2(switch_media_bug_t *bug, void* user_data) {
-      switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Calling google_speech_frame V2\n");
       return google_speech_frame<GStreamer_V2>(bug, user_data);
     }
 
