@@ -47,10 +47,14 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
     m_channel = create_grpc_channel(channel);
   	m_stub = Speech::NewStub(m_channel);
 
+    // TODO: Make parts of the path below configurable via environment/FreeSWITCH variables
+    m_request.set_recognizer("projects/questnet-speech/locations/global/recognizers/transcribe");
+
 	auto streaming_config = m_request.mutable_streaming_config();
 	RecognitionConfig* config = streaming_config->mutable_config();
 
-    streaming_config->mutable_streaming_features()->set_interim_results(interim);
+    if (interim > 0)
+        streaming_config->mutable_streaming_features()->set_interim_results(interim > 0);
     // The single utterance concept is now determined by the model selected, rather than configuration parameter
     // if (single_utterance == 1) {
     //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_single_utterance\n");
@@ -252,9 +256,6 @@ bool GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::St
 		return true;
 	}
 	m_request.set_audio(data, datalen);
-
-    // TODO: Make parts of the path below configurable via environment/FreeSWITCH variables
-    m_request.set_recognizer("projects/questnet-speech/locations/global/recognizers/transcribe");
 	bool ok = m_streamer->Write(m_request);
 	return ok;
 }
