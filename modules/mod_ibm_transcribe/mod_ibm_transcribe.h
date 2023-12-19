@@ -18,7 +18,6 @@
 
 #define MAX_LANG (12)
 #define MAX_SESSION_ID (256)
-#define MAX_API_KEY (256)
 #define MAX_WS_URL_LEN (1024)
 #define MAX_PATH_LEN (4096)
 #define MAX_BUG_LEN (64)

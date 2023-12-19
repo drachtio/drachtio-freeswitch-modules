@@ -18,7 +18,6 @@
 
 #define MAX_LANG_LEN (12)
 #define MAX_SESSION_ID (256)
-#define MAX_API_KEY (256)
 #define MAX_WS_URL_LEN (512)
 #define MAX_PATH_LEN (4096)
 #define MAX_BUG_LEN (64)
@@ -27,17 +26,17 @@ typedef void (*responseHandler_t)(switch_core_session_t* session, const char* ev
 
 struct private_data {
 	switch_mutex_t *mutex;
-	char sessionId[MAX_SESSION_ID];
+	char sessionId[MAX_SESSION_ID+1];
   SpeexResamplerState *resampler;
   responseHandler_t responseHandler;
   void *pAudioPipe;
   int ws_state;
-  char host[MAX_WS_URL_LEN];
+  char host[MAX_WS_URL_LEN+1];
   unsigned int port;
-  char path[MAX_PATH_LEN];
+  char path[MAX_PATH_LEN+1];
   int sslFlags;
   char bugname[MAX_BUG_LEN+1];
-  char language[MAX_LANG_LEN];
+  char language[MAX_LANG_LEN+1];
   int sampling;
   int  channels;
   int interim;
