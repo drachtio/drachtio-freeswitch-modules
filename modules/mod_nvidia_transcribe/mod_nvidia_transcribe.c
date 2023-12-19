@@ -76,7 +76,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
 		break;
 	
 	case SWITCH_ABC_TYPE_READ:
-
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got SWITCH_ABC_TYPE_READ.\n");
 		return nvidia_speech_frame(bug, user_data);
 		break;
 

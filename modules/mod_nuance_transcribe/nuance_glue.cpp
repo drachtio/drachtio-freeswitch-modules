@@ -474,6 +474,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     switch_core_session_t* session = switch_core_session_locate(cb->sessionId);
     if (!session) {
       switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "grpc_read_thread: session %s is gone!\n", cb->sessionId) ;
+      return nullptr;
     }
 
     // 3 types of responses: status, start of speech, result
