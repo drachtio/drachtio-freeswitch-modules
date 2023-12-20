@@ -1,6 +1,8 @@
 #include <cstdlib>
 #include <algorithm>
 #include <future>
+#include <random>
+#include <string>
 
 #include <switch.h>
 #include <switch_json.h>
@@ -65,6 +67,21 @@ public:
 		//switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_INFO, "GStreamer::~GStreamer - deleting channel and stub: %p\n", (void*)this);
 	}
 
+  std::shared_ptr<grpc::Channel> createUniqueChannel(const std::string& target) {
+    grpc::ChannelArguments channelArgs;
+
+    // Generate a unique value for the custom argument
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(1, 1000000);
+    std::string uniqueArgValue = "unique_value_" + std::to_string(dis(gen));
+
+    // Set a custom channel argument with the unique value
+    channelArgs.SetString("unique_custom_arg", uniqueArgValue);
+
+    return grpc::CreateCustomChannel(target, grpc::InsecureChannelCredentials(), channelArgs);
+  }
+
   void createInitMessage() {
     switch_channel_t *channel = switch_core_session_get_channel(m_session);
 
@@ -73,7 +90,10 @@ public:
     if (var) {
       //auto channelCreds = grpc::SslCredentials(grpc::SslCredentialsOptions());
       //grpcChannel = grpc::CreateChannel(var, channelCreds);
-      grpcChannel = grpc::CreateChannel(var, grpc::InsecureChannelCredentials());
+      // grpcChannel = grpc::CreateChannel(var, grpc::InsecureChannelCredentials());
+      // Hosted Krypton endpoint does not allow different grpc thread re-use same tcp connection.
+      // Use custom grpc channel to force grpc c/c++ lib open new tcp connection.
+      grpcChannel = createUniqueChannel(var);
     }
     else {
       var = switch_channel_get_variable(channel, "NUANCE_ACCESS_TOKEN");
