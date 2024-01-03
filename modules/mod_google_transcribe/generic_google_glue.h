@@ -12,6 +12,8 @@ switch_bool_t google_speech_frame(switch_media_bug_t *bug, void* user_data) {
         frame.data = data;
         frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
 
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "google_speech_frame: streamer obtained\n");
+
         if (switch_mutex_trylock(cb->mutex) == SWITCH_STATUS_SUCCESS) {
             while (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS && !switch_test_flag((&frame), SFF_CNG)) {
                 if (frame.datalen) {

@@ -249,6 +249,7 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
 
 template <>
 bool GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::write(void* data, uint32_t datalen) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::write for v2: datalen %d\n", datalen);
 	if (!m_connected) {
 		if (datalen % CHUNKSIZE == 0) {
 			m_audioBuffer.add(data, datalen);
