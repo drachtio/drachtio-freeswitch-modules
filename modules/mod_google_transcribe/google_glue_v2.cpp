@@ -256,9 +256,35 @@ bool GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::St
 		}
 		return true;
 	}
-	m_request.set_audio(data, datalen);
-	bool ok = m_streamer->Write(m_request);
+    StreamingRecognizeRequest request;
+    *request.mutable_recognizer() = "projects/questnet-speech/locations/global/recognizers/transcribe";
+	request.set_audio(data, datalen);
+	bool ok = m_streamer->Write(request);
 	return ok;
+}
+
+template <>
+void GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::connect() {
+    assert(!m_connected);
+    // Begin a stream.
+    m_streamer = m_stub->StreamingRecognize(&m_context);
+    m_connected = true;
+
+    // read thread is waiting on this
+    m_promise.set_value();
+
+    // send any buffered audio
+    int nFrames = m_audioBuffer.getNumItems();
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p got stream ready, %d buffered frames\n", this, nFrames);	
+    if (nFrames) {
+        char *p;
+        do {
+            p = m_audioBuffer.getNextChunk();
+            if (p) {
+                write(p, CHUNKSIZE);
+            }
+        } while (p);
+    }
 }
 
 static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *obj) {

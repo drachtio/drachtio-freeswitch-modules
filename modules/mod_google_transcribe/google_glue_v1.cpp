@@ -399,6 +399,34 @@ bool GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::St
   return ok;
 }
 
+
+template <>
+void GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::connect() {
+    assert(!m_connected);
+    // Begin a stream.
+    m_streamer = m_stub->StreamingRecognize(&m_context);
+    m_connected = true;
+
+    // read thread is waiting on this
+    m_promise.set_value();
+
+    // Write the first request, containing the config only.
+    m_streamer->Write(m_request);
+
+    // send any buffered audio
+    int nFrames = m_audioBuffer.getNumItems();
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p got stream ready, %d buffered frames\n", this, nFrames);	
+    if (nFrames) {
+        char *p;
+        do {
+            p = m_audioBuffer.getNextChunk();
+            if (p) {
+                write(p, CHUNKSIZE);
+            }
+        } while (p);
+    }
+}
+
 extern "C" {
 
     switch_status_t google_speech_session_cleanup_v1(switch_core_session_t *session, int channelIsClosing, switch_media_bug_t *bug) {
