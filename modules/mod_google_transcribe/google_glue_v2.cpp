@@ -47,14 +47,19 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
     m_channel = create_grpc_channel(channel);
   	m_stub = Speech::NewStub(m_channel);
 
-    // TODO: Make parts of the path below configurable via environment/FreeSWITCH variables
-    m_request.set_recognizer("projects/questnet-speech/locations/global/recognizers/transcribe");
-
 	auto streaming_config = m_request.mutable_streaming_config();
 	RecognitionConfig* config = streaming_config->mutable_config();
 
-    if (interim > 0)
-        streaming_config->mutable_streaming_features()->set_interim_results(interim > 0);
+    const char* var;    
+    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_RECOGNIZER_NAME")) {
+        if (interim > 0) {
+            streaming_config->mutable_streaming_features()->set_interim_results(interim > 0);
+        }
+        m_recognizer = var;
+        m_request.set_recognizer(m_recognizer);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "using recognizer: %s\n", var);
+    }
+
     // The single utterance concept is now determined by the model selected, rather than configuration parameter
     // if (single_utterance == 1) {
     //   switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_single_utterance\n");
@@ -192,8 +197,6 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
     //   }
     // }
 
-    const char* var;
-    
     // speaker diarization
     if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SPEAKER_DIARIZATION")) {
       auto* diarization_config = config->mutable_features()->mutable_diarization_config();
@@ -249,7 +252,6 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
 
 template <>
 bool GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::write(void* data, uint32_t datalen) {
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer::write for v2: datalen %d\n", datalen);
 	if (!m_connected) {
 		if (datalen % CHUNKSIZE == 0) {
 			m_audioBuffer.add(data, datalen);
@@ -257,34 +259,10 @@ bool GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::St
 		return true;
 	}
     StreamingRecognizeRequest request;
-    *request.mutable_recognizer() = "projects/questnet-speech/locations/global/recognizers/transcribe";
+    *request.mutable_recognizer() = m_recognizer;
 	request.set_audio(data, datalen);
 	bool ok = m_streamer->Write(request);
 	return ok;
-}
-
-template <>
-void GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::connect() {
-    assert(!m_connected);
-    // Begin a stream.
-    m_streamer = m_stub->StreamingRecognize(&m_context);
-    m_connected = true;
-
-    // read thread is waiting on this
-    m_promise.set_value();
-
-    // send any buffered audio
-    int nFrames = m_audioBuffer.getNumItems();
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "GStreamer %p got stream ready, %d buffered frames\n", this, nFrames);	
-    if (nFrames) {
-        char *p;
-        do {
-            p = m_audioBuffer.getNextChunk();
-            if (p) {
-                write(p, CHUNKSIZE);
-            }
-        } while (p);
-    }
 }
 
 static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *obj) {
