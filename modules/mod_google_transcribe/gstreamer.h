@@ -143,6 +143,5 @@ private:
 	bool m_writesDone;
 	bool m_connected;
 	std::promise<void> m_promise;
-    std::string m_recognizer;
 	SimpleBuffer m_audioBuffer;
 };

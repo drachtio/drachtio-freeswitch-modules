@@ -112,6 +112,12 @@ switch_status_t google_speech_session_init(switch_core_session_t *session, respo
 		}
 	}
 
+    if (!switch_channel_get_variable(channel, "GOOGLE_SPEECH_RECOGNIZER_PARENT")) {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR,
+            "%s: Error initializing gstreamer: GOOGLE_SPEECH_RECOGNIZER_PARENT is not set.\n", switch_channel_get_name(channel));
+        return SWITCH_STATUS_FALSE;
+    }
+
 	Streamer *streamer = NULL;
 	try {
 	    streamer = new Streamer(session, channels, lang, interim, to_rate, sampleRate, single_utterance, separate_recognition, max_alternatives,
