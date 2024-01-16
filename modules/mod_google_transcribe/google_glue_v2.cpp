@@ -51,15 +51,21 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
 	auto streaming_config = m_request.mutable_streaming_config();
     const char* var;
 
-    // This constructor should actually not be called if the variable below is not set
+    // The parent of the recognizer must still be provided even if the wildcard
+    // recognizer is used rather than a a pre-prepared recognizer.
     std::string recognizer;
     if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_RECOGNIZER_PARENT")) {
         recognizer = var;
-    }
-    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_RECOGNIZER_ID")) {
-        recognizer = recognizer + "/recognizers/" + var;
+        recognizer += "/recognizers/";
     } else {
-        recognizer += "/recognizers/_";
+        throw std::runtime_error("The v2 Speech-To-Text library requires GOOGLE_SPEECH_RECOGNIZER_PARENT to be set");
+    }
+
+    // Use the recognizer specified in the variable or just use the wildcard if this is not set.
+    if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_RECOGNIZER_ID")) {
+        recognizer += var;
+    } else {
+        recognizer += "_";
 
         RecognitionConfig* config = streaming_config->mutable_config();
         config->add_language_codes(lang);
@@ -69,6 +75,7 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
         config->mutable_explicit_decoding_config()->set_encoding(ExplicitDecodingConfig_AudioEncoding_LINEAR16);
 
         // number of channels in the audio stream (default: 1)
+        // N.B. It is essential to set this configuration value in v2 even if it doesn't deviate from the default.
         config->mutable_explicit_decoding_config()->set_audio_channel_count(channels);
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "audio_channel_count %d for v2\n", channels);
         if (channels > 1) {
@@ -133,9 +140,9 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
                 int i = 0;
                 cJSON *jPhrase = NULL;
                 cJSON_ArrayForEach(jPhrase, jHint) {
-                    auto* phrase = phrase_set->mutable_inline_phrase_set()->add_phrases();
                     cJSON *jItem = cJSON_GetObjectItem(jPhrase, "phrase");
                     if (jItem) {
+                        auto* phrase = phrase_set->mutable_inline_phrase_set()->add_phrases();
                         phrase->set_value(cJSON_GetStringValue(jItem));
                         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "phrase: %s\n", phrase->value().c_str());
                         if (cJSON_GetObjectItem(jPhrase, "boost")) {
