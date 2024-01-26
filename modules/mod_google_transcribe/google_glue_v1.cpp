@@ -257,7 +257,7 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
 
   bool connected = streamer->waitForConnect();
   if (!connected) {
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "google transcribe grpc read thread exiting since we didnt connect\n") ;
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "google transcribe grpc read thread exiting since we didn't connect\n") ;
     return nullptr;
   }
 
@@ -410,11 +410,11 @@ extern "C" {
     }
 
     switch_status_t google_speech_session_init_v1(switch_core_session_t *session, responseHandler_t responseHandler,
-		  uint32_t to_rate, uint32_t samples_per_second, uint32_t channels, char* lang, int interim, char *bugname, int single_utterence,
-		  int separate_recognition, int max_alternatives, int profinity_filter, int word_time_offset, int punctuation, const char* model, int enhanced, 
+		  uint32_t to_rate, uint32_t samples_per_second, uint32_t channels, char* lang, int interim, char *bugname, int single_utterance,
+		  int separate_recognition, int max_alternatives, int profanity_filter, int word_time_offset, int punctuation, const char* model, int enhanced, 
 		  const char* hints, char* play_file, void **ppUserData) {
       return google_speech_session_init<GStreamer_V1>(session, responseHandler, grpc_read_thread, to_rate, samples_per_second, channels,
-        lang, interim, bugname, single_utterence, separate_recognition, max_alternatives, profinity_filter,
+        lang, interim, bugname, single_utterance, separate_recognition, max_alternatives, profanity_filter,
         word_time_offset, punctuation, model, enhanced, hints, play_file, ppUserData);
     }
 

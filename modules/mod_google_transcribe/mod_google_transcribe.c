@@ -234,6 +234,7 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	switch_status_t status;
 	switch_codec_implementation_t read_impl = { 0 };
 	void *pUserData;
+	uint32_t sample_rate = DEFAULT_SAMPLE_RATE;
 	uint32_t samples_per_second;
 	int single_utterance = 0, separate_recognition = 0, max_alternatives = 0, profanity_filter = 0, word_time_offset = 0, punctuation = 0, enhanced = 0;
 	const char* hints = NULL;
@@ -258,6 +259,11 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	// max alternatives
 	if ((var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_MAX_ALTERNATIVES"))) {
      	max_alternatives = atoi(var);
+    }
+
+	// sample rate
+	if ((var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SAMPLE_RATE"))) {
+     	sample_rate = atoi(var);
     }
 
 	// profanity filter
@@ -299,10 +305,10 @@ static switch_status_t start_capture(switch_core_session_t *session, switch_medi
 	samples_per_second = !strcasecmp(read_impl.iananame, "g722") ? read_impl.actual_samples_per_second : read_impl.samples_per_second;
 	status = SWITCH_STATUS_FALSE;
 	if (version == GoogleCloudServiceVersion_v2)
-		status = google_speech_session_init_v2(session, responseHandler, DEFAULT_SAMPLE_RATE, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, single_utterance,
+		status = google_speech_session_init_v2(session, responseHandler, sample_rate, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, single_utterance,
 			separate_recognition, max_alternatives, profanity_filter, word_time_offset, punctuation, model, enhanced, hints, NULL, &pUserData);
 	else
-		status = google_speech_session_init_v1(session, responseHandler, DEFAULT_SAMPLE_RATE, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, single_utterance,
+		status = google_speech_session_init_v1(session, responseHandler, sample_rate, samples_per_second, flags & SMBF_STEREO ? 2 : 1, lang, interim, bugname, single_utterance,
 			separate_recognition, max_alternatives, profanity_filter, word_time_offset, punctuation, model, enhanced, hints, NULL, &pUserData);
 
 	if (SWITCH_STATUS_FALSE == status) {
