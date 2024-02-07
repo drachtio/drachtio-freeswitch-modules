@@ -123,47 +123,8 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
         // hints  
         if (hints != NULL) {
             auto* adaptation = config->mutable_adaptation();
-            auto* phrase_set = adaptation->add_phrase_sets();
-            float boost = -1;
-
-            // get boost setting for the phrase set in its entirety
-            if (switch_true(switch_channel_get_variable(channel, "GOOGLE_SPEECH_HINTS_BOOST"))) {
-                boost = (float) atof(switch_channel_get_variable(channel, "GOOGLE_SPEECH_HINTS_BOOST"));
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", boost);
-                phrase_set->mutable_inline_phrase_set()->set_boost(boost);
-            }
-
-            // hints are either a simple comma-separated list of phrases, or a json array of objects
-            // containing a phrase and a boost value
-            auto *jHint = cJSON_Parse((char *) hints);
-            if (jHint) {
-                int i = 0;
-                cJSON *jPhrase = NULL;
-                cJSON_ArrayForEach(jPhrase, jHint) {
-                    cJSON *jItem = cJSON_GetObjectItem(jPhrase, "phrase");
-                    if (jItem) {
-                        auto* phrase = phrase_set->mutable_inline_phrase_set()->add_phrases();
-                        phrase->set_value(cJSON_GetStringValue(jItem));
-                        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "phrase: %s\n", phrase->value().c_str());
-                        if (cJSON_GetObjectItem(jPhrase, "boost")) {
-                            phrase->set_boost((float) cJSON_GetObjectItem(jPhrase, "boost")->valuedouble);
-                            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "boost value: %f\n", phrase->boost());
-                        }
-                        i++;
-                    }
-                }
-                cJSON_Delete(jHint);
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", i);
-            }
-            else {
-                char *phrases[500] = { 0 };
-                int argc = switch_separate_string((char *) hints, ',', phrases, 500);
-                for (int i = 0; i < argc; i++) {
-                    auto* phrase = phrase_set->mutable_inline_phrase_set()->add_phrases();
-                    phrase->set_value(phrases[i]);
-                }
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added %d hints\n", argc);
-            }
+            auto* phrase_set = adaptation->add_phrase_sets()->mutable_inline_phrase_set();
+            google_speech_configure_grammar_hints(m_session, channel, hints, phrase_set);
         }
 
         // the rest of config comes from channel vars
@@ -194,20 +155,6 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
     if (interim > 0) {
         streaming_config->mutable_streaming_features()->set_interim_results(interim > 0);
     }
-}
-
-template <>
-bool GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::write(void* data, uint32_t datalen) {
-	if (!m_connected) {
-		if (datalen % CHUNKSIZE == 0) {
-			m_audioBuffer.add(data, datalen);
-		}
-		return true;
-	}
-    m_request.clear_streaming_config();
-	m_request.set_audio(data, datalen);
-	bool ok = m_streamer->Write(m_request);
-	return ok;
 }
 
 static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *obj) {
@@ -339,6 +286,20 @@ static void *SWITCH_THREAD_FUNC grpc_read_thread(switch_thread_t *thread, void *
     }
   }
   return nullptr;
+}
+
+template <>
+bool GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::write(void* data, uint32_t datalen) {
+	if (!m_connected) {
+		if (datalen % CHUNKSIZE == 0) {
+			m_audioBuffer.add(data, datalen);
+		}
+		return true;
+	}
+    m_request.clear_streaming_config();
+	m_request.set_audio(data, datalen);
+	bool ok = m_streamer->Write(m_request);
+	return ok;
 }
 
 extern "C" {
