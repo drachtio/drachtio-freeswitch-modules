@@ -69,8 +69,18 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
 
         RecognitionConfig* config = streaming_config->mutable_config();
         config->add_language_codes(lang);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s for v2 \n", lang);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s for v2\n", lang);
         
+        // alternative language
+        if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_ALTERNATIVE_LANGUAGE_CODES")) {
+            char *alt_langs[3] = { 0 };
+            int argc = switch_separate_string((char *) var, ',', alt_langs, 3);
+            for (int i = 0; i < argc; i++) {
+                config->add_language_codes(alt_langs[i]);
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added alternative lang %s for v2\n", alt_langs[i]);
+            }
+        }
+
         config->mutable_explicit_decoding_config()->set_sample_rate_hertz(config_sample_rate);
         config->mutable_explicit_decoding_config()->set_encoding(ExplicitDecodingConfig_AudioEncoding_LINEAR16);
 
