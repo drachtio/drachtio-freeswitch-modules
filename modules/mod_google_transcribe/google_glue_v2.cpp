@@ -52,7 +52,7 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
     const char* var;
 
     // The parent of the recognizer must still be provided even if the wildcard
-    // recognizer is used rather than a a pre-prepared recognizer.
+    // recognizer is used rather than a pre-prepared recognizer.
     std::string recognizer;
     if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_RECOGNIZER_PARENT")) {
         recognizer = var;
@@ -69,7 +69,7 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
 
         RecognitionConfig* config = streaming_config->mutable_config();
         config->add_language_codes(lang);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s for v2\n", lang);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "transcribe language %s\n", lang);
         
         // alternative language
         if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_ALTERNATIVE_LANGUAGE_CODES")) {
@@ -77,7 +77,7 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
             int argc = switch_separate_string((char *) var, ',', alt_langs, 3);
             for (int i = 0; i < argc; i++) {
                 config->add_language_codes(alt_langs[i]);
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added alternative lang %s for v2\n", alt_langs[i]);
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "added alternative lang %s\n", alt_langs[i]);
             }
         }
 
@@ -87,47 +87,47 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
         // number of channels in the audio stream (default: 1)
         // N.B. It is essential to set this configuration value in v2 even if it doesn't deviate from the default.
         config->mutable_explicit_decoding_config()->set_audio_channel_count(channels);
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "audio_channel_count %d for v2\n", channels);
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "audio_channel_count %d\n", channels);
         if (channels > 1) {
             // transcribe each separately?
             if (separate_recognition == 1) {
                 config->mutable_features()->set_multi_channel_mode(RecognitionFeatures_MultiChannelMode_SEPARATE_RECOGNITION_PER_CHANNEL);
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_separate_recognition_per_channel on for v2\n");
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_separate_recognition_per_channel on\n");
             }
         }
 
         // max alternatives
         if (max_alternatives > 1) {
             config->mutable_features()->set_max_alternatives(max_alternatives);
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "max_alternatives %d for v2\n", max_alternatives);
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "max_alternatives %d\n", max_alternatives);
         }
 
         // profanity filter
         if (profanity_filter == 1) {
             config->mutable_features()->set_profanity_filter(true);
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "profanity_filter for v2\n");
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "profanity_filter\n");
         }
 
         // enable word offsets
         if (word_time_offset == 1) {
             config->mutable_features()->set_enable_word_time_offsets(true);
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_word_time_offsets for v2\n");
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_word_time_offsets\n");
         }
 
         // enable automatic punctuation
         if (punctuation == 1) {
             config->mutable_features()->set_enable_automatic_punctuation(true);
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_automatic_punctuation for v2\n");
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enable_automatic_punctuation\n");
         }
         else {
             config->mutable_features()->set_enable_automatic_punctuation(false);
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "disable_automatic_punctuation for v2\n");
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "disable_automatic_punctuation\n");
         }
 
         // speech model
         if (model != NULL) {
             config->set_model(model);
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "speech model %s for v2\n", model);
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "speech model %s\n", model);
         }
 
         // hints  
@@ -140,6 +140,8 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
         // the rest of config comes from channel vars
 
         // speaker diarization
+        // N.B. At the moment there does not seem to be any combination of model, language and location which supports diarization for STT v2.
+        // See https://stackoverflow.com/questions/76779418/speaker-diarization-is-disabled-even-for-supported-languages-in-google-speech-to
         if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SPEAKER_DIARIZATION")) {
             auto* diarization_config = config->mutable_features()->mutable_diarization_config();
             // There is no enable function in v2
@@ -147,12 +149,12 @@ GStreamer<StreamingRecognizeRequest, StreamingRecognizeResponse, Speech::Stub>::
             // switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "enabling speaker diarization\n", var);
             if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SPEAKER_DIARIZATION_MIN_SPEAKER_COUNT")) {
                 int count = std::max(atoi(var), 1);
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "setting min speaker count for v2 to %d\n", count);
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "setting min speaker count to %d\n", count);
                 diarization_config->set_min_speaker_count(count);
             }
             if (var = switch_channel_get_variable(channel, "GOOGLE_SPEECH_SPEAKER_DIARIZATION_MAX_SPEAKER_COUNT")) {
                 int count = std::max(atoi(var), 2);
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "setting max speaker count for v2 to %d\n", count);
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(m_session), SWITCH_LOG_DEBUG, "setting max speaker count to %d\n", count);
                 diarization_config->set_max_speaker_count(count);
             }
         }
