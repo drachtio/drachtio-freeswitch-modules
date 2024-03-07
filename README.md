@@ -1,4 +1,12 @@
+**Please note: This repo is no longer being actively maintained.**
+
+**For those interested in similar modules, please refer to [this repo](https://github.com/jambonz/freeswitch-modules)  which is offered under a different (dual-licensing) scheme:**
+
+- **AGLP-3 for general usage.**
+- **MIT for use with [jambonz](https://jambonz.org) installs <ins>only</ins>.**
+
 # drachtio-freeswitch-modules
+
 An open-source collection of freeswitch modules, primarily built for for use with [drachtio](https://drachtio.org) applications utilizing [drachtio-fsrmf](https://www.npmjs.com/package/drachtio-fsmrf), but generally usable and useful with generic freeswitch applications.  These modules have beeen tested with Freeswitch version 1.8.
 
 #### [mod_audio_fork](modules/mod_audio_fork/README.md)
