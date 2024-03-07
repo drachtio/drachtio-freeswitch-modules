@@ -144,7 +144,9 @@ static switch_status_t do_stop(switch_core_session_t *session, char *bugname)
 
 	if (bug) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Received user command command, calling google_speech_session_cleanup (possibly to stop prev transcribe)\n");
+		switch_core_media_bug_clear_flag(bug, SMBF_STATUS_CHECK);
 		status = google_speech_session_cleanup(session, 0, bug);
+		switch_core_media_bug_set_flag(bug, SMBF_STATUS_CHECK);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "stopped transcription.\n");
 	}
 
